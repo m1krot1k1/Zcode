@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- E2E reporter 集中维护同一 run 的生命周期、结果、性能与覆盖率聚合，拆分会增加跨 hook 状态同步。 */
 import { mkdirSync } from "node:fs";
 import { arch, cpus, platform, release, totalmem } from "node:os";
 import { resolve } from "node:path";

@@ -110,6 +110,49 @@ export interface ExecutionSandboxPolicy {
   profile?: string;
   dangerouslyDisableSandbox?: boolean;
   metadata?: Record<string, unknown>;
+  /**
+   * Реальная политика изоляции. Adapter применяет её к spawn: монтирует workspace
+   * на запись, остальное — read-only, и при `networkAccess: "deny"` отключает сеть.
+   */
+  wrap?: ExecutionSandboxWrapPolicy;
+}
+
+/** Кто фактически исполнил команду; попадает в результат Bash. */
+export type ExecutionSandboxMode = "bwrap" | "seatbelt" | "degraded" | "none";
+
+export type ExecutionSandboxProfile = "off" | "workspace-write" | "strict-offline";
+
+/** Политика, которую adapter передаёт в `ExecutionSandbox.wrap()`. */
+export interface ExecutionSandboxWrapPolicy {
+  profile?: ExecutionSandboxProfile;
+  /** Корень workspace: единственный writable-каталог по умолчанию. */
+  workspacePath: string;
+  /** Дополнительные writable-корни (кэши пакетных менеджеров и т.п.). */
+  writableRoots?: readonly string[];
+  /** Каталоги, которые обязаны остаться read-only внутри workspace. */
+  readOnlyRoots?: readonly string[];
+  networkAccess?: "allow" | "deny";
+  /** Whitelisted переменные окружения, передаваемые внутрь песочницы. */
+  env?: Readonly<Record<string, string>>;
+  /** Каталог служебных файлов (например, захвата cwd), видимый снаружи. */
+  cwdCaptureDir?: string;
+  limits?: {
+    cpuSeconds?: number;
+    memoryBytes?: number;
+    maxProcesses?: number;
+    maxFileSizeBytes?: number;
+  };
+}
+
+/** Факт применения песочницы, видимый модели и телеметрии. */
+export interface ExecutionSandboxReport {
+  mode: ExecutionSandboxMode;
+  /** Причина деградации; заполнена, когда `mode === "degraded"` или `"none"`. */
+  reason?: string;
+  filesystemIsolated: boolean;
+  networkIsolated: boolean;
+  /** Лимиты, реально применённые к запуску. */
+  limits?: ExecutionSandboxWrapPolicy["limits"];
 }
 
 export interface ExecutionOutputLimit {
@@ -194,6 +237,8 @@ export interface ExecutionResult {
   error?: ExecutionFailure;
   /** Internal runtime state captured after a successful command; never provider-visible output. */
   resolvedCwd?: string;
+  /** Фактический режим песочницы этого запуска; отсутствует для не-Bash исполнений. */
+  sandbox?: ExecutionSandboxReport;
 }
 
 /** 单次有界尾读计算的 Bash 进度，不持有完整命令输出。 */

@@ -16,6 +16,7 @@ import {
   type RuntimeMessageMetadata,
 } from "../../agent/message-history.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { getMetadataTools } from "./config.js";
 
 /** 普通收集和 compact 共用隐藏提醒落盘，正文与 runtime metadata 写入同一 text part。 */
 export async function persistRuntimeReminderMessage(
@@ -55,7 +56,10 @@ export async function persistRuntimeReminderMessage(
         },
         system: this.config.systemPrompt,
         synthetic: true,
-        tools: Object.fromEntries(this.getTools().map((tool) => [tool.name, true])),
+        // reminder 的 tools 是元数据映射：有本轮 Model 时必须按它过滤条件工具（WebSearch）。
+        tools: Object.fromEntries(
+          getMetadataTools.call(this, options.model).map((tool) => [tool.name, true]),
+        ),
         visibility: "model-only",
       },
       traceContext,

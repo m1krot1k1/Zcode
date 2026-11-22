@@ -1,4 +1,4 @@
-export interface EnsureSourceServerBoundaryAcknowledgedOptions<TVersion extends number> {
+interface EnsureSourceServerBoundaryAcknowledgedOptions<TVersion extends number> {
   currentVersion?: TVersion;
   targetVersion: TVersion;
   requestAcknowledgement: () => Promise<boolean>;

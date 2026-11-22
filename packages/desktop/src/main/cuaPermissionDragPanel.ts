@@ -20,7 +20,7 @@ import type { CuaPermissionKind, Locale } from "@zcode/shared";
 import { resolvePanelBounds, type PanelSize, type Rect } from "./cuaPermissionPanelPositioner.js";
 
 /** 浮窗需要的最小窗口能力面，便于测试替身实现。 */
-export interface CuaPermissionPanelWindow {
+interface CuaPermissionPanelWindow {
   onceReadyToShow(callback: () => void): void;
   setBounds(bounds: Rect): void;
   showInactive(): void;
@@ -30,7 +30,7 @@ export interface CuaPermissionPanelWindow {
   send(channel: string, payload: unknown): void;
 }
 
-export interface CreateCuaPermissionDragPanelOptions {
+interface CreateCuaPermissionDragPanelOptions {
   createWindow: (initialBounds: Rect) => CuaPermissionPanelWindow;
   getDisplayWorkArea: () => Rect;
   /** 系统设置窗口 bounds 数据源；缺失或抛错时 fail-open 到屏幕底部。 */
@@ -63,7 +63,7 @@ export interface CuaPermissionDragPanel {
   destroy(): void;
 }
 
-export const CUA_PERMISSION_PANEL_STATE_CHANNEL = "zcode:cua-permission-panel-state";
+const CUA_PERMISSION_PANEL_STATE_CHANNEL = "zcode:cua-permission-panel-state";
 
 const DEFAULT_PANEL_SIZE: PanelSize = { width: 560, height: 124 };
 // 使用 0.15 秒跟踪间隔，兼顾位置同步开销与设置页拖动时的面板响应。

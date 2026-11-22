@@ -1,5 +1,30 @@
 # Tool Change Chain Spec
 
+## Workspace boundary（strict | ask | allow）接线（2026-11-12）
+
+配置 `workspaceBoundary` → bootstrap runtime config → `ToolExecutorDeps` → `ToolExecutionContext`
+→ path-policy。Read/Write/Edit/ApplyPatch/Glob/Grep/Bash（cwd）与 bash-read-file-state 在解析
+路径时统一展开同一组边界参数；判定仍只有 path-policy 一处（`describeWorkspaceBoundaryEscape`
+是 ask 预审批复用的同一实现）。
+
+`ask` 的用户决定在 handler 之前取得：工具通过 `ToolEntry.resolveWorkspaceBoundaryPaths` 声明
+本次会解析的路径，`applyWorkspaceBoundaryGate` 把越界折叠成一次真实 permission request
+（user-once、不可 always-allow、不可被 `prepareApproval` 降级），批准后再把已批准
+`(operation, resolvedPath)` 交给同步审批端口回放。未展示的路径、缺失端口、端口异常、
+否定回答都 fail closed（`PermissionDenied` / `PermissionEscalation`）。
+
+审计走 runtime logger（allow/approve = info，deny = warn），不新增 session event；字段以
+`WorkspaceBoundaryAuditEvent` 为准。bash-read-file-state 遇到边界拒绝只跳过 read-state 回填，
+不让已成功执行的 Bash 变成失败。合同与未接线项见 `docs/specs/2026-11-11-workspace-boundary.md`。
+
+## CodeIndex：выдержка чанка вместо обязательного Read
+
+Поиск и фокусный символ возвращают сохранённый чанк диапазона (потолок 4096 символов) и `endLine`.
+Связанные узлы context/impact/trace всегда получают `endLine`; выдержка добавляется, пока ответ
+остаётся внутри прежнего потолка 24 КБ. Поле `lexicalOnly` на search пропускает эмбеддинг.
+Описание CodeIndex, Agent, Explore и worker-промпт говорят одно: отвечать по выдержке, Read
+одним батчем с `offset = startLine` и `limit` по диапазону. Лимит 12 хитов и Read не меняются.
+
 ## Bash 临时输出路径隔离
 
 主应用及 workflow 子运行时装配 tmp 父目录 → execution adapter 实际准备具名输出文件 →
@@ -777,6 +802,7 @@ Browser use 虽由 `js` REPL 驱动，但其 capability manifest、模型文档�
 - provider-native/server-side tool 是否按 provider kind 和 model capability 映射，不支持时 fail-closed 或不投影。
 - Anthropic-compatible 不等于 Anthropic-native；WebSearch 只能对已确认支持服务端搜索的 Anthropic baseURL host 单独 allowlist。
 - provider 不支持的 schema 关键字、字段名、blocked/allowed 规则是否在 adapter 层归一化或报错。
+- `toAiSdkTools` 向任何 provider 发送工具 schema 前先深拷贝，只去掉各层 `propertyNames` 并保留 `additionalProperties` 与 `$ref`/`$defs`/`definitions`；需要 MFJS 时才对副本做保留本地 `$ref` 的 `normalizeToolJsonSchema` 再做既有提升，拷贝是因为删除会改写入参，不能改调用方 contract。
 - Anthropic-compatible JSON 响应可能返回缺少 `signature` / `redactedData`
   的 `thinking` block。修复原因：AI SDK 会按 Anthropic 原生 schema
   校验 thinking 完整性，缺签名会让 WebFetch 这类内部非流式
@@ -1812,6 +1838,12 @@ UI 不变，桌面只从前驱块读 `status` / `name`，旧客户端不受新�
 ## 插件使用归属
 
 ToolEntry 的 MCP pluginId 在执行准入时捕获，沿工具成功/失败事件、V4 tool.lifecycle、既有 agent_step 传递。保持 Skill 原字段兼容；普通 MCP 和未知归属留空，不从名字解析、不复制执行事件。仅增加可选 metadata，不改变工具执行、权限、存储和 continuous/replayable 交付。
+
+## CodeIndex agent tool
+
+`CodeIndex` 是只读 workspace 工具：模型输入经 strict `CodeIntelligencePort` schema → CLI Core handler → Bootstrap protocol client → Host 的严格 `code-intelligence/query` 请求 → 当前 Host workspace 的 `ICodeIntelligenceService` → 有界、相对路径结果返回工具执行链。CLI 不读 SQLite、不接收任意 workspace path，也不能触发建索引、改 endpoint 或删除数据。Actions: `search`, `context`, `impact`, `trace`; 每项校验输入和输出上限。协议传输错误按工具失败返回，不能伪装成空搜索结果。
+
+Acceptance: four actions round-trip to the Host service; absolute/traversal paths are rejected at the service boundary; remote sessions use the Host-bound workspace identity; calls remain read-only and nested agents receive the tool only when their effective tool allowlist admits `CodeIndex`. Tests cover schema, handler, client adapter, Host dispatch, tool registration/permissions, and live session tool projection.
 
 ## UI 插件后台首次创建
 

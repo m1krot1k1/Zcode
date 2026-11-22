@@ -35,14 +35,7 @@ async function readStartupSettings(settingsFile: string, logger?: StartupWorkspa
 export interface StartupWorkspaceWarmupTarget {
   workspacePath: string;
   workspaceIdentity?: string;
-}
-
-// 修复原因：会话 CLI 没有 idle 回收，启动预热 3 个会让每个窗口常驻 3 份 Agent 进程内存；
-// 切到最近项目的冷启动收益抵不上常驻成本，收敛为只预热 active workspace。
-// 与 @zcode/protocol 的 init-local `agentWarmupTargets.max(1)` 保持一致。
-export const STARTUP_AGENT_WARMUP_LIMIT = 1;
-
-export interface StartupWindowBootstrap {
+}export interface StartupWindowBootstrap {
   restoreSession?: boolean;
   initialWorkspacePath?: string;
   initialWorkspacePurpose?: WorkspacePurpose;

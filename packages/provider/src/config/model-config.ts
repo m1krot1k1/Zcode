@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- Model Config、嵌套 Overlay 与有序规则共同定义一份领域类型，暂不为行数拆散。 */
 import { ConfigOverlay, type ConfigValidationIssue } from "../config-overlay.js";
 import type { z } from "zod";
 import {
@@ -9,6 +8,7 @@ import {
   completeModelPropertiesDataSchema,
   completeModelOptionSpecsDataSchema,
   completeModelConfigDataSchema,
+  type ModelApiOverrideData,
   type enumOptionSpecDataSchema,
   type limitOptionSpecDataSchema,
   type modelInputFormatDataSchema,
@@ -183,6 +183,7 @@ export class ModelPropertiesConfig extends ConfigOverlay<ModelPropertiesConfig> 
   readonly supportsJsonSchemaOutput?: ModelPropertiesConfigInput["supportsJsonSchemaOutput"];
   readonly supportsNativeWebSearch?: ModelPropertiesConfigInput["supportsNativeWebSearch"];
   readonly supportsMidConversationSystem?: ModelPropertiesConfigInput["supportsMidConversationSystem"];
+  readonly displayName?: ModelPropertiesConfigInput["displayName"];
 
   constructor(input: ModelPropertiesConfigInput = {}) {
     super();
@@ -222,6 +223,7 @@ export class ModelPropertiesConfig extends ConfigOverlay<ModelPropertiesConfig> 
         this.supportsMidConversationSystem,
         next.supportsMidConversationSystem,
       ),
+      displayName: this.overlayValue(this.displayName, next.displayName),
     });
   }
 
@@ -239,6 +241,7 @@ export class ModelPropertiesConfig extends ConfigOverlay<ModelPropertiesConfig> 
       supportsJsonSchemaOutput: this.supportsJsonSchemaOutput,
       supportsNativeWebSearch: this.supportsNativeWebSearch,
       supportsMidConversationSystem: this.supportsMidConversationSystem,
+      displayName: this.displayName,
     });
   }
 }
@@ -286,12 +289,14 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
   readonly enabled?: ModelConfigObject["enabled"];
   readonly properties?: ModelPropertiesConfig | null;
   readonly optionSpecs?: ModelOptionSpecsConfig | null;
+  readonly api?: ModelApiOverrideData | null;
 
   constructor(input: ModelConfigInput = {}) {
     super();
     this.enabled = input.enabled;
     this.properties = input.properties;
     this.optionSpecs = input.optionSpecs;
+    this.api = input.api == null ? input.api : Object.freeze({ ...input.api });
     Object.freeze(this);
   }
 
@@ -310,6 +315,7 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
         config.optionSpecs == null
           ? config.optionSpecs
           : new ModelOptionSpecsConfig(config.optionSpecs),
+      api: config.api,
     });
   }
 
@@ -318,6 +324,7 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
       enabled: this.overlayValue(this.enabled, next.enabled),
       properties: this.overlayConfig(this.properties, next.properties),
       optionSpecs: this.overlayConfig(this.optionSpecs, next.optionSpecs),
+      api: this.overlayValue(this.api, next.api),
     });
   }
 
@@ -330,6 +337,7 @@ export class ModelConfig extends ConfigOverlay<ModelConfig> {
       enabled: this.enabled,
       properties: this.properties?.toJSON() ?? this.properties,
       optionSpecs: this.optionSpecs?.toJSON() ?? this.optionSpecs,
+      api: this.api,
     });
   }
 }
@@ -420,6 +428,19 @@ export class ModelConfigRules {
       result = result.overlay(rule.config);
     }
     return result;
+  }
+
+  /** Resolve API-specific recommendations after the model's route has been selected. */
+  resolveForModelApi(input: ModelConfigRuleResolutionInput): ModelConfig {
+    const initial = this.resolve(input);
+    if (!initial.api) return initial;
+    const resolved = this.resolve({
+      ...input,
+      apiType: initial.api.type,
+      baseUrl: initial.api.baseUrl,
+    });
+    // Preserve the selected route when API-specific recommendation rules overlay other fields.
+    return resolved.overlay(new ModelConfig({ api: initial.api }));
   }
 
   setExact(

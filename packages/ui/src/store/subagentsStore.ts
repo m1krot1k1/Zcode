@@ -1,8 +1,10 @@
+import { useMemo } from "react";
 import { create } from "zustand";
 import {
   normalizeAgentProviderToZCodeAgent,
   ZCODE_AGENT_PROVIDER,
   type ZCodeProvider,
+  type ZCodeUsage,
   type AgentSummary,
   type AgentsCapability,
   type SubAgentConfig,
@@ -398,4 +400,159 @@ export async function refreshLoadedSubagentsStoreForWorkspace(params: {
     );
   }
   await Promise.all(refreshes);
+}
+
+/**
+ * Live own-usage субагента для UI. Ключ — child session id; значения приходят из
+ * telemetry supervisor на каждый `usage.delta`, поэтому строка агента обновляется
+ * в реальном времени, не дожидаясь terminal-события projection.
+ */
+export interface LiveSubagentUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+}
+
+interface SubagentUsageStoreState {
+  byChildSessionId: Record<string, LiveSubagentUsage>;
+  /** Usage завершённых детей: остаётся для subtree-агрегации после terminal. */
+  completedByChildSessionId: Record<string, LiveSubagentUsage>;
+  /** child session → parent child session; у корня parent отсутствует. */
+  parentByChildSessionId: Record<string, string>;
+  setUsage: (childSessionId: string, usage: LiveSubagentUsage, parentSessionId?: string) => void;
+  completeUsage: (childSessionId: string) => void;
+  clearUsage: (childSessionId: string) => void;
+  clearAll: () => void;
+}
+
+export function toLiveSubagentUsage(usage: ZCodeUsage): LiveSubagentUsage {
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    cacheReadTokens: usage.cachedInputTokens ?? 0,
+    cacheWriteTokens: usage.cachedWriteInputTokens ?? 0,
+    reasoningTokens: usage.reasoningTokens ?? 0,
+  };
+}
+
+const emptyLiveUsage: LiveSubagentUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  reasoningTokens: 0,
+};
+
+export const useSubagentUsageStore = create<SubagentUsageStoreState>((set) => ({
+  byChildSessionId: {},
+  completedByChildSessionId: {},
+  parentByChildSessionId: {},
+  setUsage: (childSessionId, usage, parentSessionId) =>
+    set((state) => {
+      // Повторный usage означает новый run того же child: завершённый снимок больше не актуален.
+      const completedByChildSessionId = { ...state.completedByChildSessionId };
+      delete completedByChildSessionId[childSessionId];
+      return {
+        byChildSessionId: { ...state.byChildSessionId, [childSessionId]: usage },
+        completedByChildSessionId,
+        parentByChildSessionId: parentSessionId
+          ? { ...state.parentByChildSessionId, [childSessionId]: parentSessionId }
+          : state.parentByChildSessionId,
+      };
+    }),
+  completeUsage: (childSessionId) =>
+    set((state) => {
+      const usage = state.byChildSessionId[childSessionId];
+      if (!usage) return state;
+      const byChildSessionId = { ...state.byChildSessionId };
+      delete byChildSessionId[childSessionId];
+      return {
+        byChildSessionId,
+        completedByChildSessionId: {
+          ...state.completedByChildSessionId,
+          [childSessionId]: usage,
+        },
+      };
+    }),
+  clearUsage: (childSessionId) =>
+    set((state) => {
+      if (!(childSessionId in state.byChildSessionId)) return state;
+      const byChildSessionId = { ...state.byChildSessionId };
+      delete byChildSessionId[childSessionId];
+      return { byChildSessionId };
+    }),
+  clearAll: () =>
+    set({
+      byChildSessionId: {},
+      completedByChildSessionId: {},
+      parentByChildSessionId: {},
+    }),
+}));
+
+export function sumLiveSubtreeUsage(
+  state: Pick<
+    SubagentUsageStoreState,
+    "byChildSessionId" | "completedByChildSessionId" | "parentByChildSessionId"
+  >,
+  childSessionId: string | undefined,
+): LiveSubagentUsage | undefined {
+  if (!childSessionId) return undefined;
+  const childrenByParent = new Map<string, string[]>();
+  for (const [child, parent] of Object.entries(state.parentByChildSessionId)) {
+    const children = childrenByParent.get(parent) ?? [];
+    children.push(child);
+    childrenByParent.set(parent, children);
+  }
+  let total: LiveSubagentUsage | undefined;
+  const visit = (sessionId: string): void => {
+    const usage = state.byChildSessionId[sessionId] ?? state.completedByChildSessionId[sessionId];
+    if (usage) {
+      total ??= { ...emptyLiveUsage };
+      total.inputTokens += usage.inputTokens;
+      total.outputTokens += usage.outputTokens;
+      total.totalTokens += usage.totalTokens;
+      total.cacheReadTokens += usage.cacheReadTokens;
+      total.cacheWriteTokens += usage.cacheWriteTokens;
+      total.reasoningTokens += usage.reasoningTokens;
+    }
+    for (const child of childrenByParent.get(sessionId) ?? []) visit(child);
+  };
+  visit(childSessionId);
+  return total;
+}
+
+export function useLiveSubagentUsage(
+  childSessionId: string | undefined,
+): LiveSubagentUsage | undefined {
+  return useSubagentUsageStore((state) =>
+    childSessionId ? state.byChildSessionId[childSessionId] : undefined,
+  );
+}
+
+/**
+ * Живая сумма usage по всему поддереву агента, включая завершённых детей.
+ * Нужна строке родителя (`start`/`orchestrator`): own-счётчик не отражает
+ * расход запущенных им агентов до terminal-проекции.
+ */
+export function useLiveSubtreeUsage(
+  childSessionId: string | undefined,
+): LiveSubagentUsage | undefined {
+  const byChildSessionId = useSubagentUsageStore((state) => state.byChildSessionId);
+  const completedByChildSessionId = useSubagentUsageStore(
+    (state) => state.completedByChildSessionId,
+  );
+  const parentByChildSessionId = useSubagentUsageStore((state) => state.parentByChildSessionId);
+  return useMemo(
+    () =>
+      sumLiveSubtreeUsage(
+        { byChildSessionId, completedByChildSessionId, parentByChildSessionId },
+        childSessionId,
+      ),
+    [byChildSessionId, completedByChildSessionId, parentByChildSessionId, childSessionId],
+  );
 }

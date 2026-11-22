@@ -68,6 +68,11 @@ interface WorkflowConcurrencyGovernor extends WorkflowConcurrencyPort {
    * 且喂信号（它的请求 provider 同样看得见）。主代理的 turn 永不被 workflow 流量阻塞。
    */
   observer(): ModelRequestAdmission;
+  /**
+   * Low-priority admission for autocomplete/proactive/title/memory. It never starts
+   * while the main agent has an in-flight attempt, and caps background concurrency.
+   */
+  background(): ModelRequestAdmission;
   /** 控制器只读快照；没有这个 key 的桶时为 undefined。 */
   snapshot(key: string): ConcurrencyControllerSnapshot | undefined;
 }
@@ -75,6 +80,8 @@ interface WorkflowConcurrencyGovernor extends WorkflowConcurrencyPort {
 interface WorkflowConcurrencyGovernorOptions {
   /** 默认并发 D：桶创建时的初值与空闲重置的落点；自动增长到 `2 × D`。进程启动时算一次。 */
   defaultConcurrency: number;
+  /** Background model calls allowed at once. Default 1. */
+  backgroundConcurrency?: number;
   /** 时钟（可注入）。 */
   now?: () => number;
   /** 定时器（可注入）：冷却到期唤醒等待者。返回取消函数。 */
@@ -139,6 +146,56 @@ export function createWorkflowConcurrencyGovernor(
   const baseGrowthLimit = WORKFLOW_CONCURRENCY_AUTO_GROWTH_FACTOR * options.defaultConcurrency;
   /** 在飞 run 登记的自有上界（setRunBound / clearRunBound）。 */
   const runBounds = new Map<string, number>();
+
+  // Background model calls (autocomplete/proactive/title/memory) wait while the
+  // main agent has an in-flight attempt. They are deliberately not tied to a
+  // workflow bucket: the goal is isolation from the main turn, not competing for
+  // workflow fan-out capacity.
+  const backgroundLimit = Math.max(1, options.backgroundConcurrency ?? 1);
+  let mainInFlight = 0;
+  let backgroundInFlight = 0;
+  interface BackgroundWaiter {
+    resolve: (ticket: ModelRequestAdmissionTicket) => void;
+    reject: (reason: unknown) => void;
+    signal: AbortSignal;
+    onAbort: () => void;
+  }
+  const backgroundWaiters: BackgroundWaiter[] = [];
+
+  const removeBackgroundWaiter = (waiter: BackgroundWaiter): void => {
+    const index = backgroundWaiters.indexOf(waiter);
+    if (index >= 0) backgroundWaiters.splice(index, 1);
+    waiter.signal.removeEventListener("abort", waiter.onAbort);
+  };
+
+  const mintBackgroundTicket = (): ModelRequestAdmissionTicket => {
+    backgroundInFlight += 1;
+    let released = false;
+    return {
+      publish() {
+        // Background admission only gates concurrency; provider retry/backoff
+        // signals remain the runner's responsibility.
+      },
+      release() {
+        if (released) return;
+        released = true;
+        backgroundInFlight = Math.max(0, backgroundInFlight - 1);
+        drainBackground();
+      },
+    };
+  };
+
+  const drainBackground = (): void => {
+    while (
+      mainInFlight === 0 &&
+      backgroundInFlight < backgroundLimit &&
+      backgroundWaiters.length > 0
+    ) {
+      const waiter = backgroundWaiters.shift()!;
+      waiter.signal.removeEventListener("abort", waiter.onAbort);
+      waiter.resolve(mintBackgroundTicket());
+    }
+  };
 
   const bucketFor = (key: string): Bucket => {
     let bucket = buckets.get(key);
@@ -409,12 +466,59 @@ export function createWorkflowConcurrencyGovernor(
     }
   };
 
+  const wrapMainTicket = (ticket: ModelRequestAdmissionTicket): ModelRequestAdmissionTicket => {
+    mainInFlight += 1;
+    let released = false;
+    return {
+      publish(event) {
+        ticket.publish(event);
+      },
+      release() {
+        ticket.release();
+        if (released) return;
+        released = true;
+        mainInFlight = Math.max(0, mainInFlight - 1);
+        drainBackground();
+      },
+    };
+  };
+
   // 不排队、不看冷却（决策 37/47）；observe 在 grant 里。快路径总命中，所以 runner 永远不会为主代理
   // 的请求发 queued / admitted（决策 44）。
   const observerAdmission: ModelRequestAdmission = {
-    tryAcquire: ({ model }) => grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID),
+    tryAcquire: ({ model }) =>
+      wrapMainTicket(grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID)),
     acquire: ({ model }) =>
-      Promise.resolve(grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID)),
+      Promise.resolve(
+        wrapMainTicket(grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID)),
+      ),
+  };
+
+  const backgroundAdmission: ModelRequestAdmission = {
+    tryAcquire: () => {
+      if (mainInFlight > 0 || backgroundInFlight >= backgroundLimit) return undefined;
+      return mintBackgroundTicket();
+    },
+    acquire: ({ signal }) => {
+      if (signal?.aborted) return Promise.reject(signal.reason);
+      if (mainInFlight === 0 && backgroundInFlight < backgroundLimit) {
+        return Promise.resolve(mintBackgroundTicket());
+      }
+      return new Promise<ModelRequestAdmissionTicket>((resolve, reject) => {
+        const waiter: BackgroundWaiter = {
+          resolve,
+          reject,
+          signal: signal ?? new AbortController().signal,
+          onAbort: () => {
+            removeBackgroundWaiter(waiter);
+            reject(signal?.reason);
+          },
+        };
+        backgroundWaiters.push(waiter);
+        waiter.signal.addEventListener("abort", waiter.onAbort, { once: true });
+        drainBackground();
+      });
+    },
   };
 
   return {
@@ -424,6 +528,7 @@ export function createWorkflowConcurrencyGovernor(
     setRunBound,
     clearRunBound,
     observer: () => observerAdmission,
+    background: () => backgroundAdmission,
     snapshot(key) {
       return buckets.get(key)?.controller.snapshot();
     },

@@ -26,8 +26,18 @@ describe("Rewards embedded contract", () => {
     expect(buildRewardsUrl("https://zcode.z.ai", "zh-CN", "zai-light")).toBe(
       "https://zcode.z.ai/cn/rewards?embedded=app&theme=zai-light",
     );
-    expect(buildRewardsUrl("https://zcode.z.ai", "en-US", "zai-dark")).toContain(
-      "/en/rewards?",
+    expect(buildRewardsUrl("https://zcode.z.ai", "en-US", "zai-dark")).toContain("/en/rewards?");
+  });
+  it("offline Preview disables Rewards and never resolves to the public ZCode site", () => {
+    const offlinePreview = { offlinePreview: true };
+    expect(resolveRewardsOrigin({ env: "production", ...offlinePreview })).toBe(
+      "http://127.0.0.1:0",
+    );
+    expect(isTrustedRewardsUrl("http://127.0.0.1:0/en/rewards?embedded=app", offlinePreview)).toBe(
+      true,
+    );
+    expect(isTrustedRewardsUrl("https://zcode.z.ai/en/rewards?embedded=app", offlinePreview)).toBe(
+      false,
     );
   });
   it("本地网页必须显式覆盖且仅开发模式允许", () => {

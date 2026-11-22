@@ -100,9 +100,28 @@ export function getSessionModelSelection(this: AgentRuntimeInternal): ModelSelec
 export function setSessionModelSelection(
   this: AgentRuntimeInternal,
   selection: ModelSelection | undefined,
+  options?: { reasoningLevelExplicit?: boolean },
 ): void {
+  const previous = this.sessionModelSelection;
   // 恢复/配置刷新可以清除失效选择；未绑定不应借用默认模型，也不影响正在执行的 Active Model。
   this.sessionModelSelection = selection && cloneModelSelection(selection);
+  // Явность — отдельное состояние, иначе persisted default `max` навсегда выключает auto.
+  // Internal callers (submission admission, off-peak, resume) передают флаг явно; внешние
+  // setter-вызовы bootstrap — это `/effort`/`/model`, где level уже выбран пользователем.
+  if (options?.reasoningLevelExplicit !== undefined) {
+    this.reasoningLevelExplicit = options.reasoningLevelExplicit;
+    return;
+  }
+  if (!selection) {
+    this.reasoningLevelExplicit = false;
+    return;
+  }
+  const modelChanged =
+    !previous ||
+    previous.providerId !== selection.providerId ||
+    previous.modelId !== selection.modelId;
+  // Смена модели приносит default/resolved level новой модели — это не пользовательский пин.
+  this.reasoningLevelExplicit = !modelChanged && selection.options?.reasoningLevel !== undefined;
 }
 
 export function getProjectId(this: AgentRuntimeInternal): ProjectId {
@@ -146,12 +165,46 @@ export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolCo
         !model ||
         resolveToolSearchMode(model, this.config.toolSearch?.mode) !== "off",
     )
-    .filter((tool) => tool.name !== "WebSearch" || shouldExposeWebSearch.call(this, model))
+    .filter(
+      (tool) =>
+        tool.name !== "WebSearch" ||
+        // 无 Model 只枚举完整注册表（供 registry inventory / 能力清单使用）；能力事实必须由
+        // 调用方传入 Active Model。展示/持久化元数据请走 getMetadataTools。
+        model === undefined ||
+        modelSupportsNativeWebSearch(model),
+    )
     .map((tool) =>
       projectToolModelContract(tool, this.registry.get(tool.name), {
         model,
       }),
     );
+}
+
+/**
+ * 非 provider-visible 的工具元数据枚举（持久化 tools 映射、swarm planner、UI / 子代理能力清单）。
+ *
+ * 与 {@link getTools} 共用同一份缓存注册表和模型投影，唯一差别是条件工具 WebSearch：
+ * 没有 Active Model 时无法证明模型支持原生检索，元数据必须按「不可用」处理，不能把完整
+ * 注册表当成能力事实。持有本轮/子会话 Model 的调用方必须传入，过滤结果与 provider-visible
+ * 路径保持一致（supportsNativeWebSearch === true 才出现）。
+ */
+export function getMetadataTools(
+  this: AgentRuntimeInternal,
+  model?: Model,
+): ModelToolContract[] {
+  // 走 runtime 的公开 getTools 方法而不是直接调用实现：局部 runtime 桩/子类覆盖仍是唯一入口，
+  // 元数据与 provider-visible 不会各自维护一套 registry 过滤。
+  return this.getTools(model).filter(
+    (tool) => tool.name !== "WebSearch" || modelSupportsNativeWebSearch(model),
+  );
+}
+
+/**
+ * WebSearch 的唯一能力判据：只有明确的 supportsNativeWebSearch === true 才算可用。
+ * 缺席 Model 代表「未知」，绝不能推断为可用。
+ */
+export function modelSupportsNativeWebSearch(model: Model | undefined): boolean {
+  return model?.properties.supportsNativeWebSearch === true;
 }
 
 export function invalidateToolCache(this: AgentRuntimeInternal): void {
@@ -286,10 +339,4 @@ function filterRuntimeVisibleTools(
   return orderProviderVisibleToolContracts(visibleTools);
 }
 
-function shouldExposeWebSearch(this: AgentRuntimeInternal, model?: Model): boolean {
-  // 无 Model 的调用只枚举完整注册表，供持久化和 UI 元数据使用；真实执行始终传入
-  // 当前 Active Model，并只读取其冻结的完整能力事实。
-  if (!model) return true;
-  return model.properties.supportsNativeWebSearch;
-}
 import { resolveExecutionState } from "@zcode/shared";

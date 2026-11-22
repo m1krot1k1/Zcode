@@ -7,6 +7,7 @@ import {
   type ClipboardEvent as ReactClipboardEvent,
 } from "react";
 import {
+  toLegacyBilingualLocale,
   type FeedbackTicketModule,
   type FeedbackTicketSeverity,
   type FeedbackTicketType,
@@ -53,7 +54,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 
-export { SubmitProgressView } from "@/feedback/FeedbackSubmitProgressView.js";
+
 export { readCurrentAgentModelContext } from "@/feedback/feedbackSubmitModelContext.js";
 
 const DESCRIPTION_MAX = 4000;
@@ -266,7 +267,7 @@ export function FeedbackSubmitForm({
         ticketSeverity,
         ticketModule,
         modelContext,
-        locale,
+        locale: toLegacyBilingualLocale(locale),
         copy: submissionCopy,
         formatMessage: intl.formatMessage,
         onTicketCreated: shouldCloseOnTicketCreated

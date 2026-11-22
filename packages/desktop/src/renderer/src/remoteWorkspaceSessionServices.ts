@@ -7,6 +7,9 @@ export function buildRemoteWorkspaceSessionServices(
 ): IServiceAccessor {
   return {
     ...baseServices,
+    // Legacy attached remotes share the Desktop Host and cannot pass remote cwd into its CLI.
+    // Identified Source Server workspaces bypass this merge and use the server-owned ACP service.
+    openCodeAcpRuntime: undefined,
     fileService: remoteServices.fileService,
     // 根因：遗漏此覆盖会用本机输出根目录校验远端 HTML，合法文件也被判越界。
     // 文件读取走执行端；useGenUi 的状态与沙箱仍取 desktop base services。

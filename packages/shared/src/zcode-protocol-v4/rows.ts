@@ -8,10 +8,7 @@ import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { timestampSchema } from "./core.js";
 import { conversationInputSourceSchema } from "./input-intent.js";
-import {
-  backgroundResultOriginMetaSchema,
-  workflowLaunchMetaSchema,
-} from "./workflow-row-meta.js";
+import { backgroundResultOriginMetaSchema, workflowLaunchMetaSchema } from "./workflow-row-meta.js";
 import { attachmentRefSchema } from "./attachment-ref.js";
 
 // RowBase。rowId：session 内单调、永不复用、事件日志的确定性纯函数。
@@ -85,6 +82,12 @@ export const turnHeaderRowSchema = z.object({
   sourceCommandId: z.string().optional(),
   historyRoundCount: z.number().int().nonnegative().optional(),
   state: z.enum(["running", "completedSuccess", "completedInterrupted", "failed"]),
+  // 中断原因：只解释 completedInterrupted，不新增 state 枚举值。
+  // 必须 optional：旧桌面按闭集 parse，新增枚举值会让整行被丢弃（见上方 origin 注释）；
+  // optional 字段在旧桌面被忽略，旧数据缺该字段时 UI 回落到 chat.history.stopped。
+  interruptReason: z.enum(["user", "error", "budget", "preempted"]).optional(),
+  // 中断细节（错误摘要，已截断且不含堆栈/凭据）；仅 interruptReason === "error" 时展示。
+  interruptDetail: z.string().max(240).optional(),
   startedAt: timestampSchema,
   endedAt: timestampSchema.optional(),
   // 权威工时：排除权限等待/用户输入等待/verifier 等待。
@@ -271,14 +274,101 @@ export const subagentRowSchema = z.object({
   subagentType: z.string(),
   status: z.enum(["running", "success", "failed", "cancelled"]),
   summaryText: z.string(),
+  /** Effective reasoning level of the child run, when the model supports levels. */
+  reasoningLevel: z.string().optional(),
   // 存在 → UI 可下钻订阅 conversation/<childSessionId>（不内嵌 child rows）。
   childSessionId: z.string().optional(),
   backgrounded: z.literal(true).optional(),
   workId: z.string().optional(),
   startedAt: timestampSchema.optional(),
   endedAt: timestampSchema.optional(),
+  /** Итоговый расход токенов run-а, когда runtime его сообщил. */
+  totalTokens: z.number().int().nonnegative().optional(),
+  /** Итоговая длительность run-а, когда runtime её сообщил. */
+  totalDurationMs: z.number().int().nonnegative().optional(),
+  /** Own + все потомки; отсутствует, если runtime не сообщил aggregate. */
+  subtreeTotalTokens: z.number().int().nonnegative().optional(),
+  /** Own usage breakdown (без потомков), когда runtime его сообщил. */
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  cacheReadTokens: z.number().int().nonnegative().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
+  reasoningTokens: z.number().int().nonnegative().optional(),
+  subtreeTotalDurationMs: z.number().int().nonnegative().optional(),
+  subtreeToolUseCount: z.number().int().nonnegative().optional(),
 });
 export type SubagentRow = z.infer<typeof subagentRowSchema>;
+
+/** Core-owned swarm lifecycle; the row is an event-derived summary, not a provider tool call. */
+export const swarmRunRowSchema = z.object({
+  ...rowBaseFields,
+  kind: z.literal("swarmRun"),
+  swarmRunId: z.string().min(1),
+  status: z.enum(["planning", "running", "completed", "failed", "cancelled"]),
+  outcomeAcceptance: z.enum(["unknown", "verified", "rejected"]).optional(),
+  taskCount: z.number().int().nonnegative().optional(),
+  childSessionIds: z.array(z.string().min(1)).max(128).optional(),
+  childAgentTypes: z
+    .record(z.string().min(1), z.string().min(1).max(80))
+    .refine((types) => Object.keys(types).length <= 128)
+    .optional(),
+  // Keep provider/task output out of the timeline contract; this is a short bounded summary only.
+  summary: z.string().max(500).optional(),
+});
+export type SwarmRunRow = z.infer<typeof swarmRunRowSchema>;
+
+/** A separately owned CLI agent run; its content is not a ZCode assistant/tool turn. */
+export const externalAgentRunRowSchema = z.object({
+  ...rowBaseFields,
+  kind: z.literal("externalAgentRun"),
+  runId: z.string().min(1),
+  /** Exact accepted command identity for row-scoped lifecycle controls (for example Stop). */
+  commandId: z.string().min(1),
+  provider: z.literal("opencode-cli"),
+  modelId: z.string().optional(),
+  promptText: z.string().max(64 * 1024),
+  output: z.object({ text: z.string().max(32 * 1024) }),
+  tools: z
+    .array(
+      z.object({
+        toolCallId: z.string().min(1),
+        title: z.string().max(256),
+        status: z.string().max(64),
+      }),
+    )
+    .max(64),
+  /** Live-only explicit ACP permissions; absent from cold hydration and never persisted. */
+  pendingPermissions: z
+    .array(
+      z
+        .object({
+          requestId: z.string().min(1),
+          opencodeSessionId: z.string().min(1),
+          title: z.string().max(256),
+          inputSummary: z.string().max(2048).optional(),
+          options: z
+            .array(
+              z.object({
+                optionId: z.string().min(1).max(256),
+                name: z.string().max(256),
+                kind: z.string().max(64),
+              }),
+            )
+            .max(32),
+        })
+        .strict(),
+    )
+    .max(32)
+    .optional(),
+  status: z.enum(["starting", "running", "completed", "cancelled", "failed", "interrupted"]),
+  startedAt: timestampSchema.optional(),
+  endedAt: timestampSchema.optional(),
+  diagnosticCode: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]{0,63}$/)
+    .optional(),
+});
+export type ExternalAgentRunRow = z.infer<typeof externalAgentRunRowSchema>;
 
 // Hook runtime descriptor 只用于 CLI event/projection 输入兼容。对话 wire row 使用下方
 // client-safe summary，不携带命令、绝对路径、stdin/stdout/stderr/tool input 或环境变量。
@@ -369,6 +459,8 @@ export const timelineMarkerPayloadSchema = z.union([
     type: z.literal("modelChange"),
     fromProvider: z.string(),
     fromModel: z.string(),
+    /** Prior effective level; absent in old persisted markers. */
+    fromThought: z.string().optional(),
     toProvider: z.string(),
     toModel: z.string(),
     toThought: z.string(),
@@ -440,6 +532,8 @@ export const conversationRowSchema = z.discriminatedUnion("kind", [
   toolCallRowSchema,
   artifactRowSchema,
   subagentRowSchema,
+  swarmRunRowSchema,
+  externalAgentRunRowSchema,
   hookInvocationRowSchema,
   timelineMarkerRowSchema,
 ]);

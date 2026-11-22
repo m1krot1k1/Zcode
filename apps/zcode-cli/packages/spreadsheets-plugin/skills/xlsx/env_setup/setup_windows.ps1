@@ -22,6 +22,7 @@ function Write-Info  { param($msg) Write-Host "  [->] $msg" -ForegroundColor Cya
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $XLSX_SKILL_DIR = Split-Path -Parent $ScriptDir
 $env:XLSX_SKILL_DIR = $XLSX_SKILL_DIR
+. (Join-Path $ScriptDir "soffice_discovery.ps1")
 
 Write-Host "============================================"
 Write-Host "  XLSX Skill - Environment Setup"
@@ -136,11 +137,9 @@ Write-Host ""
 
 # ── Step 2c: LibreOffice (install-on-demand, NOT substitutable) ──
 Write-Host "--- [3/5] LibreOffice (format conversion + formula recalc) ---"
-$SofficePath = "C:\Program Files\LibreOffice\program\soffice.exe"
-if (Test-Path $SofficePath) {
-    Write-Ok "libreoffice found"
-} elseif (Get-Command soffice -ErrorAction SilentlyContinue) {
-    Write-Ok "libreoffice (in PATH)"
+$SofficePath = Find-SofficeExecutable
+if ($SofficePath) {
+    Write-Ok "libreoffice found at $SofficePath"
 } else {
     Write-Warn "libreoffice not installed - REQUIRED for recalc, .xlsx -> PDF, .csv -> .xlsx"
     Write-Info "You MUST install it. FORBIDDEN: using Excel/WPS/Numbers instead of installing,"
@@ -155,12 +154,8 @@ if (Test-Path $SofficePath) {
     Write-Info "FALLBACK (only if the mirror is unreachable):"
     Write-Info "  winget install TheDocumentFoundation.LibreOffice"
     Write-Info "  or: https://www.libreoffice.org/download/"
-    Write-Info "AFTER installing, REGISTER it on PATH (Windows method - differs per OS):"
-    Write-Info '  setx PATH "$([Environment]::GetEnvironmentVariable(''PATH'',''User''));C:\Program Files\LibreOffice\program"'
-    Write-Info "  setx affects NEW shells only - for this session use the full soffice.exe path."
-    Write-Info '  then re-verify: & "C:\Program Files\LibreOffice\program\soffice.exe" --version'
-    Write-Info "An install left off PATH looks 'not installed' next run and gets reinstalled"
-    Write-Info "needlessly. If soffice already exists on disk but is off PATH, just register it."
+    Write-Info "AFTER installing to a custom folder, add the folder containing soffice.exe to your user PATH."
+    Write-Info "Open a new shell, then verify with: (Get-Command soffice.exe).Source --version"
     Write-Info "Another program is allowed ONLY after an install attempt has FAILED. Report it."
     Write-Info "No install attempt = no substitute program."
 }

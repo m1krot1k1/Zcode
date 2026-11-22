@@ -184,11 +184,12 @@ fork 路径例外：fork child 使用父 agent 的精确 tool array，同时继�
 8. 组装 worker tool pool。
 9. 如需要，创建 worktree 并让后续执行在该 cwd 下运行。
 10. 创建子执行上下文并运行 child query loop。
-11. 外层 runner 必须同时监听父级 abort signal，并维护 foreground child activity watchdog。
-    watchdog 默认复用模型流 idle timeout 窗口，并在 child session event 上重置；如果 child
-    promise 在静默窗口后仍无响应，应以 `ToolTimeout` 结束并写入 `SubagentStopped`。如果父级
-    abort 后 child promise 不 settle，应以 `ToolCancelled` 结束，避免 foreground `Agent` 长期
-    停在 running。
+11. 外层 runner 必须同时监听父级 abort signal，并可维护 foreground child activity watchdog。
+    watchdog 是 opt-in：只有显式设置 `subagents.inactivityTimeoutMs`（正数）时才启用，缺省或
+    `0` 表示无 watchdog，child 一直运行到完成或 Stop。启用后计时器在 child session event 上
+    重置；如果 child promise 在静默窗口后仍无响应，应以 `ToolTimeout` 结束并写入
+    `SubagentStopped`。如果父级 abort 后 child promise 不 settle，应以 `ToolCancelled` 结束，
+    避免 foreground `Agent` 长期停在 running。
 12. 收集子 agent messages，转发 tool progress、bash/powershell progress、token metrics。
 13. 结束时提取最后 assistant text、usage 和 tool use 总数。
 14. 如 auto mode classifier 开启，对 subagent handoff 做安全复核。

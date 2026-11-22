@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- 侧栏 Tab trigger 集中维护拖拽、上下文菜单与各类图标；本次只增加 Browser 驻留态测试属性，不为行数拆散既有交互。 */
 import { useRef, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -343,6 +342,9 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
   if (tab.type === "developer-tools") {
     return <BugIcon className="size-3.5" />;
   }
+  if (tab.type === "agent-workbench") {
+    return <WorkflowIcon className="size-3.5" />;
+  }
 
   if (tab.type === "terminal" || tab.type === "bash-output") {
     return <SquareTerminalIcon className="size-3.5" />;
@@ -557,6 +559,9 @@ export function getSidePaneTabTitle(
 
   if (tab.type === "developer-tools") {
     return formatMessage({ id: "developerTools.title" });
+  }
+  if (tab.type === "agent-workbench") {
+    return formatMessage({ id: "agentWorkbench.title" });
   }
 
   if (tab.type === "terminal" || tab.type === "bash-output") {

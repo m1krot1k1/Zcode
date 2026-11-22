@@ -83,19 +83,24 @@ describe("desktop E2E build cache", () => {
   });
 
   it("declares every environment variable read by the production build configs", () => {
-    const configPaths = [
+    // 构建期 env 的读取点不止 tsup/vite 两个入口：入口 import 的 helper 模块同样把变量
+    // 编译进 define（产品身份、ARMS/上报/自动更新、内置 Provider 环境）。这些 helper 用
+    // `env[CONST]` 或 `pickValue(env, defaults, "NAME")` 读取，只匹配成员访问的正则扫不到，
+    // 曾让 ZCODE_PREVIEW_IDENTITY 等变量漏出缓存指纹。新增构建期 helper 时必须加入此表。
+    const buildEnvSourcePaths = [
       "packages/desktop/scripts/build-metadata.mjs",
+      "packages/desktop/scripts/desktop-product-identity.mjs",
       "packages/desktop/scripts/run-production-build.mjs",
       "packages/desktop/tsup.config.ts",
       "packages/desktop/vite.config.ts",
+      "scripts/build-time-config.mjs",
+      "scripts/builtin-provider-config.mjs",
     ];
     const referencedEnvNames = new Set<string>();
-    for (const configPath of configPaths) {
-      const source = readFileSync(resolve(process.cwd(), configPath), "utf8");
-      for (const match of source.matchAll(
-        /\b(?:process\.env|env|runtimeEnv)\.([A-Z][A-Z0-9_]*)/gu,
-      )) {
-        referencedEnvNames.add(match[1]);
+    for (const sourcePath of buildEnvSourcePaths) {
+      const source = readFileSync(resolve(process.cwd(), sourcePath), "utf8");
+      for (const envName of collectReferencedEnvNames(source, sourcePath)) {
+        referencedEnvNames.add(envName);
       }
     }
 
@@ -277,6 +282,55 @@ describe("desktop E2E build cache", () => {
     },
   );
 });
+
+const ENV_OBJECT_PATTERN = String.raw`process\.env|env|runtimeEnv`;
+
+/**
+ * 提取构建配置源码里被读取的 env 变量名，覆盖三种真实写法：
+ * 1. `process.env.NAME` / `env.NAME` / `runtimeEnv.NAME`；
+ * 2. `env[CONST]` / `env["NAME"]`，CONST 需在同文件内以字符串字面量声明；
+ * 3. `helper(env, ..., "NAME")`，即把 env 与变量名一起交给解析 helper（build-time-config）。
+ * 小写标识符视为 helper 的通用形参（如 `env[key]`），不当作变量名；大写常量键解析失败时
+ * 直接抛错，避免新增读取点被静默跳过。
+ */
+function collectReferencedEnvNames(source: string, sourcePath: string): string[] {
+  const names = new Set<string>();
+  for (const match of source.matchAll(
+    new RegExp(String.raw`\b(?:${ENV_OBJECT_PATTERN})\.([A-Z][A-Z0-9_]*)`, "gu"),
+  )) {
+    names.add(match[1]);
+  }
+
+  const stringConstants = new Map(
+    [...source.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*"([A-Z][A-Z0-9_]*)"/gu)].map(
+      (match) => [match[1], match[2]] as const,
+    ),
+  );
+  for (const match of source.matchAll(
+    new RegExp(String.raw`\b(?:${ENV_OBJECT_PATTERN})\[\s*"([A-Z][A-Z0-9_]*)"\s*\]`, "gu"),
+  )) {
+    names.add(match[1]);
+  }
+  for (const match of source.matchAll(
+    new RegExp(String.raw`\b(?:${ENV_OBJECT_PATTERN})\[\s*([A-Z][A-Z0-9_]*)\s*\]`, "gu"),
+  )) {
+    const resolved = stringConstants.get(match[1]);
+    if (!resolved) {
+      throw new Error(`${sourcePath}: cannot resolve env key constant ${match[1]}`);
+    }
+    names.add(resolved);
+  }
+
+  for (const match of source.matchAll(
+    new RegExp(
+      String.raw`\b[A-Za-z_$][\w$]*\(\s*(?:${ENV_OBJECT_PATTERN})\b[^()]*?"([A-Z][A-Z0-9_]*)"[^()]*?\)`,
+      "gu",
+    ),
+  )) {
+    names.add(match[1]);
+  }
+  return [...names];
+}
 
 function runBuildCacheWorker() {
   const workerPath = resolve(

@@ -9,10 +9,7 @@ import {
 export {
   buildPromptWithConversationSelections,
   CONVERSATION_SELECTION_MAX_TEXT_LENGTH,
-  CONVERSATION_SELECTION_MAX_COUNT,
-  CONVERSATION_SELECTION_MAX_TOTAL_LENGTH,
-  type ConversationSelectionText,
-} from "@zcode/shared";
+  type ConversationSelectionText} from "@zcode/shared";
 
 export type ConversationSelectionContentType = "user" | "assistant" | "reasoning" | "tool";
 
@@ -51,7 +48,7 @@ interface ConversationSelectionAddEventDetail {
 }
 
 export type ConversationSelectionLimitReason = "count" | "single" | "total";
-export type ConversationSelectionAppendResult =
+type ConversationSelectionAppendResult =
   | {
       ok: true;
       references: readonly ConversationSelectionReference[];
@@ -124,7 +121,7 @@ export function createConversationSelectionReference(
   return { ...input, id: createUuid() };
 }
 
-export function getConversationSelectionDedupeKey(
+function getConversationSelectionDedupeKey(
   reference: ConversationSelectionReference,
 ): string {
   if (reference.contentType === "markdown") {

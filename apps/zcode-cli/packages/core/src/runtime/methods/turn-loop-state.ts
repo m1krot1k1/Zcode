@@ -13,16 +13,20 @@ import type {
   TurnId,
 } from "../deps.js";
 import type { ActiveTurnSteeringState } from "../types.js";
-import type { ModelToolContract, SubagentRunOptions } from "@zcode/contracts";
+import type { ModelToolContract, SubagentRunOptions, PersistedStepDiagnostics } from "@zcode/contracts";
 import type { DrainedPendingInputDiagnostics, ModelExecutionContext } from "../types.js";
 import type { TurnMachineImpl } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
+import type { AgentRuntimeInternal } from "../internal.js";
+import { expandSubagentDispatchDisallowRules } from "../helpers/tool-allowlist.js";
+import { AGENT_TOOL_NAME } from "../../tool/compat.js";
+import { getMetadataTools } from "./config.js";
 
 export type PendingStreamRecoveryRequest = ModelStreamRecoveryStatus;
 
 export const RAPID_REFILL_TOOL_TURN_THRESHOLD = 3;
 export const MAX_CONSECUTIVE_RAPID_REFILLS = 3;
-export const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
+const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
 const AUTOMATION_QUERY_ID_PREFIX = "automation-";
 /**
  * 闲时派发轮隐藏的工具；OffPeakList 只读保留。
@@ -36,6 +40,46 @@ export const OFF_PEAK_MUTATION_TOOL_NAMES = OFF_PEAK_EXECUTION_TOOL_DENYLIST;
 // 闲时派发 init 段 traceId 无固定前缀，只有 resume 段是 `${offPeakTaskId}:resume:*`
 // （offpeak- 开头）；前缀只是 resume 兜底信号，主信号必须是显式 offPeakTaskId。
 const OFF_PEAK_QUERY_ID_PREFIX = "offpeak-";
+
+/**
+ * Swarm planner 的可用工具名（元数据，不进入 provider 请求）。
+ *
+ * planner prompt 不能把完整注册表当成能力事实：必须按本轮 Active Model 过滤条件工具，
+ * 否则不支持原生检索的模型会在规划提示里看到 WebSearch。
+ */
+export function getPlannerToolNames(runtime: AgentRuntimeInternal, model: Model): string[] {
+  return getMetadataTools.call(runtime, model).map((tool) => tool.name);
+}
+
+export function getTurnTools(runtime: AgentRuntimeInternal, state: RegularTurnLoopState) {
+  if (state.automationCreateLimitReached) return [];
+  const disallowed = buildTurnDisallowedTools(state);
+  const subagentsDisabled = runtime.config.subagents?.enabled === false;
+  if (!disallowed && !subagentsDisabled) return runtime.getTools(state.model);
+  const effectiveDisallowed = new Set(disallowed ?? []);
+  if (subagentsDisabled) {
+    // 修复依据：禁用子代理时 Agent 隐藏但别名 Task 仍可能进入模型工具集，导致误触发委派与 agent listing。
+    // 这里同样走 dispatch-пары helper, чтобы список имён не дублировался в третьем месте.
+    for (const toolName of expandSubagentDispatchDisallowRules([AGENT_TOOL_NAME]) ?? []) {
+      effectiveDisallowed.add(toolName);
+    }
+  }
+  const tools = runtime.getTools(state.model);
+  return tools.filter((tool) => !effectiveDisallowed.has(tool.name));
+}
+
+function buildTurnDisallowedTools(state: RegularTurnLoopState): Set<string> | null {
+  // 三个边界 (registration, permission, turn) 共用同一个 helper: `Agent(*)` / `Task`
+  // разворачиваются в пару до сравнения по точному имени; остальные правила не меняются.
+  const tools = new Set(expandSubagentDispatchDisallowRules(state.toolDisallowlist) ?? []);
+  if (isAutomationMutationRestrictedTurn(state)) {
+    for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) tools.add(toolName);
+  }
+  if (isOffPeakCreateRestrictedTurn(state)) {
+    for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) tools.add(toolName);
+  }
+  return tools.size > 0 ? tools : null;
+}
 
 export interface CompactLoopTracking {
   consecutiveRapidRefills: number;
@@ -88,6 +132,11 @@ export interface RegularTurnLoopState {
   /** CronCreate 命中全局上限后，本用户 turn 永久切为纯文本回复，禁止模型自行恢复。 */
   automationCreateLimitReached?: boolean;
   anomalyWarningsInjected: number;
+  /**
+   * Сколько раз за turn уже запускался гейт самовосстановления.
+   * Владелец счётчика — turn loop: без него `enableAutoRepairLoop` не ограничен.
+   */
+  autoRepairGateRuns?: number;
   /** 本轮是否已消费来源为 subagent 的后台结果通知。 */
   backgroundSubagentResultConsumed: boolean;
   /** 本轮是否已消费来源为 workflow（dynamic-workflow run）的后台通知。 */
@@ -112,12 +161,16 @@ export interface RegularTurnLoopState {
   /** Core Server 的前台 child Selection override；优先于 profile 与父模型继承。 */
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   modelStepCount: number;
+  /** Предупреждение о приближении maxTurns инжектится один раз за turn. */
+  maxTurnsWrapUpReminderInjected: boolean;
   /** 当前 query 已成功写入 provider 可见持久历史的 assistant/compact 产物数量。 */
   historyRoundCount: number;
   completedRealToolResultBatch: boolean;
   reactiveCompactAttemptedInCurrentModelStep: boolean;
   repeatedToolCallSignature?: string;
   repeatedToolCallStreakCount: number;
+  consecutiveSchemaFailuresByTool?: Map<string, number>;
+  lastStepDiagnostics?: PersistedStepDiagnostics;
   pendingStreamRecoveryRequest?: PendingStreamRecoveryRequest;
   stopHookContinuationCount: number;
   /** 最终成功 product turn 的 raw transcript 起点；只有确认不再 continue 时才赋值。 */

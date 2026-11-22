@@ -61,7 +61,7 @@ export function buildV4ElicitationProgressKey(request: ZCodeElicitationRequest):
   return `${request.requestId}:${request.currentQuestionIndex ?? 0}:${JSON.stringify(request.answerDrafts ?? {})}`;
 }
 
-export interface InteractionAutoResolutionIntentTracker {
+interface InteractionAutoResolutionIntentTracker {
   markInteracted(interactionId: string): void;
   consumeSnooze(interactionId: string, autoResolutionReady: boolean): boolean;
   releaseSnooze(interactionId: string): void;

@@ -11,6 +11,7 @@ import {
   listE2EProcessTreePids,
   listSystemProcesses,
 } from "./e2e/helpers/e2e-process-cleanup.js";
+import { readWdioConfigSource } from "./e2e/helpers/wdio-config-source.js";
 
 const CURRENT_HOME = "C:\\e2e\\shards\\current";
 const CURRENT_HOME_MARKER = createWindowsE2EHomeMarkerArg(CURRENT_HOME);
@@ -40,7 +41,7 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("passes both run and HOME identity markers through Electron appArgs", () => {
-    const wdioSource = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const wdioSource = readWdioConfigSource();
 
     expect(CURRENT_HOME_MARKER).toBe(`--zcode-e2e-home=${CURRENT_HOME}`);
     expect(wdioSource).toMatch(
@@ -49,7 +50,7 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("stages and launches an immutable app output under the current run cache", () => {
-    const wdioSource = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const wdioSource = readWdioConfigSource();
 
     // Bugfix: dev watcher 会清空共享 out；Electron 必须从 runId 隔离副本启动。
     expect(wdioSource).toMatch(/const E2E_APP_OUTPUT_DIR = resolve\(E2E_RUN_CACHE_DIR, "app"\)/u);
@@ -61,7 +62,7 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("lets ChromeDriver close the renderer before Electron app.quit", () => {
-    const wdioSource = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const wdioSource = readWdioConfigSource();
     const mainSource = readFileSync(new URL("../src/main/index.ts", import.meta.url), "utf8");
 
     expect(wdioSource).toMatch(/appWindow\.once\("closed", requestQuitAfterDriverClose\)/u);
@@ -123,7 +124,10 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("forces the Host to exit after its parent IPC disconnects", () => {
-    const hostSource = readFileSync(new URL("../src/host/index.ts", import.meta.url), "utf8");
+    const hostSource = readFileSync(
+      new URL("../src/host/hostShutdown.ts", import.meta.url),
+      "utf8",
+    );
 
     expect(hostSource).toMatch(
       /process\.once\("disconnect"[\s\S]*?disposeHostResources\("disconnect"\)\.finally\(\(\) => process\.exit\(1\)\)/u,
@@ -131,12 +135,20 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("Host waits for the remote stdio close handshake", () => {
-    const hostSource = readFileSync(new URL("../src/host/index.ts", import.meta.url), "utf8");
-
-    expect(hostSource).toMatch(
-      /async function disposeHostRemoteConnection[\s\S]*?connection\.dispose\(\)[\s\S]*?name: "remote-registry-dispose"[\s\S]*?timeoutMs: 6_000/u,
+    const connectionSource = readFileSync(
+      new URL("../src/host/hostRemoteConnection.ts", import.meta.url),
+      "utf8",
     );
-    expect(hostSource).toContain('name: "source-server-manager-dispose"');
+    const shutdownSource = readFileSync(
+      new URL("../src/host/hostShutdown.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(connectionSource).toMatch(
+      /async function disposeHostRemoteConnection[\s\S]*?connection\.dispose\(\)/u,
+    );
+    expect(shutdownSource).toMatch(/name: "remote-registry-dispose"[\s\S]*?timeoutMs: 6_000/u);
+    expect(shutdownSource).toContain('name: "source-server-manager-dispose"');
   });
 
   it("collects only the current run root and its child process tree", () => {
@@ -310,7 +322,7 @@ describe("desktop e2e process cleanup", () => {
   });
 
   it("uses the entire current run profile root for worker cleanup", () => {
-    const wdioSource = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const wdioSource = readWdioConfigSource();
 
     expect(wdioSource).toMatch(
       /listE2EProcessTreePids\(\{\s*chromiumProfileRootDir: E2E_CHROMIUM_USER_DATA_ROOT_DIR,/u,

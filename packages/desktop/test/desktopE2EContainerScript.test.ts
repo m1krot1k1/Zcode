@@ -78,8 +78,10 @@ describe("desktop E2E container presets", () => {
       "utf-8",
     ).replaceAll("\r\n", "\n");
 
-    expect(dockerPlan).toContain(
-      "| Spec | 迁移状态 |\n| --- | --- |\n<!-- conversation-session-verified-table-end -->",
+    // oxfmt выравнивает разделитель таблицы и может оставить пустую строку перед
+    // маркером; тест проверяет структуру, а не конкретную ширину разделителя.
+    expect(dockerPlan).toMatch(
+      /\| Spec \| 迁移状态 \|\n\|[-\s|]+\|\n\s*<!-- conversation-session-verified-table-end -->/u,
     );
 
     const spec = "./test/e2e/conversation-session/example.test.ts";

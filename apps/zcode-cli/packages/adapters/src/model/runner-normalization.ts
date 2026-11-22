@@ -9,6 +9,7 @@ import type {
   ModelUsage,
 } from "@zcode/contracts";
 import { normalizeModelToolInput } from "./tool-input-normalization.js";
+import { normalizeProviderCacheUsage } from "./cache-control/index.js";
 import type { AiSdkGenerateTextResult } from "./runner-runtime.js";
 import { asRecord, isRecord, numberProperty, stringProperty } from "./runner-record.js";
 import { normalizeModelToolName } from "./tool-call-validation.js";
@@ -20,13 +21,17 @@ export function normalizeUsage(usage?: Partial<LanguageModelUsage>): ModelUsage 
     : undefined;
   const webSearchRequests = numberProperty(rawServerToolUse, "web_search_requests");
   const webFetchRequests = numberProperty(rawServerToolUse, "web_fetch_requests");
+  const cacheUsage = normalizeProviderCacheUsage({
+    inputTokenDetails: usage?.inputTokenDetails,
+    rawUsage,
+  });
 
   return {
     inputTokens: usage?.inputTokens,
     outputTokens: usage?.outputTokens,
     totalTokens: usage?.totalTokens,
-    cacheReadTokens: usage?.inputTokenDetails?.cacheReadTokens,
-    cacheWriteTokens: usage?.inputTokenDetails?.cacheWriteTokens,
+    cacheReadTokens: cacheUsage.cacheReadTokens,
+    cacheWriteTokens: cacheUsage.cacheWriteTokens,
     reasoningTokens: usage?.outputTokenDetails?.reasoningTokens,
     ...(webSearchRequests !== undefined || webFetchRequests !== undefined
       ? {

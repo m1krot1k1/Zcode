@@ -8,11 +8,11 @@ interface ZCodeStdioTapStateFile {
   enabled?: boolean;
 }
 
-export function isZCodeStdioTapDevVisible(): boolean {
+function isZCodeStdioTapDevVisible(): boolean {
   return isEffectiveDevelopmentNodeEnv();
 }
 
-export function getZCodeStdioTapDevDir(): string {
+function getZCodeStdioTapDevDir(): string {
   return join(getAppConfigDir(), "dev");
 }
 
@@ -20,7 +20,7 @@ export function getZCodeStdioTapDevLogDir(): string {
   return join(getZCodeStdioTapDevDir(), "stdio-traffic");
 }
 
-export function getZCodeStdioTapDevStatePath(): string {
+function getZCodeStdioTapDevStatePath(): string {
   return join(getZCodeStdioTapDevDir(), "zcode-stdio-tap.json");
 }
 

@@ -27,4 +27,4 @@ export const NATIVE_HANDLERS = {
   ...highspeedMetricsHandlers,
 } as const;
 
-export type NativeCommandType = keyof typeof NATIVE_HANDLERS;
+type _NativeCommandType = keyof typeof NATIVE_HANDLERS;

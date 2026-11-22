@@ -92,7 +92,9 @@ export function McpServerForm({
   const [form, setForm] = useState<FormState>(initialForm);
   const [jsonDraft, setJsonDraft] = useState<string>(() => formToJsonDraft(initialForm));
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [showEnv, setShowEnv] = useState(false);
+  const [showEnv, setShowEnv] = useState(
+    Boolean(initial?.config.env && Object.keys(initial.config.env).length > 0),
+  );
   const formRef = useRef(form);
   const jsonDraftRef = useRef(jsonDraft);
   const previousEditorModeRef = useRef(editorMode);

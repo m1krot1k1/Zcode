@@ -43,7 +43,10 @@ interface ConcurrentStartupResult {
 }
 
 const CONCURRENT_STARTUP_ATTEMPTS = 5;
-const CONCURRENT_STARTUP_TEST_TIMEOUT_MS = 10_000;
+// 本用例每次 attempt fork 两个 tsx 子进程、各自迁移一份新库，共 5 轮；全包并行运行时
+// CPU 争抢会把隔离约 8s 的执行推过旧的 10s 上限。超时属于排队预算，不是断言失败，
+// 因此放宽执行预算，断言（两个进程都成功、每库 28 条迁移）保持不变。
+const CONCURRENT_STARTUP_TEST_TIMEOUT_MS = 60_000;
 
 function openSessionStoreInConcurrentProcesses(dbPath: string): Promise<ConcurrentStartupResult[]> {
   const workerUrl = new URL("./fixtures/session-store-concurrent-process.ts", import.meta.url);
@@ -638,6 +641,10 @@ describe("SQLite session store", () => {
       "0022_backfilled_session_reasoning",
       "0023_session_soft_delete_outcome",
       "0024_session_database_identity",
+      "0025_opencode_agent_run_outbox",
+      "0026_opencode_host_event_sequence",
+      "0027_opencode_run_activity_snapshot",
+      "0028_swarm_run_journal",
     ];
 
     try {
@@ -674,6 +681,10 @@ describe("SQLite session store", () => {
         "0.16.5",
         "0.16.5",
         "0.16.5",
+        "0.16.9",
+        "0.16.9",
+        "0.16.9",
+        "0.16.9",
         "0.16.9",
         "0.16.9",
       ]);
@@ -713,7 +724,7 @@ describe("SQLite session store", () => {
         ]),
       );
       expect(attempts.flat().filter((result) => !result.ok)).toEqual([]);
-      expect(attempts.flat().every((result) => result.migrationIds?.length === 24)).toBe(true);
+      expect(attempts.flat().every((result) => result.migrationIds?.length === 28)).toBe(true);
     },
     CONCURRENT_STARTUP_TEST_TIMEOUT_MS,
   );
@@ -940,6 +951,10 @@ describe("SQLite session store", () => {
         "0022_backfilled_session_reasoning",
         "0023_session_soft_delete_outcome",
         "0024_session_database_identity",
+        "0025_opencode_agent_run_outbox",
+        "0026_opencode_host_event_sequence",
+        "0027_opencode_run_activity_snapshot",
+        "0028_swarm_run_journal",
       ]);
       store.close();
     } finally {
@@ -1114,6 +1129,22 @@ describe("SQLite session store", () => {
           providerId: "zai",
         },
       });
+      await store.saveSessionEntry({
+        id: "runtime-task-terminal:task-1:attempt-1",
+        sessionID,
+        type: "runtime/task_terminal",
+        touchSession: false,
+        time: { created: entryOnlyTimestamp, updated: entryOnlyTimestamp },
+        data: { terminal: { taskId: "task-1" } },
+      });
+      await store.saveSessionEntry({
+        id: "runtime-task-terminal:task-2:attempt-1",
+        sessionID,
+        type: "runtime/task_terminal",
+        touchSession: false,
+        time: { created: entryOnlyTimestamp + 1, updated: entryOnlyTimestamp + 1 },
+        data: { terminal: { taskId: "task-2" } },
+      });
 
       await expect(
         store.sessionEntries({
@@ -1148,9 +1179,34 @@ describe("SQLite session store", () => {
           time: { created: entryOnlyTimestamp - 1, updated: entryOnlyTimestamp },
         },
       ]);
+      await expect(
+        store.sessionEntries({
+          sessionID,
+          type: SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
+          limit: 1,
+          order: "desc",
+        }),
+      ).resolves.toMatchObject([{ id: "entry_later" }]);
+      await expect(
+        store.sessionEntries({
+          sessionID,
+          type: SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
+          maxDataBytes: 1,
+        }),
+      ).resolves.toEqual([]);
+      await expect(store.sessionEntries({ sessionID, limit: 0 })).rejects.toThrow(
+        "Session entry limit must be a positive safe integer",
+      );
       await expect(store.getSession(sessionID)).resolves.toMatchObject({
         time: { updated: defaultTouchTimestamp },
       });
+      await expect(
+        store.sessionEntries({
+          sessionID,
+          type: "runtime/task_terminal",
+          idPrefix: "runtime-task-terminal:task-1:",
+        }),
+      ).resolves.toMatchObject([{ id: "runtime-task-terminal:task-1:attempt-1" }]);
     } finally {
       store?.close();
       await rm(tempRoot, { force: true, recursive: true });
@@ -3262,6 +3318,876 @@ describe("session input ledger (0016)", () => {
         (record) => record.id === "wake-1",
       );
       expect(wake).toMatchObject({ status: "promoted", promotedSequence: 1 });
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("OpenCode delegated run outbox", () => {
+  async function seedStore(label: string) {
+    const tempRoot = await mkdtemp(join(tmpdir(), `zcode-opencode-run-${label}-`));
+    const dbPath = join(tempRoot, "session.sqlite");
+    const store = await createSqliteSessionStore({ dbPath });
+    const sessionID = createSessionId(`opencode-run-${label}`);
+    await store.createSession({
+      id: sessionID,
+      projectID: createProjectId(`opencode-run-${label}`),
+      slug: `opencode-run-${label}`,
+      directory: tempRoot,
+      title: "OpenCode run",
+      version: "0.1.0",
+    });
+    return { tempRoot, dbPath, store, sessionID };
+  }
+
+  function admission(sessionID: ReturnType<typeof createSessionId>, commandID = "command-oc-1") {
+    return {
+      commandID,
+      runID: commandID,
+      input: {
+        id: commandID,
+        sessionID,
+        kind: "sendText" as const,
+        delivery: "startNow" as const,
+        payload: { text: "Проверь проект", executionRoute: "opencode-cli" as const },
+      },
+      requestedModelID: "provider/model",
+      now: 100,
+    };
+  }
+
+  it("commits input and pending outbox atomically and returns existing records on retry", async () => {
+    const { tempRoot, dbPath, store, sessionID } = await seedStore("atomic");
+    const raw = new DatabaseSync(dbPath);
+    raw.exec(
+      `create trigger fail_opencode_outbox before insert on opencode_agent_run begin select raise(abort, 'injected outbox fault'); end`,
+    );
+    try {
+      await expect(store.admitOpenCodeAgentRun!(admission(sessionID))).rejects.toThrow(
+        "injected outbox fault",
+      );
+      await expect(store.getSessionInputById!("command-oc-1")).resolves.toBeNull();
+      expect(await store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" })).toBeNull();
+      raw.exec("drop trigger fail_opencode_outbox");
+
+      const first = await store.admitOpenCodeAgentRun!(admission(sessionID));
+      const retry = await store.admitOpenCodeAgentRun!(admission(sessionID));
+      expect(first.created).toBe(true);
+      expect(retry.created).toBe(false);
+      expect(first.input.payload).toMatchObject({
+        text: "Проверь проект",
+        executionRoute: "opencode-cli",
+      });
+      expect(first.run).toMatchObject({
+        runID: "command-oc-1",
+        commandID: "command-oc-1",
+        inputID: "command-oc-1",
+        status: "pending",
+        eventSequence: 0,
+        hostEventSequence: 0,
+        requestedModelID: "provider/model",
+      });
+      expect(retry.run).toEqual(first.run);
+      await expect(store.listPendingOpenCodeAgentRuns!()).resolves.toHaveLength(1);
+    } finally {
+      raw.close();
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("uses compare-and-set transitions and prevents terminal regression", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("terminal");
+    try {
+      await store.admitOpenCodeAgentRun!(admission(sessionID));
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "pending",
+          expectedEventSequence: 0,
+          status: "dispatching",
+          eventSequence: 1,
+          now: 101,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "pending",
+          expectedEventSequence: 0,
+          status: "dispatching",
+          eventSequence: 1,
+          now: 102,
+        }),
+      ).toBe(false);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "dispatching",
+          expectedEventSequence: 1,
+          status: "running",
+          eventSequence: 2,
+          expectedHostEventSequence: 0,
+          hostEventSequence: 1,
+          hostEvent: { type: "started" },
+          openCodeSessionID: "acp-session-1",
+          now: 103,
+        }),
+      ).toBe(true);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "running",
+          expectedEventSequence: 2,
+          status: "completed",
+          eventSequence: 3,
+          expectedHostEventSequence: 1,
+          hostEventSequence: 2,
+          hostEvent: { type: "completed", stopReason: "end_turn", finalText: "Готово" },
+          resultText: "Готово",
+          stopReason: "end_turn",
+          now: 104,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "completed",
+          expectedEventSequence: 3,
+          status: "running",
+          eventSequence: 4,
+          openCodeSessionID: "stale",
+          now: 105,
+        }),
+      ).toBe(false);
+      await expect(
+        store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" }),
+      ).resolves.toMatchObject({
+        status: "completed",
+        eventSequence: 3,
+        time: { terminal: 104 },
+        resultText: "Готово",
+      });
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps Host event ordering independent from outbox and lifecycle revisions", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("host-event-sequence");
+    try {
+      await store.admitOpenCodeAgentRun!(admission(sessionID));
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "pending",
+          expectedEventSequence: 0,
+          status: "dispatching",
+          eventSequence: 1,
+        }),
+      ).toBe(true);
+
+      const started = {
+        sessionID,
+        runID: "command-oc-1",
+        expectedStatus: "dispatching" as const,
+        expectedEventSequence: 1,
+        eventSequence: 2,
+        expectedHostEventSequence: 0,
+        hostEventSequence: 1,
+        hostEvent: { type: "started" },
+        status: "running" as const,
+        openCodeSessionID: "acp-session-1",
+      };
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "dispatching",
+          expectedEventSequence: 1,
+          eventSequence: 2,
+          status: "running",
+          openCodeSessionID: "unsequenced-host-event",
+        }),
+      ).toBe(false);
+      expect(await store.applyOpenCodeAgentRunHostEvent!(started)).toBe(true);
+      expect(await store.applyOpenCodeAgentRunHostEvent!(started)).toBe(false);
+      expect(
+        await store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "running",
+          expectedEventSequence: 2,
+          status: "running",
+          eventSequence: 3,
+        }),
+      ).toBe(false);
+
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          ...started,
+          expectedStatus: "running",
+          expectedEventSequence: 2,
+          eventSequence: 3,
+          expectedHostEventSequence: 1,
+          hostEventSequence: 2,
+          hostEvent: { type: "content", text: "Промежуточный ответ" },
+        }),
+      ).toBe(true);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          ...started,
+          expectedStatus: "running",
+          expectedEventSequence: 3,
+          eventSequence: 4,
+          expectedHostEventSequence: 1,
+          hostEventSequence: 2,
+          hostEvent: { type: "content", text: "Промежуточный ответ" },
+        }),
+      ).toBe(false);
+      expect(
+        await store.applyOpenCodeAgentRunHostEvent!({
+          ...started,
+          expectedStatus: "running",
+          expectedEventSequence: 3,
+          eventSequence: 4,
+          expectedHostEventSequence: 2,
+          hostEventSequence: 3,
+          hostEvent: {
+            type: "tool",
+            toolCallId: "tool-1",
+            title: "Чтение файла",
+            status: "completed",
+          },
+          status: "completed",
+          openCodeSessionID: null,
+          resultText: "Готово",
+          stopReason: "end_turn",
+        }),
+      ).toBe(true);
+      await expect(
+        store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" }),
+      ).resolves.toMatchObject({
+        status: "completed",
+        eventSequence: 4,
+        hostEventSequence: 3,
+        resultText: "Готово",
+        outputText: "Промежуточный ответ",
+        toolActivity: [{ toolCallId: "tool-1", title: "Чтение файла", status: "completed" }],
+      });
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("enforces ACP session identity invariants in SQLite itself", async () => {
+    const { tempRoot, dbPath, store, sessionID } = await seedStore("schema-invariants");
+    const db = new DatabaseSync(dbPath);
+    try {
+      await store.admitOpenCodeAgentRun!(admission(sessionID));
+      expect(() =>
+        db
+          .prepare(`
+        update opencode_agent_run
+        set status = 'running', event_sequence = 1, time_updated = 101
+        where session_id = ? and run_id = 'command-oc-1'
+      `)
+          .run(sessionID),
+      ).toThrow(/CHECK constraint failed/);
+      expect(() =>
+        db
+          .prepare(`
+        update opencode_agent_run
+        set status = 'dispatching', opencode_session_id = 'stale-session', time_updated = 102
+        where session_id = ? and run_id = 'command-oc-1'
+      `)
+          .run(sessionID),
+      ).toThrow(/CHECK constraint failed/);
+    } finally {
+      db.close();
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("bounds persisted terminal text to 32 KiB UTF-8", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("size");
+    try {
+      await store.admitOpenCodeAgentRun!(admission(sessionID));
+      await store.transitionOpenCodeAgentRun!({
+        sessionID,
+        runID: "command-oc-1",
+        expectedStatus: "pending",
+        expectedEventSequence: 0,
+        status: "dispatching",
+        eventSequence: 1,
+      });
+      await expect(
+        store.transitionOpenCodeAgentRun!({
+          sessionID,
+          runID: "command-oc-1",
+          expectedStatus: "dispatching",
+          expectedEventSequence: 1,
+          status: "failed",
+          eventSequence: 2,
+          resultText: "я".repeat(16_385),
+        }),
+      ).rejects.toThrow("exceeds 32 KiB");
+      await expect(
+        store.getOpenCodeAgentRun!({ sessionID, runID: "command-oc-1" }),
+      ).resolves.toMatchObject({ status: "dispatching", eventSequence: 1 });
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("recovers unresolved runs once and cascades journal deletion with its session", async () => {
+    const { tempRoot, dbPath, store, sessionID } = await seedStore("recovery-delete");
+    await store.admitOpenCodeAgentRun!(admission(sessionID));
+    await store.transitionOpenCodeAgentRun!({
+      sessionID,
+      runID: "command-oc-1",
+      expectedStatus: "pending",
+      expectedEventSequence: 0,
+      status: "dispatching",
+      eventSequence: 1,
+    });
+    try {
+      const recovered = await store.recoverOpenCodeAgentRuns!({ now: 200 });
+      expect(recovered).toHaveLength(1);
+      expect(recovered[0]).toMatchObject({
+        status: "interrupted",
+        eventSequence: 2,
+        diagnosticCode: "opencode.run-interrupted-after-restart",
+      });
+      await expect(store.recoverOpenCodeAgentRuns!({ now: 201 })).resolves.toEqual([]);
+      store.close();
+
+      const db = new DatabaseSync(dbPath);
+      try {
+        db.exec("pragma foreign_keys = on");
+        db.prepare("delete from session where id = ?").run(sessionID);
+        expect(db.prepare("select count(*) as count from opencode_agent_run").get()).toEqual({
+          count: 0,
+        });
+      } finally {
+        db.close();
+      }
+    } finally {
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("ZCode Swarm durable journal", () => {
+  async function seedStore(label: string) {
+    const tempRoot = await mkdtemp(join(tmpdir(), `zcode-swarm-run-${label}-`));
+    const dbPath = join(tempRoot, "session.sqlite");
+    const store = await createSqliteSessionStore({ dbPath });
+    const sessionID = createSessionId(`swarm-run-${label}`);
+    await store.createSession({
+      id: sessionID,
+      projectID: createProjectId(`swarm-run-${label}`),
+      slug: `swarm-run-${label}`,
+      directory: tempRoot,
+      title: "Swarm run",
+      version: "0.1.0",
+    });
+    return { tempRoot, dbPath, store, sessionID };
+  }
+
+  const graph = {
+    nodes: [{ id: "research", description: "Research", prompt: "Inspect the project", subagent_type: "researcher" }],
+    max_parallel: 1,
+  };
+
+  function admission(sessionID: ReturnType<typeof createSessionId>, sourceCommandID = "source-command-1") {
+    return {
+      rootSessionID: sessionID,
+      sourceCommandID,
+      runID: `candidate-${sourceCommandID}`,
+      rootTurnID: createTurnId(`turn-${sourceCommandID}`),
+      ownerEpoch: 0,
+      now: 100,
+    };
+  }
+
+  async function admitAcceptedInput(
+    store: Awaited<ReturnType<typeof createSqliteSessionStore>>,
+    input: ReturnType<typeof admission>,
+  ) {
+    await store.saveSessionInput!({
+      // Deliberately distinct from sourceCommandID: the durable queue row ID is not command identity.
+      id: `queue-item-${input.sourceCommandID}`,
+      sessionID: input.rootSessionID,
+      kind: "sendText",
+      delivery: "startNow",
+      payload: {
+        text: "Run the swarm",
+        conversationInputIntent: { sourceCommandId: input.sourceCommandID },
+      },
+    });
+    return store.admitSwarmRun!(input);
+  }
+
+  it("deduplicates by accepted source command and returns the stable existing run ID", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("admission");
+    try {
+      const accepted = admission(sessionID);
+      await store.saveSessionInput!({
+        id: "queue-row-not-command-id",
+        sessionID,
+        kind: "sendText",
+        delivery: "startNow",
+        payload: {
+          text: "Run the swarm",
+          conversationInputIntent: { sourceCommandId: accepted.sourceCommandID },
+        },
+      });
+      const first = await store.admitSwarmRun!(accepted);
+      const retry = await store.admitSwarmRun!({
+        ...accepted,
+        runID: "different-candidate-after-restart",
+        rootTurnID: createTurnId("new-turn-after-restart"),
+      });
+      expect(first.created).toBe(true);
+      expect(retry.created).toBe(false);
+      expect(retry.run).toEqual(first.run);
+      expect(retry.run).toMatchObject({
+        sourceCommandID: "source-command-1",
+        runID: "candidate-source-command-1",
+        status: "planning",
+        ownerEpoch: 0,
+        revision: 0,
+      });
+      await expect(
+        store.findSwarmRunBySourceCommand!({
+          rootSessionID: sessionID,
+          sourceCommandID: "source-command-1",
+        }),
+      ).resolves.toEqual(first.run);
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("admits only an accepted input for the same root session and source command", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("input-identity-guard");
+    const otherSessionID = createSessionId("swarm-run-other-session");
+    try {
+      await store.createSession({
+        id: otherSessionID,
+        projectID: createProjectId("swarm-run-other-session"),
+        slug: "swarm-run-other-session",
+        directory: tempRoot,
+        title: "Other Swarm run",
+        version: "0.1.0",
+      });
+      await store.saveSessionInput!({
+        id: "queue-other-session",
+        sessionID: otherSessionID,
+        kind: "sendText",
+        delivery: "startNow",
+        payload: {
+          text: "wrong session",
+          conversationInputIntent: { sourceCommandId: "command-other-session" },
+        },
+      });
+      await expect(
+        store.admitSwarmRun!(admission(sessionID, "command-other-session")),
+      ).rejects.toThrow("requires a matching accepted session input");
+
+      await store.saveSessionInput!({
+        id: "queue-wrong-command",
+        sessionID,
+        kind: "sendText",
+        delivery: "startNow",
+        payload: {
+          text: "wrong command",
+          conversationInputIntent: { sourceCommandId: "different-command" },
+        },
+      });
+      await expect(
+        store.admitSwarmRun!(admission(sessionID, "command-not-in-payload")),
+      ).rejects.toThrow("requires a matching accepted session input");
+
+      await store.saveSessionInput!({
+        id: "queue-terminal",
+        sessionID,
+        kind: "sendText",
+        delivery: "startNow",
+        payload: {
+          text: "terminal input",
+          conversationInputIntent: { sourceCommandId: "command-terminal" },
+        },
+      });
+      await store.settleSessionInput!({
+        id: "queue-terminal",
+        sessionID,
+        status: "failed",
+      });
+      await expect(
+        store.admitSwarmRun!(admission(sessionID, "command-terminal")),
+      ).rejects.toThrow("requires a matching accepted session input");
+      await expect(store.listSwarmRuns!({ rootSessionID: sessionID })).resolves.toEqual([]);
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("applies status filters before limiting results and rejects graph/attempt writes for terminal runs", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("status-filters");
+    try {
+      const active = await admitAcceptedInput(store, admission(sessionID, "older-active"));
+      await store.commitSwarmRunGraph!({
+        rootSessionID: sessionID,
+        runID: active.run.runID,
+        expectedRevision: 0,
+        ownerEpoch: 0,
+        graph,
+        now: 110,
+      });
+      await store.transitionSwarmRun!({
+        rootSessionID: sessionID,
+        runID: active.run.runID,
+        expectedRevision: 1,
+        ownerEpoch: 0,
+        status: "running",
+        now: 120,
+      });
+      const terminal = await admitAcceptedInput(store, admission(sessionID, "newer-terminal"));
+      await store.transitionSwarmRun!({
+        rootSessionID: sessionID,
+        runID: terminal.run.runID,
+        expectedRevision: 0,
+        ownerEpoch: 0,
+        status: "failed",
+        now: 200,
+      });
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: terminal.run.runID,
+          expectedRevision: 1,
+          ownerEpoch: 0,
+          status: "running",
+        }),
+      ).toBe(false);
+      await expect(
+        store.listSwarmRuns!({ rootSessionID: sessionID, statuses: ["running"], limit: 1 }),
+      ).resolves.toMatchObject([{ runID: active.run.runID, status: "running" }]);
+
+      expect(
+        await store.commitSwarmRunGraph!({
+          rootSessionID: sessionID,
+          runID: terminal.run.runID,
+          expectedRevision: 1,
+          ownerEpoch: 0,
+          graph,
+        }),
+      ).toBe(false);
+      expect(
+        await store.claimSwarmRunOwner!({
+          rootSessionID: sessionID,
+          runID: terminal.run.runID,
+          expectedRevision: 1,
+          expectedOwnerEpoch: 0,
+          ownerEpoch: 1,
+        }),
+      ).toBe(false);
+      await expect(
+        store.reserveSwarmNodeAttempt!({
+          runID: terminal.run.runID,
+          nodeID: "research",
+          attemptID: "terminal-run-attempt",
+          attemptNo: 1,
+          childSessionID: createSessionId("terminal-run-child"),
+          ownerEpoch: 0,
+        }),
+      ).rejects.toThrow("requires an active run with a committed graph");
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("completes a planning run without a graph and rejects that jump after the graph is stored", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("leaf-handoff");
+    try {
+      const leaf = await admitAcceptedInput(store, admission(sessionID, "leaf-command"));
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: leaf.run.runID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          status: "completed",
+          now: 150,
+        }),
+      ).toBe(true);
+      await expect(
+        store.getSwarmRun!({ rootSessionID: sessionID, runID: leaf.run.runID }),
+      ).resolves.toMatchObject({ status: "completed", revision: 1 });
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: leaf.run.runID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          status: "completed",
+        }),
+      ).toBe(false);
+
+      const planned = await admitAcceptedInput(store, admission(sessionID, "planned-command"));
+      expect(
+        await store.commitSwarmRunGraph!({
+          rootSessionID: sessionID,
+          runID: planned.run.runID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          graph,
+          now: 160,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: planned.run.runID,
+          expectedRevision: 1,
+          ownerEpoch: 0,
+          status: "completed",
+          now: 170,
+        }),
+      ).toBe(false);
+      await expect(
+        store.getSwarmRun!({ rootSessionID: sessionID, runID: planned.run.runID }),
+      ).resolves.toMatchObject({ status: "planning", revision: 1 });
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("persists a validated graph and fences transitions with revision and owner epoch", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("graph-cas");
+    const { run } = await admitAcceptedInput(store, admission(sessionID));
+    try {
+      expect(
+        await store.commitSwarmRunGraph!({
+          rootSessionID: sessionID,
+          runID: run.runID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          graph,
+          now: 110,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: run.runID,
+          expectedRevision: 1,
+          ownerEpoch: 0,
+          status: "running",
+          now: 120,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: run.runID,
+          expectedRevision: 1,
+          ownerEpoch: 0,
+          status: "failed",
+          now: 121,
+        }),
+      ).toBe(false);
+      const stored = await store.getSwarmRun!({ rootSessionID: sessionID, runID: run.runID });
+      expect(stored).toMatchObject({ graph, status: "running", ownerEpoch: 0, revision: 2 });
+
+      expect(
+        await store.claimSwarmRunOwner!({
+          rootSessionID: sessionID,
+          runID: run.runID,
+          expectedRevision: 2,
+          expectedOwnerEpoch: 0,
+          ownerEpoch: 1,
+          now: 130,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionSwarmRun!({
+          rootSessionID: sessionID,
+          runID: run.runID,
+          expectedRevision: 3,
+          ownerEpoch: 0,
+          status: "completed",
+        }),
+      ).toBe(false);
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("reserves child identity idempotently and exposes active runs for Core reconciliation", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("attempts");
+    const { run } = await admitAcceptedInput(store, admission(sessionID));
+    try {
+      await store.commitSwarmRunGraph!({
+        rootSessionID: sessionID,
+        runID: run.runID,
+        expectedRevision: 0,
+        ownerEpoch: 0,
+        graph,
+      });
+      await store.transitionSwarmRun!({
+        rootSessionID: sessionID,
+        runID: run.runID,
+        expectedRevision: 1,
+        ownerEpoch: 0,
+        status: "running",
+      });
+      const reservation = {
+        runID: run.runID,
+        nodeID: "research",
+        attemptID: "attempt-research-1",
+        attemptNo: 1,
+        childSessionID: createSessionId("child-research-1"),
+        ownerEpoch: 0,
+        now: 140,
+      };
+      const first = await store.reserveSwarmNodeAttempt!(reservation);
+      const retry = await store.reserveSwarmNodeAttempt!(reservation);
+      expect(first.created).toBe(true);
+      expect(retry).toEqual({ ...first, created: false });
+      await expect(
+        store.reserveSwarmNodeAttempt!({ ...reservation, childSessionID: createSessionId("other-child") }),
+      ).rejects.toThrow("conflicting reservation data");
+
+      expect(
+        await store.transitionSwarmNodeAttempt!({
+          runID: run.runID,
+          nodeID: "research",
+          attemptID: reservation.attemptID,
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          status: "running",
+          now: 145,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionSwarmNodeAttempt!({
+          runID: run.runID,
+          nodeID: "research",
+          attemptID: reservation.attemptID,
+          expectedRevision: 1,
+          ownerEpoch: 0,
+          status: "completed",
+          resultText: "Evidence collected",
+          now: 150,
+        }),
+      ).toBe(true);
+      expect(await store.listSwarmNodeAttempts!({ runID: run.runID })).toMatchObject([
+        { childSessionID: reservation.childSessionID, status: "completed", resultText: "Evidence collected" },
+      ]);
+      expect(
+        await store.transitionSwarmNodeAttempt!({
+          runID: run.runID,
+          nodeID: "research",
+          attemptID: reservation.attemptID,
+          expectedRevision: 2,
+          ownerEpoch: 0,
+          status: "running",
+        }),
+      ).toBe(false);
+      await expect(store.listRecoverableSwarmRuns!()).resolves.toMatchObject([{ runID: run.runID }]);
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("fences in-flight attempts when a new Core owner claims a run", async () => {
+    const { tempRoot, store, sessionID } = await seedStore("owner-recovery");
+    const { run } = await admitAcceptedInput(store, admission(sessionID));
+    try {
+      await store.commitSwarmRunGraph!({
+        rootSessionID: sessionID,
+        runID: run.runID,
+        expectedRevision: 0,
+        ownerEpoch: 0,
+        graph,
+      });
+      await store.transitionSwarmRun!({
+        rootSessionID: sessionID,
+        runID: run.runID,
+        expectedRevision: 1,
+        ownerEpoch: 0,
+        status: "running",
+      });
+      const attempt = await store.reserveSwarmNodeAttempt!({
+        runID: run.runID,
+        nodeID: "research",
+        attemptID: "attempt-owner-recovery",
+        attemptNo: 1,
+        childSessionID: createSessionId("child-owner-recovery"),
+        ownerEpoch: 0,
+      });
+      expect(
+        await store.claimSwarmRunOwner!({
+          rootSessionID: sessionID,
+          runID: run.runID,
+          expectedRevision: 2,
+          expectedOwnerEpoch: 0,
+          ownerEpoch: 1,
+          now: 200,
+        }),
+      ).toBe(true);
+      expect(
+        await store.transitionSwarmNodeAttempt!({
+          runID: run.runID,
+          nodeID: "research",
+          attemptID: "attempt-owner-recovery",
+          expectedRevision: 0,
+          ownerEpoch: 0,
+          status: "interrupted",
+        }),
+      ).toBe(false);
+      expect(
+        await store.transitionSwarmNodeAttempt!({
+          runID: run.runID,
+          nodeID: "research",
+          attemptID: "attempt-owner-recovery",
+          expectedRevision: 1,
+          ownerEpoch: 1,
+          status: "interrupted",
+          diagnosticCode: "swarm.attempt-interrupted-after-restart",
+        }),
+      ).toBe(true);
+      await expect(store.listSwarmNodeAttempts!({ runID: run.runID })).resolves.toMatchObject([
+        {
+          attemptID: "attempt-owner-recovery",
+          status: "interrupted",
+          ownerEpoch: 1,
+          revision: 2,
+          time: { terminal: expect.any(Number) },
+        },
+      ]);
+      expect(attempt.created).toBe(true);
     } finally {
       store.close();
       await rm(tempRoot, { force: true, recursive: true });

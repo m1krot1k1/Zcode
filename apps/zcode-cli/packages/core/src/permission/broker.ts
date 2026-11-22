@@ -105,16 +105,20 @@ export class ManualPermissionBroker implements PermissionBrokerPort {
         return;
       }
 
-      if (options?.timeoutMs !== undefined) {
+      // 超时上限语义（docs/specs/2026-11-11-permission-hard-deny-approval-timeout.md §4.1）：
+      // 只有有限正数才排 timer；`0`/负数/非有限值表示显式关闭，不能立即 reject 或排一个
+      // 永不触发的 timer（后者同样会泄漏句柄）。未设置沿用“无超时”，等待显式应答。
+      const timeoutMs = options?.timeoutMs;
+      if (timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs > 0) {
         timeout = setTimeout(() => {
           fail(
             createCoreError(
               CoreErrorType.PermissionTimeout,
-              `Permission request timed out after ${options.timeoutMs}ms`,
+              `Permission request timed out after ${timeoutMs}ms`,
               {
                 context: {
                   requestId: key,
-                  timeoutMs: options.timeoutMs,
+                  timeoutMs,
                   toolCallId: request.toolCallId,
                   toolName: request.toolName,
                 },
@@ -122,7 +126,7 @@ export class ManualPermissionBroker implements PermissionBrokerPort {
               },
             ),
           );
-        }, options.timeoutMs);
+        }, timeoutMs);
       }
 
       options?.signal?.addEventListener("abort", abortHandler);

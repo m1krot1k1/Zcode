@@ -8,7 +8,7 @@ import { COMMAND_SCAN, enabled, optionTable, parseOptions, settleRule } from "./
 import { unwrapCommand } from "./wrappers.js";
 import { commandBasename, type CommandWord } from "./word.js";
 
-export type DangerousCommandResult =
+type DangerousCommandResult =
   | { status: "matched"; ruleId: string; start: number; end: number }
   | { status: "notMatched" | "unsupported" };
 

@@ -255,7 +255,7 @@ const domEventListeners: Array<{
 }> = [];
 
 function triggerDomEvent(target: "document" | "window", type: string): void {
-  for (const listener of [...domEventListeners]) {
+  for (const listener of Array.from(domEventListeners)) {
     if (listener.target === target && listener.type === type) listener.handler();
   }
 }

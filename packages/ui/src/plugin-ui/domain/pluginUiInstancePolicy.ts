@@ -2,7 +2,7 @@ import type { ConversationRow, ToolCallRow } from "@zcode/shared/zcode-protocol-
 import { resolvePluginUiLogicalScope } from "./pluginUiLogicalScope.js";
 
 /** ：最近几个回合的插件卡片默认展开，更早的按默认收进折叠区。 */
-export const PLUGIN_UI_AUTO_EXPAND_TURNS = 3;
+const PLUGIN_UI_AUTO_EXPAND_TURNS = 3;
 
 /** 一个逻辑 UI：仅显式 surface 或权限范围一致的 widgetSessionId 共用，其余调用独立。 */
 export interface PluginUiLogicalInstance {

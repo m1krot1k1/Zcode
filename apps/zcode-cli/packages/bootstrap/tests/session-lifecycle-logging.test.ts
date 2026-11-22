@@ -93,6 +93,37 @@ describe("session lifecycle diagnostics", () => {
     );
   });
 
+  it("coalesces concurrent legacy resumes for the same session", async () => {
+    let getSessionCalls = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const context = contextWithLogger(createRecordingLogger([]), {
+      deps: {
+        sessionStore: {
+          getSession: async () => {
+            getSessionCalls += 1;
+            await gate;
+            return null;
+          },
+        },
+      },
+    });
+
+    // Причина: два параллельных session/resume проходили `get → 4 await → set`
+    // независимо и создавали два runtime на один sessionId. Один вызов хранилища
+    // доказывает, что активация коалесцирована.
+    const first = activateSessionForResume(context, { sessionId: "sess_race" });
+    const second = activateSessionForResume(context, { sessionId: "sess_race" });
+    await Promise.resolve();
+    release();
+
+    await expect(first).rejects.toThrow("Session not found: sess_race");
+    await expect(second).rejects.toThrow("Session not found: sess_race");
+    expect(getSessionCalls).toBe(1);
+  });
+
   it("records the durable parent miss that surfaces through v4 hydration", async () => {
     const logs: RecordedLog[] = [];
     const context = contextWithLogger(createRecordingLogger(logs), {

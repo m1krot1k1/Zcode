@@ -43,7 +43,7 @@ export class V4QueueItemReservedError extends Error {
   }
 }
 
-export class V4QueuePromotionCommitError extends Error {
+class V4QueuePromotionCommitError extends Error {
   readonly reasonCode = "fault.command.queuePromotionCommitFailed";
   constructor(queueItemId: string) {
     super(`v4 sendQueuedNow started but failed to remove queue item: ${queueItemId}`);

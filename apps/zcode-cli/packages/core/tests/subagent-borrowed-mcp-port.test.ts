@@ -49,8 +49,7 @@ describe("borrowed subagent MCP port", () => {
     expect(parentPort.listTools).not.toHaveBeenCalled();
   });
 
-  it("delegates visible calls without propagating child lifecycle operations", async () => {
-    const callTool = vi.fn(async () => ({
+  it("delegates visible calls without propagating child lifecycle operations", async () => {    const callTool = vi.fn(async () => ({
       content: [{ type: "text", text: "parent result" }],
     }));
     const parentPort = createMockMcpPort({ callTool });
@@ -129,6 +128,48 @@ describe("borrowed subagent MCP port", () => {
     await expect(
       borrowed.port.callTool({ serverName: unrelated.serverName, toolName: unrelated.toolName }),
     ).resolves.toEqual({ content: [{ type: "text", text: "parent result" }] });
+  });
+
+  it("exposes a later MCP connection through a nested borrowed port without changing startup scope", async () => {
+    const startup = {
+      statuses: { alpha: createStatus("connected") },
+      tools: [createDescriptor("alpha", "search")],
+    } satisfies McpConnectionSnapshot;
+    const live = {
+      statuses: {
+        alpha: createStatus("connected"),
+        late: createStatus("connected"),
+        other: createStatus("connected"),
+      },
+      tools: [
+        createDescriptor("alpha", "search"),
+        createDescriptor("late", "echo"),
+        createDescriptor("other", "hidden"),
+      ],
+    } satisfies McpConnectionSnapshot;
+    const parentPort = createMockMcpPort({
+      currentSnapshot: vi.fn(async () => live),
+    });
+    const outer = createBorrowedSubagentMcpAccess(parentPort, startup, ["alpha", "late"]);
+    const nested = createBorrowedSubagentMcpAccess(
+      outer.port,
+      outer.snapshot,
+      ["alpha", "late"],
+    );
+
+    expect(outer.snapshot.tools.map((tool) => tool.toolName)).toEqual(["search"]);
+    await expect(nested.port.currentSnapshot!()).resolves.toEqual({
+      statuses: {
+        alpha: live.statuses.alpha,
+        late: live.statuses.late,
+      },
+      tools: [
+        createDescriptor("alpha", "search"),
+        createDescriptor("late", "echo"),
+      ],
+    });
+    expect(nested.snapshot.tools.map((tool) => tool.toolName)).toEqual(["search"]);
+    expect(parentPort.currentSnapshot).toHaveBeenCalled();
   });
 });
 

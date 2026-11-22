@@ -15,8 +15,8 @@ export interface McpUiRegisterAppToolsParams extends McpUiPluginScope, McpUiAppT
 export interface McpUiRegisterAppToolsResult {
   tools: Array<{ name: string; modelName: string }>;
 }
-export interface McpUiUnregisterAppToolsParams extends McpUiPluginScope, McpUiAppToolInstance {}
-export interface McpUiUnregisterAppToolsResult {
+interface _McpUiUnregisterAppToolsParams extends McpUiPluginScope, McpUiAppToolInstance {}
+interface _McpUiUnregisterAppToolsResult {
   removed: number;
 }
 export interface McpUiAppToolCallParams extends McpUiPluginScope, McpUiAppToolInstance {
@@ -26,6 +26,6 @@ export interface McpUiResolveAppToolCallParams extends McpUiAppToolCallParams {
   result?: McpAppsAppToolCallResult;
   error?: { message: string };
 }
-export interface McpUiAppToolAcceptedResult {
+interface _McpUiAppToolAcceptedResult {
   accepted: boolean;
 }

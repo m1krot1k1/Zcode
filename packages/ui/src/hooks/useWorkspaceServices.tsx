@@ -44,7 +44,7 @@ function createDisconnectedRemoteServices(): IServiceAccessor {
   }) as IServiceAccessor;
 }
 
-export function getDisconnectedRemoteServices(): IServiceAccessor {
+function getDisconnectedRemoteServices(): IServiceAccessor {
   if (!disconnectedRemoteServices) {
     disconnectedRemoteServices = createDisconnectedRemoteServices();
   }

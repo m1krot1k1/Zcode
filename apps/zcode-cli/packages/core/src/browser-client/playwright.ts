@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 与对外暴露的 Playwright 对象图一一对应，集中可避免 builder/终结操作契约漂移。 */
 import type {
   BrowserCommand,
   BrowserCommandResult,
@@ -102,7 +101,7 @@ const defaultObjectWrapper: ObjectWrapper = <T extends object>(value: T, objectN
 export type TextMatcher = string | RegExp;
 export type LoadState = "load" | "domcontentloaded" | "networkidle";
 export type WaitUntil = LoadState | "commit";
-export type WaitForState = "attached" | "detached" | "visible" | "hidden";
+type WaitForState = "attached" | "detached" | "visible" | "hidden";
 export type KeyboardModifier = BrowserPlaywrightModifier;
 
 export interface ElementInfo {
@@ -117,7 +116,7 @@ export interface ElementInfo {
   selector: { primary?: string | null; candidates: string[]; frameSelectors?: string[] };
 }
 
-export type SelectOptionInput = string | { value?: string; label?: string; index?: number };
+type SelectOptionInput = string | { value?: string; label?: string; index?: number };
 
 interface LocatorClickOptions {
   button?: BrowserMouseButton;

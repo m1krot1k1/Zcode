@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-single-file-bugfix",
+  "family": "single-file-bugfix",
+  "arm": "baseline",
+  "repeat": 2,
+  "startedAt": "2026-11-21T07:52:51.876Z",
+  "durationMs": 21978,
+  "tokens": 148876,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "slugify acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Fixed `src/slugify.mjs:1`. The old version only converted whitespace runs, so punctuation leaked into the slug (`hello,-world!`). The new implementation lowercases, collapses every run of non-alphanumeric characters to one hyphen, then strips leading/trailing hyphens:\n\n```js\nexport function slugify(input) {\n  return String(input)\n    .toLowerCase()\n    .replace(/[^a-z0-9]+/g, \"-\")\n    .replace(/^-+|-+$/g, \"\");\n}\n```\n\nVerified by importing the module directly in Node (the workspace has no test suite — just `package.json` and `src/`). All three acceptance cases pass, plus six edge cases:\n\n| Input | Output |\n| --- | --- |\n| `\"Hello, World!\"` | `hello-world` |\n| `\"  A  B  \"` | `a-b` |\n| `\"C++ & Rust\"` | `c-rust` |\n| `\"\"` / `\"---\"` | `\"\"` |\n| `\"Already_Slugged\"` | `already-slugged` |\n| `\"  Mixed\\tCASE 123  \"` | `mixed-case-123` |\n\nOnly `src/slugify.mjs` was modified. Residual risk: non-ASCII letters (e.g. `é`) are treated as non-alphanumeric and become hyphens, which matches the literal \"no",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

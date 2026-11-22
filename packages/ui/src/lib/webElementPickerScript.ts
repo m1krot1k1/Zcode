@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Electron webview 注入脚本需要在单个函数内自包含运行，避免跨文件依赖在页面上下文里失效。 */
 import type {
   WebElementContextPayload,
   WebElementRect,

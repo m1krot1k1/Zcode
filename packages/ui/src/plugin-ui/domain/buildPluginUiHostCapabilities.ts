@@ -7,7 +7,7 @@ import {
 } from "@zcode/shared/mcp-apps";
 
 /** 宿主实例真实可用的交互；缺省项对应的能力不声明，插件据此降级。 */
-export interface PluginUiHostCapabilityInput {
+interface PluginUiHostCapabilityInput {
   canSample?: boolean;
   canSendFollowUpMessage: boolean;
   canUpdateModelContext: boolean;

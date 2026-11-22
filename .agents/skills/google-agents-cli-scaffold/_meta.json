@@ -1,0 +1,8 @@
+{
+  "source": "google/agents-cli",
+  "skillId": "google-agents-cli-scaffold",
+  "name": "google-agents-cli-scaffold",
+  "hash": "9733dbac0418158933bde0e9cefdca08936c53b0ec03ce541923b76287e76d66",
+  "installedAt": "2026-11-07T12:13:03.331Z",
+  "manager": "skills.sh"
+}

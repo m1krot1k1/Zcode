@@ -390,7 +390,7 @@ describe.skipIf(!nativeE2eEnabled)("native embedded search E2E", () => {
     return (await bashTool.handler(
       {
         command,
-        dangerouslyDisableSandbox: true,
+        // R04 вариант B: sandbox-поля во входе нет; strict-схема отклонила бы его.
         timeout: 30_000,
       },
       context,

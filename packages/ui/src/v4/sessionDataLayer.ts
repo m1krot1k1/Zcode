@@ -22,7 +22,7 @@ export interface SessionLease {
   release(): void;
 }
 
-export interface SessionDataLayerOptions {
+interface SessionDataLayerOptions {
   transport: ConversationTransport;
   /** 引用归零后延迟退订窗口（ms），默认 30s。 */
   keepWarmMs?: number;

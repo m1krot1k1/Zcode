@@ -362,23 +362,15 @@ describe("runtime compact helpers", () => {
     const fullPrompt = buildCompactPrompt("Keep exact file paths.");
 
     expect(fullPrompt).toContain("CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.");
-    expect(fullPrompt).toContain("Tool calls will be REJECTED and will waste your only turn");
     expect(fullPrompt).toContain(
-      "Preserve any security-relevant instructions or constraints verbatim",
+      "Preserve the active request, user constraints and authorization, key decisions, changed files, checks and results, blockers",
     );
-    expect(fullPrompt).toContain(
-      "Chronologically analyze each message and section of the conversation.",
-    );
-    expect(fullPrompt).toContain("full code snippets");
-    expect(fullPrompt).toContain("Here's an example of how your output should be structured:");
-    expect(fullPrompt).toContain(
-      "There may be additional summarization instructions provided in the included context.",
-    );
-    expect(fullPrompt).toContain("Current Work");
-    expect(fullPrompt).toContain("Optional Next Step");
+    expect(fullPrompt).toContain("Pending Tasks section with remaining work");
     expect(fullPrompt).toContain("Additional Instructions:\nKeep exact file paths.");
-
-    expect(fullPrompt).toContain("Tool calls will be rejected and you will fail the task.");
+    expect(fullPrompt).not.toContain("<analysis>");
+    expect(fullPrompt).not.toContain("full code snippets");
+    expect(fullPrompt).not.toContain("ALL user messages");
+    expect(fullPrompt.length).toBeLessThan(1_500);
   });
 
   it("formats compact summaries and continuation messages with the fixed continuation shape", () => {
@@ -601,6 +593,7 @@ describe("AgentRuntime manual compact", () => {
     const requests: Array<{
       isCompact: boolean;
       maxOutputTokens?: number;
+      reasoningLevel?: string;
     }> = [];
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -611,12 +604,13 @@ describe("AgentRuntime manual compact", () => {
         eventStore: createTestSessionEventStore(),
         modelFactory: createTestModelFactory(
           withStreamTextFromGenerateText({
-            async generateText(request) {
+            async generateText(request, observation) {
               const lastContent = providerContentToText(request.messages.at(-1)?.content);
               const isCompact = lastContent.includes("create a detailed summary");
               requests.push({
                 isCompact,
                 maxOutputTokens: request.options?.maxOutputTokens,
+                reasoningLevel: observation.model.options.reasoningLevel,
               });
               return {
                 finishReason: "stop",
@@ -633,7 +627,10 @@ describe("AgentRuntime manual compact", () => {
     await runtime.executeTurn("second compact thinking setup");
     await runtime.executeTurn("/compact");
 
-    expect(requests.find((request) => request.isCompact)?.maxOutputTokens).toBe(20_000);
+    expect(requests.find((request) => request.isCompact)).toMatchObject({
+      maxOutputTokens: 8_000,
+      reasoningLevel: "low",
+    });
   });
 
   it("runs compact stream-first, links the non-stream fallback, and keeps the stream hidden", async () => {
@@ -934,9 +931,7 @@ describe("AgentRuntime manual compact", () => {
     expect(compactRequest?.toolNames).toEqual(requests[0]?.toolNames);
     expect(compactRequest?.toolNames.length).toBeGreaterThan(0);
     expect(compactRequest?.messages.at(-1)?.content).toContain("keep file paths");
-    expect(compactRequest?.messages.at(-1)?.content).toContain(
-      "Tool calls will be REJECTED and will waste your only turn",
-    );
+    expect(compactRequest?.messages.at(-1)?.content).toContain("Do NOT call any tools.");
     expect(compactRequest?.messages.map((message) => message.content).join("\n")).toContain(
       "first question about src/compact.ts",
     );
@@ -2533,12 +2528,12 @@ describe("AgentRuntime manual compact", () => {
   it.each([
     {
       caseId: "OTB02",
-      expectedSummaryMaxOutputTokens: 16_000,
+      expectedSummaryMaxOutputTokens: 8_000,
       modelMaxOutputTokens: 16_000,
     },
     {
       caseId: "OTB03",
-      expectedSummaryMaxOutputTokens: 20_000,
+      expectedSummaryMaxOutputTokens: 8_000,
       modelMaxOutputTokens: 64_000,
     },
   ])(
@@ -2807,7 +2802,7 @@ describe("AgentRuntime manual compact", () => {
                 if (compactAttempts === 1) {
                   return {
                     finishReason: "length",
-                    text: "",
+                    text: "partial summary that must never be persisted",
                     toolCalls: [{ id: "ignored-compact-tool", name: "Read", input: {} }],
                     usage: { inputTokens: 120, outputTokens: 0, totalTokens: 120 },
                   };
@@ -2856,6 +2851,7 @@ describe("AgentRuntime manual compact", () => {
     expect(retryCompactContext).not.toContain("first empty length compact setup");
     expect(retryCompactContext).toContain("second empty length compact setup");
     expect(postCompactContext).toContain("Empty length retry summary keeps the newest setup");
+    expect(postCompactContext).not.toContain("partial summary that must never be persisted");
     expect(postCompactContext).not.toContain("first empty length compact setup");
   });
 
@@ -3128,9 +3124,7 @@ describe("AgentRuntime manual compact", () => {
     expect(requests[2]?.toolNames).toEqual(requests[0]?.toolNames);
     expect(requests[2]?.toolNames.length).toBeGreaterThan(0);
     expect(requests[2]?.messages.at(-1)?.content).toContain("create a detailed summary");
-    expect(requests[2]?.messages.at(-1)?.content).toContain(
-      "Tool calls will be REJECTED and will waste your only turn",
-    );
+    expect(requests[2]?.messages.at(-1)?.content).toContain("Do NOT call any tools.");
     expect(requests[2]?.messages.at(-1)?.content).not.toContain(
       "RECENT portion of the conversation",
     );
@@ -3869,7 +3863,7 @@ describe("AgentRuntime manual compact", () => {
       threshold: 94_000,
     });
     expect(microcompactLog).toMatchObject({
-      thresholdTokens: 84_600,
+      thresholdTokens: 80_000,
     });
   });
 
@@ -3963,6 +3957,7 @@ describe("AgentRuntime manual compact", () => {
             compactableToolNames: ["LargeRead"],
             enabled: true,
             keepRecentToolResults: 1,
+            maskStyle: "clear",
             minTokenSavings: 1,
             thresholdTokens: 1,
           },

@@ -35,7 +35,7 @@ export type AssistantPreviewFileSubtitleId =
   | "chat.previewCards.video"
   | "chat.previewCards.audio";
 
-export interface AssistantPreviewFileTypeDefinition {
+interface AssistantPreviewFileTypeDefinition {
   extensions: readonly string[];
   kind: AssistantPreviewFileKind;
   subtitleId: AssistantPreviewFileSubtitleId;
@@ -283,12 +283,3 @@ export function extractAssistantFileReferences(
   return references.sort((left, right) => left.start - right.start || left.end - right.end);
 }
 
-export function hasAssistantPreviewFileChangeCandidates(
-  content: string,
-  workspacePath: string,
-  options: AssistantFilePathResolveOptions = {},
-): boolean {
-  return extractAssistantFileReferences(content, workspacePath, options).some(
-    (reference) => reference.kind === "markdown" || reference.kind === "html",
-  );
-}

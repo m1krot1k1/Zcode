@@ -1,6 +1,12 @@
 export const ZCODE_RUNTIME_ENV_KEY = "ZCODE_RUNTIME_ENV";
 export const ZCODE_HTTP_PROXY_ENV_KEY = "ZCODE_HTTP_PROXY";
+/** Ordered model-provider proxy ring. One normalized endpoint per line. */
+export const ZCODE_HTTP_PROXY_LIST_ENV_KEY = "ZCODE_HTTP_PROXY_LIST";
 export const ZCODE_NO_PROXY_ENV_KEY = "ZCODE_NO_PROXY";
+/** @deprecated Legacy environment key; current runtimes ignore total spawn budgets. */
+export const ZCODE_SPAWN_BUDGET_ENV_KEY = "ZCODE_SPAWN_BUDGET";
+export const ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY = "ZCODE_SUBAGENT_MAX_PARALLEL";
+export const ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY = "ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES";
 /** Desktop Host 只向 desktop-attached remote server 传递一次的网络配置。 */
 export const ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY_ENV_KEY =
   "ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY";
@@ -312,4 +318,57 @@ function stringifyZCodeToolEnvPassthroughEnv(
   return {
     [ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY]: JSON.stringify(Object.fromEntries(entries)),
   };
+}
+
+const PROXY_LIST_SHORTHAND = /^([^:/\s]+):(\d+):([^:]*):(.*)$/u;
+
+/** One saved proxy line. `ip:port:login:pass` becomes SOCKS5; `socks://` is the SOCKS5 alias. */
+export function normalizeZCodeProxyEndpoint(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const shorthand = trimmed.match(PROXY_LIST_SHORTHAND);
+  if (shorthand) {
+    return `socks5://${encodeURIComponent(shorthand[3] ?? "")}:${encodeURIComponent(shorthand[4] ?? "")}@${shorthand[1]}:${shorthand[2]}`;
+  }
+  if (/^socks:\/\//iu.test(trimmed)) return `socks5://${trimmed.slice("socks://".length)}`;
+  return trimmed;
+}
+
+/** Ordered, de-duplicated proxy ring. Blank lines are dropped. */
+export function readZCodeProxyList(value: string | undefined): string[] {
+  if (!value) return [];
+  const endpoints: string[] = [];
+  const seen = new Set<string>();
+  for (const line of value.split(/\r?\n/u)) {
+    const endpoint = normalizeZCodeProxyEndpoint(line);
+    if (!endpoint || seen.has(endpoint)) continue;
+    seen.add(endpoint);
+    endpoints.push(endpoint);
+  }
+  return endpoints;
+}
+
+/** @deprecated Parse a legacy persisted value for migration tools; runtime admission ignores it. */
+export function readSpawnBudget(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) return undefined;
+  return parsed;
+}
+
+/** 读取并验证可选并行偏好；0 表示按当前机器的 CPU 并发能力自适应。 */
+export function readSubagentMaxParallel(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+/** 读取 subagent 最短运行分钟数；0 表示按 profile 的 role deadline。 */
+export function readSubagentTaskTimeoutMinutes(value: string | undefined): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 180 ? parsed : undefined;
 }

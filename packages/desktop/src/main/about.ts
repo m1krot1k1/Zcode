@@ -1,8 +1,4 @@
-import type {
-  AboutPanelOptionsOptions,
-  BrowserWindow,
-  MessageBoxReturnValue,
-} from "electron";
+import type { AboutPanelOptionsOptions, BrowserWindow, MessageBoxReturnValue } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { arch, hostname, platform, release, type, version as osVersion } from "node:os";
 import { join } from "node:path";
@@ -84,6 +80,13 @@ const ABOUT_MESSAGES: Record<
     okButtonLabel: "OK",
     optimizedForAppleSilicon: "Optimized for Apple Silicon.",
     copyright: (year) => `Copyright © ${year} ZCode.`,
+  },
+  "ru-RU": {
+    aboutTitle: "О ZCode",
+    versionLabel: "версия",
+    okButtonLabel: "ОК",
+    optimizedForAppleSilicon: "Оптимизировано для Apple Silicon.",
+    copyright: (year) => `Авторские права © ${year} ZCode.`,
   },
 };
 

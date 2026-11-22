@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- summary 与同源 detail 投影暂集中维护，本次 review fix 不扩大重构范围。 */
 import { type ReactNode, useCallback, useMemo } from "react";
 import type { ApplicationIconRequest } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -97,7 +96,7 @@ function readBundleId(input: unknown): string | null {
   return null;
 }
 
-export function readCuaApplicationIconRequest(
+function readCuaApplicationIconRequest(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): ApplicationIconRequest | string | null {
   const display = readToolResultDisplay(toolCall.raw);
@@ -335,7 +334,7 @@ export function isCuaToolCall(
   return collectToolNames(toolCall).some(isZCodeCuaToolName);
 }
 
-export interface CuaSummaryPresentation {
+interface CuaSummaryPresentation {
   toolName: string | null;
   icon: ReactNode;
   appName: string;

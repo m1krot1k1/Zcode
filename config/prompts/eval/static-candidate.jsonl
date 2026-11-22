@@ -1,0 +1,3 @@
+{"taskId": "prompt-stack-total", "arm": "candidate", "run": 1, "success": true, "tokens": 21038, "cacheReadTokens": 0, "durationMs": 0, "holdout": true, "synthetic": true, "mode": "static"}
+{"taskId": "prompt-stack-total", "arm": "candidate", "run": 2, "success": true, "tokens": 21038, "cacheReadTokens": 0, "durationMs": 0, "holdout": true, "synthetic": true, "mode": "static"}
+{"taskId": "prompt-stack-total", "arm": "candidate", "run": 3, "success": true, "tokens": 21038, "cacheReadTokens": 0, "durationMs": 0, "holdout": true, "synthetic": true, "mode": "static"}

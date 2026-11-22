@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button.js";
 
 export const CONTEXT_QUOTA_RESET_URGENT_SECONDS = 180;
 
-export type ContextQuotaResetOpportunityReminderPhase = "initial" | "urgent";
+type ContextQuotaResetOpportunityReminderPhase = "initial" | "urgent";
 
 export interface ContextQuotaResetOpportunityDismissal {
   opportunityKey: string | null;
@@ -13,14 +13,14 @@ export interface ContextQuotaResetOpportunityDismissal {
   urgent: boolean;
 }
 
-export interface ContextQuotaResetOpportunity {
+interface ContextQuotaResetOpportunity {
   count: number;
   expiresAt: number | null;
   sourceKey: string | null;
   visible: boolean;
 }
 
-export interface ContextQuotaResetOpportunityReminder {
+interface ContextQuotaResetOpportunityReminder {
   count: number;
   opportunityKey: string;
   phase: ContextQuotaResetOpportunityReminderPhase;
@@ -62,7 +62,7 @@ export function createContextQuotaResetOpportunityDismissalStore() {
 export const contextQuotaResetOpportunityDismissalStore =
   createContextQuotaResetOpportunityDismissalStore();
 
-export type ContextQuotaResetOpportunityTriggerTone = "available" | "urgent";
+type ContextQuotaResetOpportunityTriggerTone = "available" | "urgent";
 
 export function resolveContextQuotaResetOpportunityTriggerTone({
   now,

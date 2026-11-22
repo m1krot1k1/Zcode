@@ -1,7 +1,7 @@
 import type { CodingPlanRegularTpsRequest } from "@zcode/shared";
 import type { IUsageStatsService } from "@zcode/services";
 
-export interface HighspeedTimingMetricsForSavedTime {
+interface HighspeedTimingMetricsForSavedTime {
   outputTokens: number;
   durationMs: number;
   modelDurationMs?: number;

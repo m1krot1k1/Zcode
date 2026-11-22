@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/select.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-export type ConversationSharePermission = "private" | "link-viewer" | "link-editor";
+type ConversationSharePermission = "private" | "link-viewer" | "link-editor";
 
 const PERMISSION_OPTIONS = [
   {

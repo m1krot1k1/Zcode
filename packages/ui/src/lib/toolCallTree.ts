@@ -58,7 +58,7 @@ function areUnknownValuesEqual(left: unknown, right: unknown, budget: DeepEqualB
   );
 }
 
-export function areTaskChatToolCallsRenderEqual(
+function areTaskChatToolCallsRenderEqual(
   left: TaskChatToolCall,
   right: TaskChatToolCall,
 ): boolean {

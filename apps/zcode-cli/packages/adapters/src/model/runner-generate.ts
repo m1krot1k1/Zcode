@@ -46,7 +46,10 @@ import {
   publishModelStatus,
 } from "./runner-status.js";
 import type { EnvRecord } from "./model-execution.js";
-import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
+import {
+  isRetryAfterBeyondHonoredWait,
+  type ResolvedAiSdkModelRetryOptions,
+} from "./retry-policy.js";
 import type {
   AiSdkModelRuntime,
   AiSdkModelTextRequest,
@@ -397,6 +400,8 @@ export async function runGenerateText(input: {
         offPeak?.kind === "queued"
           ? true
           : retryBudgetAllows(retryBudget, retryBudgetAttempt, input.retry.maxAttempts) &&
+            // provider 明确要求等待超过本地可兑现窗口时不再空转（与 stream 闸门同一判定）。
+            !isRetryAfterBeyondHonoredWait(failure.retryAfterMs) &&
             // workflow 流量（无上限预算）读策略表而不是分类器的 retryable；有界预算逐字不变。
             retryAllowedByFailurePolicy(
               failure,

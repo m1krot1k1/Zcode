@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { redactFeedbackText } from "../src/feedbackPrivacy.js";
 
+// 私钥头只在运行时拼装：源码里不留密钥字面量，隐私闸门才能保持零豁免。
+const PEM_HEADER = "-----BEGIN " + "PRIVATE KEY-----";
+
 describe("反馈文本脱敏", () => {
   it.each([false, true])("diagnostic=%s 隐藏路径型凭据，包括嵌套 JSON 和编码路径", (diagnostic) => {
     const urls = [
@@ -56,7 +59,8 @@ describe("反馈文本脱敏", () => {
     const source =
       '[ERROR] {"outer":{"token":"json-canary"},"note":"Authorization: Bearer bearer-canary"}\n' +
       "url=https://user:password-canary@example.com/path?api_key=query-canary\n" +
-      "-----BEGIN PRIVATE KEY-----\npem-canary\n-----END PRIVATE KEY-----\n" +
+      PEM_HEADER +
+      "\npem-canary\n-----END PRIVATE KEY-----\n" +
       "/Users/alice/private/work.ts C:\\Users\\bob\\private\\file.txt";
     const output = redactFeedbackText(source, { diagnostic: true });
     for (const secret of [

@@ -69,7 +69,7 @@ export function resetActiveTaskNotificationsForTest() {
   recentTaskNotificationTimestamps.clear();
 }
 
-export function focusTaskNotificationWindow(senderWindow: BrowserWindow) {
+function focusTaskNotificationWindow(senderWindow: BrowserWindow) {
   if (senderWindow.isMinimized()) {
     senderWindow.restore();
   }

@@ -46,6 +46,11 @@ provider completion -> adapter 检查终止原因
 - generic empty completion 不得覆盖 provider business error：如果 finish/provider
   metadata 能解析出安全校验、鉴权、额度、内容过滤或其他业务错误，先按业务错误分类，
   继续保持其既有可重试/不可重试策略。用户取消也不得触发 empty completion retry。
+- Adapter 的空 completion 重试预算保持不变。重试耗尽后，普通交互式主会话不能把没有
+  可见文本、没有工具调用的终态当成成功，即使 provider 报告 `finishReason: stop` 或
+  非零 usage；Core 应生成可见的 `empty_model_response` 错误。该保护只在主 turn 处理，
+  不改变 compact、标题/后台查询等内部模型调用；上下文超限与 output-token continuation
+  仍优先走现有恢复路径，工具调用继续正常执行。
 - compact 的 `preserveProviderStreamBoundaries=true` 请求不纳入本规则；compact
   继续由其 provider boundary、stream-to-non-stream fallback 和 commit boundary
   规则决定是否重试。
@@ -156,6 +161,9 @@ core recovery 的可观测性要求：
   成功时最终只看到第二次的有效输出，第二次仍为空时仍生成 `empty_model_response`。
 - 非流式 `generateText` 返回同样的 zero-output empty completion 时，应只重试一次；
   第二次成功返回有效结果，或第二次仍为空并把既有空响应错误交给 core。
+- Core 用例覆盖普通主 turn 收到 `finishReason: stop`、空文本、无工具调用、非零 usage：
+  turn 必须失败并写出 `TurnError(reason: empty_model_response)`，不能发成功的空 `TurnComplete`。
+  该 guard 不得扩展到 compact、标题/后台查询或其他非交互式模型调用。
 - 流式和非流式的零输出 `rawFinishReason=model_context_window_exceeded` 不产生
   adapter retry，转为一次超窗失败，保留已报告 usage；normalized finish 为 `length`
   或 `other` 时均成立。上下文超限同义标记同样处理；有有效输出时无论 finish 是否可续写均原样返回。

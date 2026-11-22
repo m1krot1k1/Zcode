@@ -484,6 +484,14 @@ describe("SettingsPage integrated terminal shell", () => {
     ],
     ["onHttpProxyChange", " http://127.0.0.1:7890 ", { httpProxy: "http://127.0.0.1:7890" }],
     [
+      "onHttpProxyListChange",
+      " http://127.0.0.1:7890 \n\nsocks5://127.0.0.1:1080 ",
+      {
+        httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+        httpProxy: "",
+      },
+    ],
+    [
       "onHttpProxyNoProxyChange",
       " localhost, , .example.test ",
       { httpProxyNoProxy: "localhost,.example.test" },
@@ -617,5 +625,34 @@ describe("SettingsPage integrated terminal shell", () => {
     await flushPromises();
     expect(stateUpdates).not.toContain("/stale/desktop");
     expect(stateUpdates).not.toContain("stale Source font");
+  });
+
+  it("does not expose the legacy cumulative spawn budget in settings", async () => {
+    const { SettingsPage } = await import("../src/SettingsPage.js");
+    renderToStaticMarkup(createElement(SettingsPage, {}));
+    expect(generalSectionCapture.props).not.toHaveProperty("spawnBudget");
+    expect(generalSectionCapture.props).not.toHaveProperty("onSpawnBudgetChange");
+  });
+
+  it("saves adaptive subagent concurrency and a configurable minimum task timeout", async () => {
+    const { SettingsPage } = await import("../src/SettingsPage.js");
+    renderToStaticMarkup(createElement(SettingsPage, {}));
+    const saveParallel = generalSectionCapture.props!.onSubagentMaxParallelChange as (
+      raw: string,
+    ) => Promise<"saved" | "empty" | "invalid">;
+    const saveTimeout = generalSectionCapture.props!.onSubagentTaskTimeoutMinutesChange as (
+      raw: string,
+    ) => Promise<"saved" | "empty" | "invalid">;
+    await expect(saveParallel("0")).resolves.toBe("saved");
+    expect(remoteServices.settingService.update).toHaveBeenCalledWith({ subagentMaxParallel: 0 });
+    await expect(saveTimeout("45")).resolves.toBe("saved");
+    expect(remoteServices.settingService.update).toHaveBeenCalledWith({
+      subagentTaskTimeoutMinutes: 45,
+    });
+    // Runtime still clamps parallel workers to actual host capacity.
+    await expect(saveParallel("129")).resolves.toBe("saved");
+    expect(remoteServices.settingService.update).toHaveBeenCalledWith({ subagentMaxParallel: 129 });
+    await expect(saveTimeout("181")).resolves.toBe("invalid");
+    expect(remoteServices.settingService.update).toHaveBeenCalledTimes(3);
   });
 });

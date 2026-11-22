@@ -1,6 +1,6 @@
 import type { UsageEntitlementSnapshot, UsageQuotaLimit } from "@zcode/shared";
 
-export type CodingPlanQuotaResetFormat = "date" | "dateTime" | "adaptive";
+type CodingPlanQuotaResetFormat = "date" | "dateTime" | "adaptive";
 
 /**
  * Token / Credit 类配额的等价 type 集合。
@@ -62,16 +62,7 @@ export function resolveMcpQuotaLimit(
   snapshot: UsageEntitlementSnapshot | null | undefined,
 ): UsageQuotaLimit | null {
   return snapshot?.mcpQuota?.aggregate ?? null;
-}
-
-export function normalizeQuotaPercentage(value: number | undefined): number {
-  if (value == null || !Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.max(0, Math.min(100, value));
-}
-
-export function getQuotaRemainingPercentage(limit: UsageQuotaLimit | null): number | null {
+}export function getQuotaRemainingPercentage(limit: UsageQuotaLimit | null): number | null {
   if (typeof limit?.percentage !== "number" || !Number.isFinite(limit.percentage)) {
     return null;
   }

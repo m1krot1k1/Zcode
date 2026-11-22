@@ -10,10 +10,7 @@ import type { TaskChatMessage } from "@/lib/taskChatMessageTypes.js";
 import { readRawToolCallFileSummaries } from "@/ToolCallBlocks/fileSummaries.js";
 
 interface TaskChangeSummaryIntl {
-  formatMessage: (
-    desc: { id: string },
-    values?: Record<string, string>,
-  ) => string;
+  formatMessage: (desc: { id: string }, values?: Record<string, string>) => string;
 }
 
 interface AggregatedFileChange {
@@ -63,13 +60,8 @@ export function formatTaskTitleWithChanges(
   return `${title} (${formatTaskChangeStats(summary, intl)})`;
 }
 
-export function toWorkspaceRelativePath(
-  workspacePath: string,
-  filePath: string,
-): string {
-  const normalizedWorkspacePath = trimTrailingSeparators(
-    workspacePath.replace(/\\/g, "/"),
-  );
+export function toWorkspaceRelativePath(workspacePath: string, filePath: string): string {
+  const normalizedWorkspacePath = trimTrailingSeparators(workspacePath.replace(/\\/g, "/"));
   const normalizedFilePath = filePath.replace(/\\/g, "/");
 
   if (normalizedFilePath === normalizedWorkspacePath) {
@@ -103,31 +95,8 @@ export function formatTaskChangedFileLabel(
     statParts.push(`-${file.removed}`);
   }
 
-  return statParts.length > 0
-    ? `${relativePath} ${statParts.join(" ")}`
-    : relativePath;
-}
-
-export function buildPerTurnFileChangeMap(
-  fileChanges: readonly ZCodePersistedFileChange[] | undefined,
-): Map<number, ZCodePersistedFileChange> {
-  const result = new Map<number, ZCodePersistedFileChange>();
-  if (!fileChanges || fileChanges.length === 0) {
-    return result;
-  }
-
-  for (const turn of fileChanges) {
-    if (turn.snapshots.length === 0) {
-      continue;
-    }
-
-    result.set(turn.turnIndex, turn);
-  }
-
-  return result;
-}
-
-export function buildTaskChangeSummary(
+  return statParts.length > 0 ? `${relativePath} ${statParts.join(" ")}` : relativePath;
+}export function buildTaskChangeSummary(
   fileChanges: readonly ZCodePersistedFileChange[] | undefined,
 ): ZCodeTaskChangeSummary | null {
   if (!fileChanges || fileChanges.length === 0) {
@@ -164,10 +133,7 @@ export function buildTaskChangeSummary(
   let removed = 0;
   const files: ZCodeTaskChangedFileSummary[] = Array.from(changedFileMap.values())
     .map((file) => {
-      const fileStat = computeLineChangeStat(
-        file.originalContent,
-        file.finalContent,
-      );
+      const fileStat = computeLineChangeStat(file.originalContent, file.finalContent);
       added += fileStat.added;
       removed += fileStat.removed;
       return {
@@ -223,7 +189,7 @@ function hasUnsuccessfulToolStatus(
   );
 }
 
-export function buildToolCallChangeSummary(
+function buildToolCallChangeSummary(
   message: TaskChatMessage,
   turnIndex: number,
 ): {
@@ -300,9 +266,7 @@ export function buildTaskChangeSummaryFromToolCalls(
   for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
     const message = messages[messageIndex]!;
     const turnIndex =
-      message.role === "assistant"
-        ? (message.turnIndex ?? messageIndex)
-        : messageIndex;
+      message.role === "assistant" ? (message.turnIndex ?? messageIndex) : messageIndex;
     const summary = buildToolCallChangeSummary(message, turnIndex).summary;
     if (!summary) {
       continue;
@@ -385,10 +349,7 @@ export function buildTurnChangeSummary(
   let removed = 0;
   const files: ZCodeTaskChangedFileSummary[] = Array.from(filesByPath.entries())
     .map(([path, snapshot]) => {
-      const fileStat = computeLineChangeStat(
-        snapshot.beforeContent,
-        snapshot.afterContent,
-      );
+      const fileStat = computeLineChangeStat(snapshot.beforeContent, snapshot.afterContent);
       added += fileStat.added;
       removed += fileStat.removed;
       return {
@@ -407,28 +368,4 @@ export function buildTurnChangeSummary(
     removed,
     files,
   };
-}
-
-/**
- * 从 fileChanges 中按轮次构建 per-turn 文件变更摘要。
- * 用于在每条 assistant 消息下方显示该轮的文件改动。
- */
-export function buildPerTurnChangeSummaries(
-  fileChanges: readonly ZCodePersistedFileChange[] | undefined,
-): Map<number, ZCodeTaskChangeSummary> {
-  const result = new Map<number, ZCodeTaskChangeSummary>();
-  if (!fileChanges || fileChanges.length === 0) {
-    return result;
-  }
-
-  for (const turn of fileChanges) {
-    const summary = buildTurnChangeSummary(turn);
-    if (!summary) {
-      continue;
-    }
-
-    result.set(turn.turnIndex, summary);
-  }
-
-  return result;
 }

@@ -61,7 +61,7 @@ export function stabilizeProjectTree(previous: ProjectTree, next: ProjectTree): 
     : { ...next, projects: sameProjects ? previous.projects : projects, tasks };
 }
 
-export type ProjectRowSelection =
+type ProjectRowSelection =
   | { kind: "project"; projectId: string | null; hostId?: string }
   | { kind: "timeline" }
   | { kind: "pinned" };

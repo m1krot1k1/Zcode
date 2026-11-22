@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Lexical slash 插件的 trigger/面板/键盘导航同属一个协议状态机，oxfmt 换行后略超 400 行。 */
 /**
  * SlashCommandPlugin — Lexical trigger 面板插件
  *
@@ -67,7 +66,12 @@ export function SlashCommandPlugin({
   disabled = false,
   excludedCommandNames,
   appCommands,
-}: SlashCommandPluginProps & { provider: ZCodeProvider }) {
+  onPanelOpenChange,
+}: SlashCommandPluginProps & {
+  provider: ZCodeProvider;
+  /** Сообщает композеру об открытой панели: ghost-автодополнение уступает Tab. */
+  onPanelOpenChange?: (open: boolean) => void;
+}) {
   const [editor] = useLexicalComposerContext();
   const { intl, locale } = useZCodeIntl();
   const [activeTrigger, setActiveTrigger] = useState<ActivePromptInputTrigger | null>(null);
@@ -139,6 +143,11 @@ export function SlashCommandPlugin({
     [activeTrigger],
   );
   const isOpen = !disabled && activeTrigger !== null;
+
+  // Ghost-автодополнение уступает Tab открытой панели: композер получает точный флаг.
+  useEffect(() => {
+    onPanelOpenChange?.(isOpen);
+  }, [isOpen, onPanelOpenChange]);
 
   useEffect(() => {
     activeSignatureRef.current = activeSignature;

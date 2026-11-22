@@ -151,7 +151,11 @@ type ActorPlan =
   // 拒绝接续它的在飞 ask，见 workflow-driver-quiescence.ts）。本种类才是正常形状。
   | { kind: "hang-until-cancelled" }
   // 模型请求以 adapter 错误 reject（模型侧错误收容用例）。
-  | { kind: "throw"; error: unknown };
+  | { kind: "throw"; error: unknown }
+  // 等外部闸门打开后再以模型侧错误 reject。与 `throw` 只差一个 await：调用方用它把
+  // 「兄弟 ask 已经真的在飞」变成前置条件，而不是赌子进程管道里下一条 request 抢在
+  // alpha 的进程内微任务之前到达（provider-stop 用例，见那里的注释）。
+  | { kind: "throw-after"; gate: Promise<void>; error: unknown };
 
 /** 一次 generateText 请求的观察面：模型这一轮看见的消息与被提供的工具。 */
 interface ModelRequestLog {
@@ -188,6 +192,10 @@ function scriptedModelAdapter(
           if (signal.aborted) fail();
           else signal.addEventListener("abort", fail, { once: true });
         });
+      }
+      if (planned.kind === "throw-after") {
+        await planned.gate;
+        throw planned.error;
       }
       if (planned.kind === "throw") throw planned.error;
       const usage = { inputTokens: 12, outputTokens: 8, totalTokens: 20 };
@@ -8021,11 +8029,21 @@ describe("dynamic workflow run service — 模型侧错误的收容（apps/zcode
     });
 
   it("一个子代理撞上确定性模型错误 → run stopped(provider)，兄弟在飞 ask 被 abort，可恢复", async () => {
+    // 「兄弟在飞」是本用例的断言前提，不能交给 IPC 时序去赌：alpha 的适配器先挂起，等 beta
+    // 的首条模型请求真的到达（= beta 的 ask 已被父进程读入、节点在 liveNodes 里）再拒绝。
+    // 否则并行 worker 满载时，alpha 的 ask 可能先被完整处理并触发 stopRun，而 beta 的 request
+    // 还堵在子进程 stdout 里没被父进程读到——abortInFlight 只看得到 alpha，node-settled(cancelled)
+    // 就只剩一条（实测：--maxWorkers=4 全量跑复现一次，断言得到 ["cancelled"]）。
+    let releaseAlphaFailure!: () => void;
+    const alphaFailureGate = new Promise<void>((resolve) => {
+      releaseAlphaFailure = resolve;
+    });
     const harness = makeHarness({
       actorScripts: {
         "actor#1@1": [
           {
-            kind: "throw",
+            kind: "throw-after",
+            gate: alphaFailureGate,
             error: adapterError(
               {
                 reason: "auth_failed",
@@ -8047,6 +8065,13 @@ describe("dynamic workflow run service — 模型侧错误的收容（apps/zcode
       scriptText: PARALLEL_SCRIPT,
       trace: traceFor("provider-stop"),
     });
+    await vi.waitFor(
+      () => {
+        expect(harness.actorModelRequests["actor#2@1"]?.requests.length ?? 0).toBeGreaterThan(0);
+      },
+      { timeout: 30_000, interval: 25 },
+    );
+    releaseAlphaFailure();
     await settle(harness, runId);
 
     const record = harness.journal.getRun(runId);

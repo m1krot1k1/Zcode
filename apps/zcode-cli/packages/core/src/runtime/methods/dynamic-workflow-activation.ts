@@ -30,7 +30,7 @@ export type DynamicWorkflowActivationSource =
   | "resume_entry"
   | "resume_history";
 
-export interface DynamicWorkflowActivationEntryData {
+interface DynamicWorkflowActivationEntryData {
   activated: true;
   source: DynamicWorkflowActivationSource;
 }
@@ -149,7 +149,7 @@ export async function writeDynamicWorkflowActivationEntryIfActivated(
   );
 }
 
-export function buildDynamicWorkflowActivationEntry(
+function buildDynamicWorkflowActivationEntry(
   sessionId: SessionId,
   source: DynamicWorkflowActivationSource,
 ): SessionEntryInfo {

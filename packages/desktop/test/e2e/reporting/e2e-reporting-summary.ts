@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- summary 聚合逻辑含 stability/timing/failureBreakdown 计算，拆分会扩大测试报告模块间耦合。 */
 import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { arch, cpus, platform, totalmem } from "node:os";
 import { resolve } from "node:path";
@@ -528,9 +527,7 @@ function buildSummaryPayload(options: WriteSummaryOptions) {
     exitCode: options.exitCode,
     files: {
       containerSamples: options.containerSamplesPath,
-      coverageHeatmap: existsSync(coverageHeatmapPath)
-        ? coverageHeatmapPath
-        : undefined,
+      coverageHeatmap: existsSync(coverageHeatmapPath) ? coverageHeatmapPath : undefined,
       coverageSummary: existsSync(options.coverageSummaryPath)
         ? options.coverageSummaryPath
         : undefined,

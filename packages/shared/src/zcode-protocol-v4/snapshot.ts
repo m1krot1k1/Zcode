@@ -1,4 +1,3 @@
-/* oxlint-disable max-lines -- v4 snapshot schema is a frozen cross-process contract; additions stay grouped here. */
 // ConversationSnapshot A 区。
 // A 区更新语义 = 字段级整体替换（state.updated），绝不深合并——深合并是错乱之母。
 import { z } from "zod";
@@ -45,6 +44,7 @@ export const stopTargetKindSchema = z.enum([
   "goalVerifier",
   "goalContinuation",
   "turnSteer",
+  "externalAgentRun",
   "mixed",
   "unknown",
 ]);
@@ -58,9 +58,13 @@ export const activeWorkSummarySchema = z.object({
     "goalVerifier",
     "goalContinuation",
     "turnSteer",
+    "externalAgentRun",
   ]),
   foregroundExecutionId: z.string().min(1).optional(),
   sourceCommandId: z.string().min(1).optional(),
+  /** Exact external ACP run identity; required for a safe Stop route. */
+  commandId: z.string().min(1).optional(),
+  runId: z.string().min(1).optional(),
   startedAt: timestampSchema,
 });
 export type ActiveWorkSummary = z.infer<typeof activeWorkSummarySchema>;
@@ -127,6 +131,8 @@ export const apiRetryStateSchema = z.object({
   maxAttempts: z.number(),
   nextRetryAt: timestampSchema,
   reasonCode: z.string(),
+  /** 配额耗尽自动切换 Provider 的提示；旧 Desktop 不认识该字段但可安全忽略。 */
+  providerFallback: z.object({ from: z.string(), to: z.string(), reason: z.string() }).optional(),
 });
 export type ApiRetryState = z.infer<typeof apiRetryStateSchema>;
 
@@ -211,7 +217,7 @@ export const sessionUsageStateSchema = z.object({
 export type SessionUsageState = z.infer<typeof sessionUsageStateSchema>;
 
 // ── queue（不持久化，裁决：CLI 进程死亡即丢，客户端对账后由用户决定重发）──
-export const queueItemSchema = conversationInputIntentSchema.extend({
+export const queueItemSchema = conversationInputIntentSchema.safeExtend({
   dispatch: conversationInputDispatchSchema.extend({
     state: z.enum(["queued", "reserved", "promoting"]),
   }),

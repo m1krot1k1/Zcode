@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { IProjectService, ISourceServerWorkspaceService } from "@zcode/services";
+import {
+  IOpenCodeAcpRuntime,
+  IProjectService,
+  ISourceServerWorkspaceService,
+} from "@zcode/services";
 import { buildServerRemoteWorkspaceIdentity } from "@zcode/shared";
 import { createServerHostServices, disposeServiceResourcesAndWait } from "../../src/node.js";
 
@@ -12,6 +16,7 @@ const host = await createServerHostServices({
   zcodeBuiltinProviderConfigFilePath: resolve("config/provider/zcode-builtin.json"),
 });
 try {
+  assert.ok(host.services.getOptional(IOpenCodeAcpRuntime));
   const db = new DatabaseSync(join(home, ".zcode/v2/tasks-index.sqlite"), { readOnly: true });
   try {
     assert.ok(db.prepare("SELECT id FROM schema_migration WHERE id='0005_projects'").get());

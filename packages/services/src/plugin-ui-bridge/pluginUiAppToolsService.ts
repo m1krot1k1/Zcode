@@ -10,7 +10,7 @@ import type {
 import { PluginUiBridgeError } from "./pluginUiBridgeService.js";
 
 /** 四条 agent 调用都是透传；缺省（web / 远程）时登记与认领抛 unavailable，注销静默。 */
-export interface PluginUiAppToolsServiceDependencies {
+interface PluginUiAppToolsServiceDependencies {
   registerAppToolsForUi?: (
     params: PluginUiRegisterAppToolsParams,
   ) => Promise<PluginUiRegisterAppToolsResult>;

@@ -6,7 +6,9 @@ import { createMcpAdapter } from "../src/mcp/index.js";
 import { terminateMcpStdioProcessTree } from "../src/mcp/process-tree.js";
 import { createMcpTelemetryTracker } from "../src/mcp/telemetry.js";
 
-describe("MCP stdio process lifecycle", () => {
+// Реальные stdio-процессы под полной нагрузкой turbo: редкий delayed exit даёт
+// ложный таймаут. Retry не ослабляет проверки.
+describe("MCP stdio process lifecycle", { retry: 1 }, () => {
   const cleanupPids = new Set<number>();
 
   afterEach(() => {

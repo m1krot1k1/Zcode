@@ -8,8 +8,11 @@ vi.mock("../../../scripts/intranetDefaults.mjs", async (importOriginal) => ({
   },
 }));
 
-const { OFFICIAL_ELECTRON_BUILDER_BINARIES_MIRROR, resolveElectronBuilderBinariesMirror } =
-  await import("../scripts/bundle.mjs");
+const {
+  OFFICIAL_ELECTRON_BUILDER_BINARIES_MIRROR,
+  createElectronBuilderArgs,
+  resolveElectronBuilderBinariesMirror,
+} = await import("../scripts/bundle.mjs");
 
 describe("未配置内网依赖源时的 electron-builder binaries 镜像", () => {
   it("回退到官方 release 下载地址，打包不因内网地址缺失而失败", () => {
@@ -24,5 +27,11 @@ describe("未配置内网依赖源时的 electron-builder binaries 镜像", () =
         ELECTRON_BUILDER_BINARIES_MIRROR: "https://example.test/electron-builder-binaries/",
       }),
     ).toBe("https://example.test/electron-builder-binaries/");
+  });
+
+  it("即使本地环境设置 CI=true 也显式禁止 electron-builder 发布", () => {
+    const args = createElectronBuilderArgs("mac", "arm64");
+
+    expect(args.slice(-2)).toEqual(["--publish", "never"]);
   });
 });

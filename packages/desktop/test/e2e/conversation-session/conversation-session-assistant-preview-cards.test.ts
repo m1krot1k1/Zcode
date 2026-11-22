@@ -51,10 +51,7 @@ const OFFICE_FILES = [
   { fixture: "sample.xlsx", name: "年度 总结.xlsx" },
   { fixture: "sample.pptx", name: "产品 路线.pptx" },
   { fixture: "sample.pdf", name: "审计 报告.pdf" },
-] as const;
-const MEDIA_FILES = ["生成 视频.mp4", "生成 音频.wav"] as const;
-
-interface PreviewCardSnapshot {
+] as const;interface PreviewCardSnapshot {
   text: string;
   title: string;
 }

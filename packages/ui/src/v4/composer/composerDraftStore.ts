@@ -27,6 +27,8 @@ export interface V4ComposerDraft {
   /** 有合法 mode 表示已经初始化；没有模型仍是明确空态，不能按旧文本草稿补默认。 */
   mode?: SubmissionMode;
   planEnabled?: boolean;
+  /** Одноразовый режим запуска роя для текущего черновика. */
+  orchestrationMode?: "swarm";
   modelSelection?: ModelSelection;
   updatedAt: number;
 }
@@ -294,6 +296,7 @@ function readDraft(value: unknown): V4ComposerDraft | null {
       : mode.success
         ? { planEnabled: mode.data === "plan" }
         : {}),
+    ...(value.orchestrationMode === "swarm" ? { orchestrationMode: "swarm" as const } : {}),
     ...(modelSelection ? { modelSelection } : {}),
     updatedAt:
       typeof value.updatedAt === "number" && Number.isFinite(value.updatedAt) ? value.updatedAt : 0,

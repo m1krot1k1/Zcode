@@ -419,7 +419,14 @@ describe("WorkflowArtifactSidePane 版本步进器", () => {
     expect(view.getByTestId("workflow-artifact-version").textContent).toBe("第 3 版 / 共 3 版");
     expect(view.getByTestId("workflow-artifact-version-next").hasAttribute("disabled")).toBe(true);
 
-    fireEvent.click(view.getByTestId("workflow-artifact-version-previous"));
+    // Первичная загрузка байтов идёт эффектом после монтирования: под полной
+    // нагрузкой её резолв приходит уже после клика и откатывает выбор на версию 3.
+    // Дожидаемся первого чтения, затем кликаем внутри act, чтобы порядок был стабилен.
+    await waitFor(() => expect(workflowRunArtifactRead).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.click(view.getByTestId("workflow-artifact-version-previous"));
+      await Promise.resolve();
+    });
     await waitFor(() =>
       expect(view.getByTestId("workflow-artifact-version").textContent).toBe("第 2 版 / 共 3 版"),
     );

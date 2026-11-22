@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "zustand";
+import { toLegacyBilingualLocale } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { toast } from "@/components/ui/toast.js";
 import { CloudContentDialog } from "@/components/cloud-content-dialog/CloudContentDialog.js";
@@ -32,7 +33,7 @@ export function MarketingDialogs({ controller }: { controller: MarketingTouchCon
     dialog && content
       ? adaptMarketingPopup(
           dialog.delivery.campaign_id,
-          locale,
+          toLegacyBilingualLocale(locale),
           content,
           dialog.hero,
           intl.formatMessage({ id: "manualClaimPlan.claim.dialog.modelSettings" }),

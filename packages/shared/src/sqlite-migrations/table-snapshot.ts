@@ -11,7 +11,7 @@ export function identifier(value: string): string {
   return `"${value}"`;
 }
 
-export function contentHash(rows: readonly SQLInputValue[][]): string {
+function contentHash(rows: readonly SQLInputValue[][]): string {
   const encoded = rows
     .map((row) =>
       JSON.stringify(row, (_key, value: unknown) => {

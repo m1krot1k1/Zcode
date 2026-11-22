@@ -21,7 +21,9 @@ import {
   type ExecutionResult,
   type ExecutionRequest,
   type ExecutionRunOptions,
+  type ExecutionSandboxPolicy,
   type ExecutionShellSelection,
+  type JsonSchema,
   type TraceContext,
 } from "@zcode/contracts";
 import {
@@ -35,15 +37,13 @@ import type {
   ToolRuntimePermissionCapability,
   ToolRuntimePermissionCapabilityContext,
 } from "../types.js";
-import { resolveToolWorkingDirectory } from "../path-policy.js";
+import {
+  assertBashCommandPathBoundary,
+  resolveToolWorkingDirectory,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 import { decideBashCwdPolicy } from "./bash-cwd-policy.js";
-export {
-  getBashActivityDescription,
-  getBashAutoClassifierInput,
-  getBashDescription,
-  getBashToolUseSummary,
-  getBashUserFacingName,
-} from "./bash-metadata.js";
+
 import { readStringProperty } from "./bash-metadata.js";
 import { formatBashModelContent, formatPersistedBashModelContent } from "./bash-model-content.js";
 
@@ -64,10 +64,10 @@ import {
 import { applyBashReadFileStateEffects } from "./bash-read-file-state.js";
 import {
   prepareBashPermissionMatcherForCommand,
-  isBashReadOnlyCommand,
   isRuntimeReadOnlyBashCommand,
   type BashPermissionMatcher,
 } from "./bash-semantics.js";
+import type { BashReadonlyRuntimeContext } from "./bash-git-runtime-safety.js";
 import { isBashAutoBackgroundEligible } from "./bash-background-policy.js";
 import { supportsBashBackgroundLifecycle } from "./bash-background-lifecycle.js";
 import { resolveBashPermissionRulePolicy } from "./bash-command-permission-policy.js";
@@ -84,7 +84,25 @@ const BASH_PROVIDER_DESCRIPTION = createBashProviderDescription({
   maxTimeoutMs: DEFAULT_BASH_TIMEOUT_POLICY.maxTimeoutMs,
 });
 
-export function getBashPrompt(
+// R04 вариант B был отменён: OS-песочница реализована в cli-exec-sandbox.
+// `dangerouslyDisableSandbox` по-прежнему не объявляется модели: отключение
+// изоляции — решение runtime, а не аргумент произвольного вызова.
+const BASH_SANDBOX_FIELD_NAME = "dangerouslyDisableSandbox";
+// Изоляция исполнения: политика запрашивается у runtime, фактический режим
+// возвращается adapter-ом в `result.sandbox` и попадает в наш output.
+const BASH_SANDBOX_PROFILE = "workspace-write";
+
+/**
+ * Provider-visible output: статус песочницы теперь реальный (`result.sandbox`),
+ * поэтому поле описывается моделью-fulfillment схемой и не вырезается.
+ */
+function createBashProviderOutputSchema(): JsonSchema {
+  return BashOutputJsonSchema;
+}
+
+const BASH_PROVIDER_OUTPUT_SCHEMA = createBashProviderOutputSchema();
+
+function _getBashPrompt(
   timeoutPolicy: BashTimeoutPolicy = DEFAULT_BASH_TIMEOUT_POLICY,
 ): string {
   return createBashProviderDescription({
@@ -93,16 +111,22 @@ export function getBashPrompt(
   });
 }
 
-export function isBashInputReadOnly(input: unknown): boolean {
+export function isBashInputReadOnly(
+  input: unknown,
+  context?: BashReadonlyRuntimeContext,
+): boolean {
   const command = readStringProperty(input, "command");
-  return command ? isBashReadOnlyCommand(command) : false;
+  return command ? isRuntimeReadOnlyBashCommand(command, context) : false;
 }
 
-export function isBashInputConcurrencySafe(input: unknown): boolean {
-  return isBashInputReadOnly(input);
+export function isBashInputConcurrencySafe(
+  input: unknown,
+  context?: BashReadonlyRuntimeContext,
+): boolean {
+  return isBashInputReadOnly(input, context);
 }
 
-export function checkBashInputPermissions(input: unknown): { behavior: "allow" } | undefined {
+function _checkBashInputPermissions(input: unknown): { behavior: "allow" } | undefined {
   return resolveBashPermissionCapability(input) ? { behavior: "allow" } : undefined;
 }
 
@@ -111,7 +135,7 @@ export function prepareBashPermissionMatcher(input: unknown): BashPermissionMatc
   return command === undefined ? undefined : prepareBashPermissionMatcherForCommand(command);
 }
 
-export function resolveBashPermissionCapability(
+function resolveBashPermissionCapability(
   input: unknown,
   context?: ToolRuntimePermissionCapabilityContext,
 ): ToolRuntimePermissionCapability | undefined {
@@ -174,6 +198,15 @@ async function executeBashHandler(
     commandTelemetry?.finishCompleted();
     return emptyBashOutput(parsed);
   }
+
+  // Причина: workspace boundary проверяла только входной cwd, а `cat ../secret` проходил.
+  // В strict/ask команда с явными путями за пределы workspace отклоняется до запуска.
+  assertBashCommandPathBoundary({
+    command: parsed.command,
+    workingDirectory: context.workingDirectory,
+    workspaceRoot: context.workspaceRoot,
+    workspaceBoundary: context.workspaceBoundary,
+  });
 
   const request = createExecutionRequest(parsed, context, timeoutPolicy);
   const progressTiming: BashProgressTiming = {};
@@ -249,6 +282,10 @@ async function executeBashHandler(
     progressTiming,
     stderrSuffix: cwdDecision.stderrSuffix,
   });
+  // R04 вариант B: provider-visible результат не должен подтверждать
+  // несуществующий sandbox. Поле остаётся в runtime-схеме для чтения старых
+  // persisted-результатов, но новый ответ Bash его не несёт.
+  delete output.dangerouslyDisableSandbox;
   await applyBashReadFileStateEffects({
     command: parsed.command,
     context,
@@ -267,7 +304,6 @@ function emptyBashOutput(input: BashInput): BashOutput {
       isImage: false,
       noOutputExpected: false,
       status: "completed",
-      dangerouslyDisableSandbox: input.dangerouslyDisableSandbox,
     },
     createEmptyBashPerformanceTelemetry(input),
   );
@@ -288,7 +324,6 @@ function toBackgroundedBashOutput(
       persistedOutputPath: task.outputPath,
       stdoutPersistedOutputPath: task.stdoutPersistedOutputPath,
       stderrPersistedOutputPath: task.stderrPersistedOutputPath,
-      dangerouslyDisableSandbox: input.dangerouslyDisableSandbox,
     },
     createBashBackgroundPerformanceTelemetry(input),
   );
@@ -325,7 +360,10 @@ function startBashCommandTelemetry(
     category: commandCategory(input.command),
     commandCount: identity.count ?? 0,
     safeName: identity.name ?? "other",
-    sandboxed: input.dangerouslyDisableSandbox !== true,
+    // R04 вариант B: sandbox не реализован, поэтому команда никогда не
+    // изолирована. sandbox-поля во входе нет — это наблюдаемый факт, а не
+    // отражение запроса модели.
+    sandboxed: false,
     shellKind: commandShellKind(context.bashShellSelection),
   });
 }
@@ -445,6 +483,7 @@ function createExecutionRequest(
       operation: "execute",
       workingDirectory: context.workingDirectory,
       workspaceRoot: context.workspaceRoot,
+      ...workspaceBoundaryOptions(context),
     }),
     ...(bashPrelude ? { bashPrelude } : {}),
     captureCwdAfterSuccess: input.run_in_background ? undefined : true,
@@ -455,10 +494,9 @@ function createExecutionRequest(
       maxPersistedBytes: MAX_RUNTIME_PERSISTED_OUTPUT_BYTES,
       persistOutput: input.run_in_background ? "always" : "on_truncate",
     },
-    sandbox: {
-      enabled: !input.dangerouslyDisableSandbox,
-      dangerouslyDisableSandbox: input.dangerouslyDisableSandbox,
-    },
+    // R04 заменён: adapter применяет изоляцию и возвращает фактический режим
+    // в result.sandbox; здесь передаётся только политика.
+    sandbox: createBashSandboxPolicy(context, context.workingDirectory),
     trace: {
       traceId: context.traceId,
       spanId: context.spanId,
@@ -489,12 +527,20 @@ export const bashToolEntry: ToolEntry = {
   },
   formatModelContent: formatBashModelContent,
   formatPersistedModelContent: formatPersistedBashModelContent,
+  resolveWorkspaceBoundaryPaths: (_input, context) =>
+    context.workingDirectory === undefined
+      ? []
+      : [{ path: context.workingDirectory, operation: "execute" }],
   handler: bashHandler,
   resolveTimeoutBudgetMs: createBashTimeoutBudgetResolver(DEFAULT_BASH_TIMEOUT_POLICY),
   resolvePermissionCapability: resolveBashPermissionCapability,
+  resolveConcurrencyCapability: (input, context) =>
+    isBashInputConcurrencySafe(input, context)
+      ? { readOnly: true, concurrentSafe: true, sideEffectScope: "none" }
+      : undefined,
   resolvePermissionRulePolicy: resolveBashPermissionRulePolicy,
   inputSchema: BashInputJsonSchema,
-  outputSchema: BashOutputJsonSchema,
+  outputSchema: BASH_PROVIDER_OUTPUT_SCHEMA,
   runtimeInputSchema: BashInputSchema,
   runtimeOutputSchema: BashOutputSchema,
   permission: {
@@ -546,10 +592,11 @@ export function createBashToolEntry(
   } = {},
 ): ToolEntry {
   const timeoutPolicy = options.bashTimeoutPolicy ?? DEFAULT_BASH_TIMEOUT_POLICY;
+  const inputSchema = createBashInputJsonSchema(timeoutPolicy);
   return {
     ...bashToolEntry,
     handler: createBashHandler(timeoutPolicy),
-    inputSchema: createBashInputJsonSchema(timeoutPolicy),
+    inputSchema,
     resolveTimeoutBudgetMs: createBashTimeoutBudgetResolver(timeoutPolicy),
     metadata: {
       ...bashToolEntry.metadata,
@@ -581,6 +628,8 @@ function createBashTimeoutBudgetResolver(
 }
 
 function createBashInputJsonSchema(timeoutPolicy: BashTimeoutPolicy): Record<string, unknown> {
+  // Entry-level схема — та же provider-схема контракта; переопределяется только
+  // описание timeout из createBashToolEntry(timeoutPolicy). Sandbox-поля в ней нет.
   const schema = BashInputJsonSchema as Record<string, unknown>;
   const properties = schema.properties as Record<string, unknown> | undefined;
   const timeoutProperty = properties?.timeout as Record<string, unknown> | undefined;
@@ -597,3 +646,36 @@ function createBashInputJsonSchema(timeoutPolicy: BashTimeoutPolicy): Record<str
     },
   };
 }
+
+/**
+ * Реальная политика изоляции для Bash.
+ *
+ * `workspacePath` — корень записи; всё остальное монтируется read-only внутри
+ * `bwrap`, а на `degraded` cwd принудительно остаётся внутри workspace.
+ * `networkAccess` берётся из окружения runtime: `deny` включается, когда
+ * workspace помечен как офлайн.
+ */
+function createBashSandboxPolicy(
+  context: ToolExecutionContext,
+  workingDirectory: string | undefined,
+): ExecutionSandboxPolicy {
+  const workspacePath = context.workspaceRoot || workingDirectory || process.cwd();
+  // Host 明确关闭沙箱时把 off 传下去：adapter 不再包 bwrap/seatbelt，
+  // 并保留完整环境变量；仍保留 wrap 是为了让结果如实报告 sandbox.mode=none。
+  const profile = context.bashSandboxMode === "off" ? "off" : BASH_SANDBOX_PROFILE;
+  return {
+    enabled: true,
+    profile,
+    wrap: {
+      profile,
+      workspacePath,
+      networkAccess: context.bashSandboxNetwork === "deny" ? "deny" : "allow",
+      limits: BASH_SANDBOX_LIMITS,
+    },
+  };
+}
+
+/** Лимиты по умолчанию: защита от runaway-команд без ломки обычной работы. */
+const BASH_SANDBOX_LIMITS = {
+  maxFileSizeBytes: 5 * 1024 * 1024 * 1024,
+} as const;

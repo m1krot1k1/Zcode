@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess, type StdioOptions } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { applyBashSourcesToExecutionRequest } from "./bash-startup-script.js";
 import { createBashResourceTelemetry } from "./bash-resource-telemetry.js";
 import { createCwdCapturePlan } from "./cwd-capture.js";
@@ -16,6 +18,8 @@ import {
   signalPosixProcessTree,
   terminateGenericPosixProcessGroup,
 } from "./process-tree.js";
+import { createExecutionSandbox } from "./sandbox/execution-sandbox.js";
+import type { SandboxedCommand } from "./sandbox/contract.js";
 import {
   revalidateShellInitSnapshotForExecution,
   supportsShellInitSnapshot,
@@ -31,7 +35,11 @@ import type {
   InternalExecutionRunOptions,
   PreparedChildSpawn,
 } from "./execution-adapter-types.js";
-import type { ExecutionRequest, ExecutionRunOptions } from "@zcode/contracts";
+import type {
+  ExecutionRequest,
+  ExecutionRunOptions,
+  ExecutionSandboxReport,
+} from "@zcode/contracts";
 
 export class NodeExecutionAdapterProcess extends NodeExecutionAdapterResults {
   protected trackBashResources(
@@ -122,11 +130,16 @@ export class NodeExecutionAdapterProcess extends NodeExecutionAdapterResults {
             resolvedShell,
           });
     const spawnEnv = command.envOverlay ? { ...env, ...command.envOverlay } : env;
+
+    // 沙箱: реальная обёртка bwrap/seatbelt либо честный degraded-fallback.
+    // Применяется только когда Bash-политика попросила изоляцию.
+    const sandboxed = await this.applySandboxWrap(request, command, spawnEnv, capturePlan);
+
     const baseOptions = {
-      cwd: request.cwd,
+      cwd: sandboxed?.cwd ?? request.cwd,
       detached: this.platform !== "win32",
-      env: spawnEnv,
-      shell: command.shell,
+      env: sandboxed?.env ?? spawnEnv,
+      shell: sandboxed ? false : command.shell,
       stdio: [
         request.stdin === undefined ? "ignore" : "pipe",
         "pipe",
@@ -136,10 +149,81 @@ export class NodeExecutionAdapterProcess extends NodeExecutionAdapterResults {
     };
 
     return {
-      command,
+      command: sandboxed
+        ? { ...command, file: sandboxed.file, args: sandboxed.args, shell: false }
+        : command,
       cwdDialect: command.cwdDialect,
       cwdFilePath: capturePlan.cwdFilePath,
       spawnOptions: baseOptions,
+      ...(sandboxed?.report ? { sandboxReport: sandboxed.report } : {}),
+    };
+  }
+
+  /**
+   * Применяет политику песочницы из `request.sandbox.wrap`.
+   *
+   * Возвращает `undefined`, когда изоляция не запрошена: тогда spawn идёт
+   * существующим путём без изменения argv и окружения.
+   */
+  private async applySandboxWrap(
+    request: ExecutionRequest,
+    command: PreparedChildSpawn["command"],
+    env: NodeJS.ProcessEnv,
+    capturePlan: { cwdFilePath?: string },
+  ): Promise<
+    | {
+        file: string;
+        args: string[];
+        env: Record<string, string>;
+        cwd: string;
+        report: ExecutionSandboxReport;
+      }
+    | undefined
+  > {
+    const wrap = request.sandbox?.wrap;
+    if (request.sandbox?.enabled === false || !wrap || this.platform === "win32") return undefined;
+
+    const captureDir = capturePlan.cwdFilePath
+      ? dirname(capturePlan.cwdFilePath)
+      : wrap.cwdCaptureDir;
+    try {
+      if (captureDir) mkdirSync(captureDir, { recursive: true });
+    } catch {
+      // Каталог захвата cwd уже создан createCwdCapturePlan либо недоступен;
+      // недоступность не должна блокировать запуск — она лишь убирает bind.
+    }
+
+    const sandbox = createExecutionSandbox({
+      platform: this.platform,
+      processEnv: env as NodeJS.ProcessEnv,
+    });
+    const wrapped: SandboxedCommand = await sandbox.wrap(
+      { file: command.file, args: command.args },
+      {
+        profile: wrap.profile ?? "workspace-write",
+        cwd: request.cwd ?? wrap.workspacePath,
+        workspacePath: wrap.workspacePath,
+        ...(wrap.writableRoots ? { writableRoots: wrap.writableRoots } : {}),
+        ...(wrap.readOnlyRoots ? { readOnlyRoots: wrap.readOnlyRoots } : {}),
+        networkAccess: wrap.networkAccess ?? "allow",
+        ...(wrap.env ? { env: wrap.env } : {}),
+        ...(captureDir ? { cwdCaptureDir: captureDir } : {}),
+        ...(wrap.limits ? { limits: wrap.limits } : {}),
+      },
+    );
+
+    return {
+      file: wrapped.file,
+      args: wrapped.args,
+      env: wrapped.env,
+      cwd: wrapped.cwd,
+      report: {
+        mode: wrapped.sandboxMode,
+        ...(wrapped.sandboxReason ? { reason: wrapped.sandboxReason } : {}),
+        filesystemIsolated: wrapped.filesystemIsolated,
+        networkIsolated: wrapped.networkIsolated,
+        ...(Object.keys(wrapped.limits).length > 0 ? { limits: wrapped.limits } : {}),
+      },
     };
   }
 

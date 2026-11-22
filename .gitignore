@@ -1,5 +1,8 @@
 node_modules/
 dist/
+apps/zcode-cli/packages/adapters/backup/
+# 测试运行时在 CLI 工作目录落盘的 backup.json / tables.sqlite，属运行产物，不入库。
+apps/zcode-cli/backup/
 # zcode-server-cli 发行包 staging 输出（spec §7.1），本地组装产物不入库。
 dist-release/
 # Bugfix: macOS CI 按架构隔离 electron-builder 输出目录，这些仍是构建产物。
@@ -12,6 +15,7 @@ packages/desktop/bundled-resources/
 packages/desktop/bundled-agents/
 packages/desktop/bundled-tools/
 packages/desktop/mock-cdn/
+packages/desktop/bundled-remote-assets/
 packages/desktop/.e2e-home/
 # 修复原因：Windows shard runner 会生成带 run id 的 HOME；中断后不应把测试产物误判为源码改动。
 packages/desktop/.e2e-home-*/
@@ -75,3 +79,9 @@ packages/desktop/resources/macos-window-bounds/
 __pycache__/
 *.pyc
 .zcode-runtime
+# Локальный SQLite-индекс кодовой базы (`code-intelligence`): генерируется рантаймом
+# при индексации workspace и не должен попадать в коммит.
+.zcode-code-index/
+.plan/
+# Voice engine build outputs (Hex, MIT) — prepared by scripts/hex-service/prepare-hex-service.mjs
+packages/desktop/bundled-voice/

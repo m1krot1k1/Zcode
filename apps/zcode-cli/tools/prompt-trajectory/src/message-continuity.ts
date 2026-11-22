@@ -67,7 +67,7 @@ function isUserContentAppend(previous: OpenAiMessage, next: OpenAiMessage): bool
   );
 }
 
-export function isTrajectoryMessageEqual(previous: OpenAiMessage, next: OpenAiMessage): boolean {
+function isTrajectoryMessageEqual(previous: OpenAiMessage, next: OpenAiMessage): boolean {
   // Anthropic 缓存标记会漂移；只在比较时忽略，输出仍保留最新请求的原始值。
   return isDeepStrictEqual(removeCacheControl(previous), removeCacheControl(next));
 }

@@ -185,14 +185,14 @@ export function HighspeedShareDialog({
       ),
       imageSummary: intl.formatMessage(
         { id: "globalNotice.highspeed.imageSummary" },
-        { tokens: Math.floor(metrics.outputTokens).toLocaleString(), duration: savedSeconds },
+        { tokens: Math.floor(metrics.outputTokens).toLocaleString("en-US"), duration: savedSeconds },
       ),
     })
       .then(() => toast(intl.formatMessage({ id: "globalNotice.highspeed.imageCopied" })))
       .catch(() => toast(intl.formatMessage({ id: "globalNotice.highspeed.imageCopyFailed" })));
   const shareText = intl.formatMessage(
     { id: "globalNotice.highspeed.copySummary" },
-    { tokens: metrics.outputTokens.toLocaleString(), duration: savedSeconds },
+    { tokens: metrics.outputTokens.toLocaleString("en-US"), duration: savedSeconds },
   );
   const copyText = () =>
     void copyHighspeedShareText(shareText)

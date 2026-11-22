@@ -5,7 +5,11 @@ export type AgentScope = "built-in" | "workspace" | "user";
 
 export type AgentSource = "built-in" | "user" | "plugin";
 
-export type BuiltInSubagentName = "general-purpose" | "Explore";
+/**
+ * Встроенные роли, для которых допустим явный override модели.
+ * start/orchestrator только маршрутизируют — им можно назначить более дешёвую модель.
+ */
+export type BuiltInSubagentName = "general-purpose" | "Explore" | "start" | "orchestrator";
 
 export type BuiltInSubagentModelSelectionOverrides = Partial<
   Record<BuiltInSubagentName, ModelSelection>
@@ -57,6 +61,8 @@ export interface AgentSummary {
   modelSelectionOverride?: ModelSelection;
   tools?: string[];
   disallowedTools?: string[];
+  /** Custom profiles can be selected by the explicit Swarm planner only after opt-in. */
+  includeInSwarm?: boolean;
   injectAgentsMd?: boolean;
   skills?: string[];
   permissionMode?: AgentPermissionMode;
@@ -102,6 +108,8 @@ export interface SubAgentConfig {
   modelSelection?: ModelSelection;
   tools?: string[];
   disallowedTools?: string[];
+  /** Custom profiles can be selected by the explicit Swarm planner only after opt-in. */
+  includeInSwarm?: boolean;
   injectAgentsMd?: boolean;
   skills?: string[];
   permissionMode?: AgentPermissionMode;

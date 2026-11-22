@@ -10,20 +10,20 @@ export const UI_PERF_ARMS_GROUP = "ui_perf";
 
 export const UI_PERF_EVENT_LAUNCH_TO_INPUT = "perf_ui_launch_to_input";
 export const UI_PERF_EVENT_LAUNCH_ELECTRON_INIT = "perf_ui_launch_electron_init_ms";
-export const UI_PERF_EVENT_LAUNCH_APP_READY = "perf_ui_launch_app_ready_ms";
-export const UI_PERF_EVENT_LAUNCH_WINDOW = "perf_ui_launch_window_ms";
-export const UI_PERF_EVENT_LAUNCH_RENDERER_LOAD = "perf_ui_launch_renderer_load_ms";
+const UI_PERF_EVENT_LAUNCH_APP_READY = "perf_ui_launch_app_ready_ms";
+const UI_PERF_EVENT_LAUNCH_WINDOW = "perf_ui_launch_window_ms";
+const UI_PERF_EVENT_LAUNCH_RENDERER_LOAD = "perf_ui_launch_renderer_load_ms";
 export const UI_PERF_EVENT_LAUNCH_REACT_COMMIT = "perf_ui_launch_react_commit_ms";
 export const UI_PERF_EVENT_LAUNCH_STARTUP_GATE = "perf_ui_launch_startup_gate_ms";
 
 // 总时长超过该值视为时钟异常/挂起，整批丢弃，避免污染分布。
 export const LAUNCH_TO_INPUT_SANITY_MAX_MS = 300000;
 
-export const UI_PERF_EVENT_FIRST_TOKEN = "perf_ui_first_token";
-export const UI_PERF_EVENT_MESSAGE_COMPLETE = "perf_ui_message_complete";
+const UI_PERF_EVENT_FIRST_TOKEN = "perf_ui_first_token";
+const UI_PERF_EVENT_MESSAGE_COMPLETE = "perf_ui_message_complete";
 export const UI_PERF_EVENT_TURN_BREAKDOWN = "perf_ui_turn_breakdown";
 export const UI_PERF_EVENT_TOOL_CALL_DETAIL = "perf_ui_tool_call_detail";
-export const UI_PERF_EVENT_STREAM_STALL = "perf_ui_stream_stall";
+const UI_PERF_EVENT_STREAM_STALL = "perf_ui_stream_stall";
 
 // 超过该间隔(ms)未收到新 chunk 视为停顿并上报;value 仍为真实间隔。可据线上分布收紧。
 // 工具调用(tool_call/tool_call_update)期间不计入:工具事件会 clearStreamStallTracking,

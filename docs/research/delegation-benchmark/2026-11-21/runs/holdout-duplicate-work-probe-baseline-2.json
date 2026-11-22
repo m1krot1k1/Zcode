@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-duplicate-work-probe",
+  "family": "duplicate-work-probe",
+  "arm": "baseline",
+  "repeat": 2,
+  "startedAt": "2026-11-21T08:21:50.354Z",
+  "durationMs": 21505,
+  "tokens": 183007,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "duplicate probe acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both functions are fixed in `src/shared.mjs`, and every acceptance check passes.\n\nWhat changed:\n- `formatName` now trims, splits on whitespace runs, and title-cases each word (first letter upper, rest lower), joining with single spaces. So `'  ada lovelace '` → `'Ada Lovelace'`, and all-caps input like `'ADA LOVELACE'` also normalizes to `'Ada Lovelace'`.\n- `formatDate` accepts a `Date` or date string and returns the UTC `YYYY-MM-DD` slice, so `new Date('2026-11-21T00:00:00Z')` → `'2026-11-21'` regardless of local timezone.\n\nVerification:\n- Ran actual calls under Node and asserted outcomes: trim/title-case input, all-caps input, whitespace-only input (`''`), the specified `Date` instance, and a late-evening UTC string. All five passed.\n- `grep -c` confirms exactly one `function formatName` and one `function formatDate` in the file, so no duplicate definitions were introduced.\n\nNo test or lint script exists in this fixture's `package.json` (`bench-duplicate` is type-module only), so the",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

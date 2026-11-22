@@ -42,6 +42,13 @@ const mockSubagentsService = vi.hoisted(() => ({
   setBuiltInModelOverride: vi.fn(),
   setPluginAgentModelOverride: vi.fn(),
 }));
+const mockSkillsService = vi.hoisted(() => ({
+  list: vi.fn(async () => ({
+    skills: [],
+    capability: { userScopeAvailable: true },
+    diagnostics: [],
+  })),
+}));
 const mockRefreshLoadedSubagentsStoreForWorkspace = vi.hoisted(() => vi.fn(async () => {}));
 const mockUseModelProviders = vi.hoisted(() =>
   vi.fn(() => ({
@@ -333,6 +340,7 @@ vi.mock("@/hooks/useServices.js", () => ({
   useServices: () =>
     mockScopeRouting.context ?? {
       subagentsService: mockSubagentsService,
+      skillsService: mockSkillsService,
     },
 }));
 
@@ -417,6 +425,7 @@ vi.mock("@/i18n/IntlProvider.js", () => ({
           "settings.subagents.model.main": "Main model",
           "settings.subagents.reasoningUnavailable": "Reasoning effort unavailable",
           "settings.subagents.toolsCount": `${values?.count ?? 0} tools`,
+          "settings.subagents.skillsCount": `${values?.count ?? 0} skills`,
           "settings.subagents.tools.all": "All tools",
           "settings.subagents.tools.inherit": "Inherit tools",
           "settings.subagents.toggleAria": `Toggle ${values?.name ?? ""}`,
@@ -497,6 +506,11 @@ describe("SubagentsSection", () => {
         userScopeReason: "desktop_only",
       },
     });
+    mockSkillsService.list.mockResolvedValue({
+      skills: [],
+      capability: { userScopeAvailable: true },
+      diagnostics: [],
+    });
     mockRefreshLoadedSubagentsStoreForWorkspace.mockResolvedValue(undefined);
   });
 
@@ -516,6 +530,7 @@ describe("SubagentsSection", () => {
       },
       pluginManagementService: {},
       modelSelectionService: {},
+      skillsService: mockSkillsService,
     });
     const local = makeServices();
     const remoteA = makeServices();
@@ -842,6 +857,36 @@ describe("SubagentsSection", () => {
     expect(html).toContain("Explore");
     expect(html).toContain("All tools");
     expect(html).not.toContain("1 tools");
+  });
+
+  it("shows concrete preferred skills instead of counting the wildcard", async () => {
+    stateOverrides = new Map<number, unknown>([
+      [
+        1,
+        [
+          {
+            id: "built-in:coder",
+            name: "coder",
+            description: "Writes production code",
+            systemPrompt: "Code.",
+            path: "built-in:coder",
+            scope: "built-in",
+            source: "built-in",
+            enabled: true,
+            readOnly: true,
+            tools: ["Read", "Edit"],
+            skills: ["*", "code-craft", "zcode-verification"],
+          },
+        ],
+      ],
+      [2, { userScopeAvailable: true }],
+    ]);
+
+    const html = await renderSubagentsSection();
+
+    expect(html).toContain("coder");
+    expect(html).toContain("2 skills");
+    expect(html).not.toContain("3 skills");
   });
 
   it("renders model controls for built-in subagents while keeping user model badges", async () => {
@@ -1378,10 +1423,13 @@ describe("SubagentsSection", () => {
           options: { reasoningLevel: "max" },
         },
       });
-      expect(capturedThoughtLevelControls.at(-1)).toMatchObject({
-        disabled: true,
-        option: expect.objectContaining({ currentValue: "max" }),
-      });
+      // Пока запись не подтверждена, контрол должен быть disabled. Проверяем наличие
+      // такого контрола, а не «последний»: при перерисовке списка порядок меняется.
+      expect(
+        capturedThoughtLevelControls.some(
+          (control) => control.disabled === true && control.option?.currentValue === "max",
+        ),
+      ).toBe(true);
     });
 
     expect(resolveWrite).toBeTypeOf("function");
@@ -1393,10 +1441,11 @@ describe("SubagentsSection", () => {
 
     await waitFor(() => {
       expect(mockRefreshLoadedSubagentsStoreForWorkspace).toHaveBeenCalledTimes(1);
-      expect(capturedThoughtLevelControls.at(-1)).toMatchObject({
-        disabled: false,
-        option: expect.objectContaining({ currentValue: "max" }),
-      });
+      expect(
+        capturedThoughtLevelControls.some(
+          (control) => control.disabled === false && control.option?.currentValue === "max",
+        ),
+      ).toBe(true);
     });
   });
 

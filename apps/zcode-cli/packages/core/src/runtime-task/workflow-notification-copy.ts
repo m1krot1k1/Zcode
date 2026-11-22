@@ -192,7 +192,7 @@ export function formatWorkflowEscalationNotification(
  * 兜底。文案把这几件事说死：去读草稿（函数体在留白处编译、看得见它之前的绑定）、只写语句、返回留白
  * 的类型、带 hole_id 调 FillWorkflowHole；只有这一支停着、run 其余照跑；通知丢了去 GetWorkflowRun。
  */
-export interface WorkflowHoleNotificationInput {
+interface WorkflowHoleNotificationInput {
   runLabel: string;
   runId: string;
   holeId: string;
@@ -255,7 +255,7 @@ export function formatWorkflowHoleNotification(input: WorkflowHoleNotificationIn
  * 文案除了逐字的下一步，还必须给模型一条不靠瞎答就能让提醒停下的出路（需要用户就明说、然后收尾），
  * 并如实说还有没有下一次。
  */
-export interface WorkflowBlockedNotificationInput {
+interface WorkflowBlockedNotificationInput {
   runLabel: string;
   runId: string;
   /** 第几次提醒（1 起）与上限。 */

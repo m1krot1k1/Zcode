@@ -31,7 +31,7 @@ import { createOpenAiCompatApi, readOpenAiGlobals } from "./openaiAlias.js";
  * 懒连接：别名脚本注入到每个插件页面，而用官方 SDK 自建 `App` 的页面（官方示例）不会碰 `window.zcode`；
  * 首次访问任一成员才握手，避免同一页面对宿主发两次 ui/initialize。
  */
-export interface AliasAppLike {
+interface AliasAppLike {
   connect(transport?: Transport, options?: RequestOptions): Promise<void>;
   getHostVersion(): Implementation | undefined;
   getHostCapabilities(): McpUiHostCapabilities | undefined;
@@ -72,7 +72,7 @@ export interface AliasAppLike {
 
 export const ZCODE_GLOBALS_EVENT = "zcode:globals";
 
-export interface PluginSandboxAliasRuntime {
+interface PluginSandboxAliasRuntime {
   zcode: ZcodeAliasApi;
   openai: OpenAiCompatApi;
   /** 是否已经（或正在）握手；诊断用。 */

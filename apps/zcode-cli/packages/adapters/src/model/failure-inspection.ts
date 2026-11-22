@@ -11,6 +11,64 @@ export function getStatusCode(error: unknown): number | undefined {
   return getStatusCodeFromError(error, new WeakSet<object>());
 }
 
+interface OpenCodeSessionDiagnostic {
+  statusCode?: number;
+  code?: string;
+  message?: string;
+}
+
+const OPENCODE_REQUEST_DIAGNOSTIC_PREFIX = "OpenCode request diagnostic: ";
+
+/** Read only the bounded diagnostic envelope emitted by the OpenCode session.create adapter. */
+export function readOpenCodeSessionDiagnostic(
+  error: unknown,
+): OpenCodeSessionDiagnostic | undefined {
+  const record = asRecord(error);
+  const message = stringProperty(record, "message");
+  const prefix = "Failed to create session: ";
+  if (!message?.startsWith(prefix)) return undefined;
+  try {
+    const diagnostic = asRecord(JSON.parse(message.slice(prefix.length)));
+    if (!diagnostic) return undefined;
+    const statusCode = numberProperty(diagnostic, "statusCode");
+    const code = stringProperty(diagnostic, "code");
+    const providerMessage = stringProperty(diagnostic, "message");
+    return {
+      ...(statusCode !== undefined && statusCode >= 100 && statusCode <= 599 ? { statusCode } : {}),
+      ...(code && /^[A-Za-z0-9_.:-]{1,80}$/u.test(code) ? { code } : {}),
+      ...(providerMessage && providerMessage.length <= 280 ? { message: providerMessage } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read the bounded message envelope retained by the OpenCode SDK empty-response wrapper. */
+export function readOpenCodeRequestDiagnostic(
+  error: unknown,
+): OpenCodeSessionDiagnostic | undefined {
+  const message = stringProperty(asRecord(error), "message");
+  if (!message) return undefined;
+  const markerIndex = message.lastIndexOf(OPENCODE_REQUEST_DIAGNOSTIC_PREFIX);
+  if (markerIndex < 0) return undefined;
+  const encoded = message.slice(markerIndex + OPENCODE_REQUEST_DIAGNOSTIC_PREFIX.length).trim();
+  if (encoded.length === 0 || encoded.length > 1_024) return undefined;
+  try {
+    const diagnostic = asRecord(JSON.parse(encoded));
+    if (!diagnostic) return undefined;
+    const statusCode = numberProperty(diagnostic, "statusCode");
+    const code = stringProperty(diagnostic, "code");
+    const providerMessage = stringProperty(diagnostic, "message");
+    return {
+      ...(statusCode !== undefined && statusCode >= 100 && statusCode <= 599 ? { statusCode } : {}),
+      ...(code && /^[A-Za-z0-9_.:-]{1,80}$/u.test(code) ? { code } : {}),
+      ...(providerMessage && providerMessage.length <= 280 ? { message: providerMessage } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function getHttpResponseStatus(error: unknown): number | undefined {
   return getHttpResponseStatusFromError(error, new WeakSet<object>());
 }
@@ -29,6 +87,10 @@ function getHttpResponseStatusFromError(error: unknown, seen: WeakSet<object>): 
   if (responseStatus !== undefined) {
     return responseStatus;
   }
+  const diagnosticStatus = readOpenCodeSessionDiagnostic(error)?.statusCode;
+  if (diagnosticStatus !== undefined) return diagnosticStatus;
+  const requestDiagnosticStatus = readOpenCodeRequestDiagnostic(error)?.statusCode;
+  if (requestDiagnosticStatus !== undefined) return requestDiagnosticStatus;
 
   const response = asRecord(record.response);
   const nestedResponseStatus =
@@ -58,6 +120,10 @@ function getStatusCodeFromError(error: unknown, seen: WeakSet<object>): number |
   if (statusCode !== undefined) {
     return statusCode;
   }
+  const diagnosticStatus = readOpenCodeSessionDiagnostic(error)?.statusCode;
+  if (diagnosticStatus !== undefined) return diagnosticStatus;
+  const requestDiagnosticStatus = readOpenCodeRequestDiagnostic(error)?.statusCode;
+  if (requestDiagnosticStatus !== undefined) return requestDiagnosticStatus;
 
   const response = asRecord(record.response);
   const responseStatus =
@@ -272,6 +338,91 @@ export function isNetworkFailure(code?: string): boolean {
     normalized === "UND_ERR_SOCKET" ||
     normalized === "UND_ERR_CONNECT_TIMEOUT"
   );
+}
+
+const TRANSPORT_FETCH_FAILED_MESSAGES = new Set(["fetch failed", "failed to fetch"]);
+const ORIGINAL_ERROR_MARKER = "Original error: ";
+
+/**
+ * undici/Node 的传输失败经常只剩 TypeError message "fetch failed"，没有 ECONN* code。
+ * OpenCode SDK 还会把它写进 APICallError 的 "Original error:" 尾部，并强制 isRetryable:false。
+ * 只认整句 message 或这个固定尾部，避免把模型 id 无效的空响应误判成网络错误。
+ */
+export function isTransportFetchFailure(error: unknown): boolean {
+  return hasTransportFetchFailure(error, new WeakSet<object>());
+}
+
+function hasTransportFetchFailure(error: unknown, seen: WeakSet<object>): boolean {
+  if (markSeen(error, seen)) {
+    return false;
+  }
+
+  const record = asRecord(error);
+  if (isNetworkFailure(stringProperty(record, "code"))) {
+    return true;
+  }
+
+  const message = stringProperty(record, "message");
+  if (message && isExactFetchFailedMessage(message)) {
+    return true;
+  }
+
+  const originalTail = readOriginalErrorTail(message);
+  if (originalTail && (isExactFetchFailedMessage(originalTail) || isNetworkFailure(originalTail))) {
+    return true;
+  }
+
+  const cause = record.cause;
+  return Boolean(cause && cause !== error && hasTransportFetchFailure(cause, seen));
+}
+
+function isExactFetchFailedMessage(message: string): boolean {
+  return TRANSPORT_FETCH_FAILED_MESSAGES.has(message.trim().toLowerCase());
+}
+
+export function isOpenCodeFreeUsageLimitMessage(message: string | undefined): boolean {
+  return Boolean(
+    message && /free usage limit reached|free usage exceeded|free models work in opencode/i.test(message),
+  );
+}
+
+/** 通用“额度用尽”文案单独判断：只有确认是 OpenCode 请求时才能当成免费额度耗尽。 */
+export function isGenericUsageLimitMessage(message: string | undefined): boolean {
+  return Boolean(message && /usage limit reached|usage limit exceeded/i.test(message));
+}
+
+/** OpenCode 1.19.x 把免费额度耗尽放进结构化错误，文案可能被本地化，必须同时认 code。 */
+export function isOpenCodeFreeLimitError(error: unknown): boolean {
+  const record = asRecord(error);
+  const data = asRecord(record.data);
+  return [record.code, record.errorType, record.name, data?.errorType, data?.code].some(
+    (value) =>
+      typeof value === "string" &&
+      /^(FreeUsageLimitError|OPENCODE_FREE_LIMIT_REACHED)$/i.test(value),
+  );
+}
+
+/** session.status(retry) 事件不带响应头，等待秒数由 provider patch 放在 data.retryAfterSeconds。 */
+export function readProviderRetryAfterMs(error: unknown): number | undefined {
+  const record = asRecord(error);
+  const data = asRecord(record.data);
+  const raw = data?.retryAfterSeconds ?? record.retryAfterSeconds;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return undefined;
+  }
+  return Math.round(raw * 1000);
+}
+
+export function readOriginalErrorTail(message: string | undefined): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+  const index = message.lastIndexOf(ORIGINAL_ERROR_MARKER);
+  if (index < 0) {
+    return undefined;
+  }
+  const tail = message.slice(index + ORIGINAL_ERROR_MARKER.length).trim();
+  return tail.length > 0 ? tail : undefined;
 }
 
 export function isProviderMarkedRetryable(error: unknown): boolean {

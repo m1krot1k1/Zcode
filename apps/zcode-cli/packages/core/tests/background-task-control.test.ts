@@ -253,7 +253,7 @@ describe("background task control", () => {
     const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
     runtimeTaskRegistry.register({
       agentId: "agent_stopped",
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "stoppable agent",
       isBackgrounded: true,
       outputFile: "/tmp/agent_stopped/output.txt",
@@ -280,7 +280,7 @@ describe("background task control", () => {
           async stopTask(taskId) {
             return {
               agentId: taskId,
-              agentType: "general-purpose",
+              agentType: "implementer",
               childSessionId: "child_stopped" as never,
               description: "stoppable agent",
               isBackgrounded: true,
@@ -342,7 +342,7 @@ describe("background task control", () => {
     const stoppedTaskIds: string[] = [];
     runtimeTaskRegistry.register({
       agentId: "agent_bg",
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "research",
       isBackgrounded: true,
       outputFile: "/tmp/agent_bg/output.txt",
@@ -370,7 +370,7 @@ describe("background task control", () => {
             stoppedTaskIds.push(taskId);
             return {
               agentId: taskId,
-              agentType: "general-purpose",
+              agentType: "implementer",
               description: "research",
               outputFile: "/tmp/agent_bg/output.txt",
               startedAt: new Date(0),
@@ -399,7 +399,7 @@ describe("background task control", () => {
     const prompt = "Read every source and return a complete multi-section report.";
     runtimeTaskRegistry.register({
       agentId: "agent_command",
-      agentType: "general-purpose",
+      agentType: "implementer",
       description: "Research the current odds",
       isBackgrounded: true,
       prompt,
@@ -438,7 +438,7 @@ describe("background task control", () => {
           async stopTask(taskId) {
             return {
               agentId: taskId,
-              agentType: "general-purpose",
+              agentType: "implementer",
               description: "Research the current odds",
               startedAt: new Date(0),
               status: "killed",
@@ -492,6 +492,12 @@ describe("background task control", () => {
       async runExploreAgent(request, options) {
         await request.onSessionReady?.();
         return await new Promise((_, reject) => {
+          if (options?.signal?.aborted) {
+            abortObserved = true;
+            aborted.resolve();
+            reject(options.signal.reason ?? new Error("aborted"));
+            return;
+          }
           options?.signal?.addEventListener(
             "abort",
             () => {
@@ -507,7 +513,7 @@ describe("background task control", () => {
 
     try {
       await port.start?.({
-        agentType: "general-purpose",
+        agentType: "implementer",
         description: "Stop me",
         parentToolCallId: "tool_agent_stop",
         prompt: "Wait until stopped",
@@ -579,7 +585,7 @@ describe("background task control", () => {
     try {
       await expect(
         port.start?.({
-          agentType: "general-purpose",
+          agentType: "implementer",
           description: "Fail before run",
           parentToolCallId: "tool_agent_startup_fail",
           prompt: "This should not start",
@@ -603,7 +609,7 @@ describe("background task control", () => {
     }
   });
 
-  it("does not mark a stopped background subagent terminal until its notification is enqueued", async () => {
+  it("marks a stopped background subagent terminal even when notification enqueue fails", async () => {
     const sessionId = createSessionId("background-control-agent-stop-finalize-failure");
     const turnId = createTurnId("turn_background_control_agent_stop_final_failure");
     const outputRootDir = await mkdtemp(
@@ -623,6 +629,12 @@ describe("background task control", () => {
       async runExploreAgent(request, options) {
         await request.onSessionReady?.();
         return await new Promise((_, reject) => {
+          if (options?.signal?.aborted) {
+            abortObserved = true;
+            aborted.resolve();
+            reject(options.signal.reason ?? new Error("aborted"));
+            return;
+          }
           options?.signal?.addEventListener(
             "abort",
             () => {
@@ -638,7 +650,7 @@ describe("background task control", () => {
 
     try {
       await port.start?.({
-        agentType: "general-purpose",
+        agentType: "implementer",
         description: "Stop finalize failure",
         parentToolCallId: "tool_agent_stop_finalize_fail",
         prompt: "Wait until stopped",
@@ -654,14 +666,17 @@ describe("background task control", () => {
         workspaceRoot: outputRootDir,
       });
 
-      await expect(port.stopTask?.("agent_stop_finalize_fail")).rejects.toThrow(
-        "stopped notification was not enqueued",
-      );
-
-      expect(abortObserved).toBe(false);
-      expect(registry.get("agent_stop_finalize_fail")).toMatchObject({
-        status: "running",
+      const stopped = await port.stopTask?.("agent_stop_finalize_fail");
+      expect(stopped).toMatchObject({
+        status: "killed",
+        taskId: "agent_stop_finalize_fail",
       });
+
+      expect(abortObserved).toBe(true);
+      expect(registry.get("agent_stop_finalize_fail")).toMatchObject({
+        status: "killed",
+      });
+      expect(registry.get("agent_stop_finalize_fail")?.notified).toBeUndefined();
     } finally {
       await rm(outputRootDir, { force: true, recursive: true });
     }
@@ -678,7 +693,7 @@ describe("background task control", () => {
     const registry = new InMemoryRuntimeTaskRegistry();
     registry.register({
       agentId: "agent_resume",
-      agentType: "general-purpose",
+      agentType: "implementer",
       childSessionId,
       description: "Resume me",
       isBackgrounded: true,
@@ -687,6 +702,7 @@ describe("background task control", () => {
       prompt: "Original prompt",
       startedAt: new Date(0),
       status: "completed",
+      level: 2,
       taskId: "agent_resume",
       taskType: "local_agent",
       traceContext: {
@@ -747,6 +763,9 @@ describe("background task control", () => {
         status: "success",
         taskId: "agent_resume",
       });
+      // Resume must preserve the terminal task's level; otherwise nested descendants
+      // restart at level 1 after SendMessage.
+      expect(registry.get("agent_resume")?.level).toBe(2);
       const resumedStartEvents = parentEvents.filter(
         (event) =>
           event.type === SessionEventType.SubagentSpawned ||

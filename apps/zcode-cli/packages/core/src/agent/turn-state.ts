@@ -29,6 +29,8 @@ export const TurnPhase = {
   ProcessingInput: "processing_input",
   AwaitingModelResponse: "awaiting_model_response",
   Streaming: "streaming",
+  TruncatedToolRecovery: "truncated_tool_recovery",
+  ValidatingToolInputs: "validating_tool_inputs",
   SchedulingTools: "scheduling_tools",
   ExecutingTools: "executing_tools",
   AggregatingResults: "aggregating_results",
@@ -39,6 +41,13 @@ export const TurnPhase = {
 
 export type TurnPhase = (typeof TurnPhase)[keyof typeof TurnPhase];
 
+export interface TurnStateTransitionRecord {
+  from: TurnPhase;
+  to: TurnPhase;
+  reason?: string;
+  atMs: number;
+}
+
 // -----------------------------------------------
 // Turn State
 // -----------------------------------------------
@@ -48,6 +57,7 @@ export interface TurnState {
   sessionId: SessionId;
   turnNumber: number;
   phase: TurnPhase;
+  stateTransitions: TurnStateTransitionRecord[];
   traceId: TraceId;
   input: string;
   attachments?: TurnAttachment[];
@@ -194,6 +204,7 @@ export function createTurnState(
     sessionId,
     turnNumber,
     phase: TurnPhase.Idle,
+    stateTransitions: [],
     traceId,
     input,
     attachments,
@@ -232,16 +243,42 @@ export function isWaitingPhase(phase: TurnPhase): boolean {
 
 export function canTransitionTo(current: TurnPhase, next: TurnPhase): boolean {
   const validTransitions: Record<TurnPhase, TurnPhase[]> = {
-    [TurnPhase.Idle]: [TurnPhase.ProcessingInput],
-    [TurnPhase.ProcessingInput]: [TurnPhase.AwaitingModelResponse, TurnPhase.Completing],
-    [TurnPhase.AwaitingModelResponse]: [TurnPhase.Streaming, TurnPhase.Completing, TurnPhase.Error],
+    [TurnPhase.Idle]: [TurnPhase.ProcessingInput, TurnPhase.Error],
+    [TurnPhase.ProcessingInput]: [
+      TurnPhase.AwaitingModelResponse,
+      TurnPhase.Completing,
+      TurnPhase.Error,
+    ],
+    [TurnPhase.AwaitingModelResponse]: [
+      TurnPhase.Streaming,
+      TurnPhase.Completing,
+      TurnPhase.Error,
+    ],
     [TurnPhase.Streaming]: [
+      TurnPhase.Streaming,
+      TurnPhase.TruncatedToolRecovery,
+      TurnPhase.ValidatingToolInputs,
       TurnPhase.SchedulingTools,
       TurnPhase.AggregatingResults,
       TurnPhase.Completing,
       TurnPhase.Error,
     ],
+    [TurnPhase.TruncatedToolRecovery]: [
+      TurnPhase.AwaitingModelResponse,
+      TurnPhase.SchedulingTools,
+      TurnPhase.ExecutingTools,
+      TurnPhase.AggregatingResults,
+      TurnPhase.Error,
+    ],
+    [TurnPhase.ValidatingToolInputs]: [
+      TurnPhase.SchedulingTools,
+      TurnPhase.ExecutingTools,
+      TurnPhase.AwaitingPermission,
+      TurnPhase.AggregatingResults,
+      TurnPhase.Error,
+    ],
     [TurnPhase.SchedulingTools]: [
+      TurnPhase.ValidatingToolInputs,
       TurnPhase.ExecutingTools,
       TurnPhase.AwaitingPermission,
       TurnPhase.Error,

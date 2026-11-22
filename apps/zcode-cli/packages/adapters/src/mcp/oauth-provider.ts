@@ -7,7 +7,7 @@ import { refreshMcpOAuthTokensUnderLock } from "./oauth-refresh.js";
 
 type McpAuthorizationCodeOAuthConfig = Extract<McpOAuthConfig, { type: "authorization_code" }>;
 
-export interface CreateMcpOAuthTokenProviderInput {
+interface CreateMcpOAuthTokenProviderInput {
   config: McpAuthorizationCodeOAuthConfig;
   credentialStore: SharedZCodeCredentialStore;
   fetchFn?: FetchLike;

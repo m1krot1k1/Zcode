@@ -9,7 +9,7 @@ import type { WorkflowRunCardSummary } from "@/ToolCallBlocks/shared.js";
  * 已接进 run 的补全行（docs/dynamic-workflow/presentation.md「The fill row」）：「留白已补全 · {name} · {k} 个阶段
  * · {m} 个子代理 ↗」。计数是这次补全**写下**的，不是整条 run 的；留白的类型不上界面。
  */
-export interface WorkflowFillSummary {
+interface WorkflowFillSummary {
   name: string;
   phases: number;
   agents: number;

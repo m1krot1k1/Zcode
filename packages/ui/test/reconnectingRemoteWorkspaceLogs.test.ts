@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRemoteWorkspaceReconnectLogLabelPrefix,
-  resolveRemoteWorkspaceReconnectLogHistoryIds,
+  resolveRemoteWorkspaceReconnectLogWorkspaceKeys,
 } from "@/root/reconnectingRemoteWorkspaceLogs.js";
 
 describe("reconnecting remote workspace runtime logs", () => {
   it("matches reconnecting SSH history entry by runtime log label", () => {
-    const historyIds = resolveRemoteWorkspaceReconnectLogHistoryIds({
+    const historyIds = resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
       runtimeLabel: "remote-workspace-ssh-github.com-a1b2c3d4-9",
       reconnectingEntries: [
         {
@@ -40,7 +40,7 @@ describe("reconnecting remote workspace runtime logs", () => {
   });
 
   it("matches WSL default distro logs", () => {
-    const historyIds = resolveRemoteWorkspaceReconnectLogHistoryIds({
+    const historyIds = resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
       runtimeLabel: "remote-workspace-wsl-default-b7e89f10-3",
       reconnectingEntries: [
         {
@@ -56,7 +56,7 @@ describe("reconnecting remote workspace runtime logs", () => {
   });
 
   it("does not guess a workspace when entries share one target prefix without request id", () => {
-    const historyIds = resolveRemoteWorkspaceReconnectLogHistoryIds({
+    const historyIds = resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
       runtimeLabel: "remote-workspace-ssh-build-host-ff001122-5",
       reconnectingEntries: [
         {
@@ -82,7 +82,7 @@ describe("reconnecting remote workspace runtime logs", () => {
   });
 
   it("prefers request id over target prefix when concurrent reconnects share one target", () => {
-    const historyIds = resolveRemoteWorkspaceReconnectLogHistoryIds({
+    const historyIds = resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
       runtimeLabel: "remote-workspace-ssh-build-host-ff001122-5",
       runtimeRequestId: "request-b",
       reconnectingEntries: [
@@ -111,7 +111,7 @@ describe("reconnecting remote workspace runtime logs", () => {
   });
 
   it("matches request-scoped window Host logs without relying on the legacy runtime label", () => {
-    const historyIds = resolveRemoteWorkspaceReconnectLogHistoryIds({
+    const historyIds = resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
       runtimeLabel: "window-host-7",
       runtimeRequestId: "request-ssh",
       reconnectingEntries: [

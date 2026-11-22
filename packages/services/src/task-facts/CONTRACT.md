@@ -6,6 +6,7 @@
 - `ingest` 接收已通过协议 schema 校验的 sessions-index 摘要，不使用 Host 时钟。
 - `mutate` 先执行 CLI 原生命令，再 reconcile 确认；失败直接抛出，不乐观写 SQLite。
 - `reconcile` 只查询快照缺席或有降级交接意图的行，每批最多 256。缺席/不存在标记 orphan 并保留行，明确 deleted 才隐藏。
+- 存储端的会话创建预留行（`meta_json` 为空对象 `{}`）不是已提交的 CLI 会话；读取 reconcile rows 时将其排除，不投影为伪任务或输出非法 meta 警告。
 - 每次 await 后核对订阅代际/水位；迟到结果不能覆盖新帧。组织态由 project 服务拥有，此模块不修改 pin/archive/read/project。
 - 桌面 continuous / 手机 replayable 共用 CLI owner；协议传输、READY、CommandInbox 的 FIFO 与去重保留在原有协议层。
 - 标题/删除意图仅是旧版本交接。bit 1=删除，bit 2=标题，bit 4=orphan，bit 8=归属已判断；确认后的位清理由存储事务完成。

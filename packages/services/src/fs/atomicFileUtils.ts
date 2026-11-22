@@ -10,7 +10,7 @@ const DEFAULT_LOCK_OWNERLESS_GRACE_MS = 100;
 const DEFAULT_LOCK_MAX_WAIT_MS = 8_000;
 const DEFAULT_TEMP_FILE_STALE_MS = 60_000;
 
-export interface AtomicWriteTextOptions {
+interface AtomicWriteTextOptions {
   renameRetryDelaysMs?: readonly number[];
   lockRetryDelaysMs?: readonly number[];
   lockOwnerlessGraceMs?: number;
@@ -177,12 +177,4 @@ export async function atomicWriteText(
   } finally {
     await releaseLock?.();
   }
-}
-
-export async function atomicWriteJson(
-  filePath: string,
-  data: Record<string, unknown>,
-  options?: AtomicWriteTextOptions,
-): Promise<void> {
-  await atomicWriteText(filePath, JSON.stringify(data, null, 2), options);
 }

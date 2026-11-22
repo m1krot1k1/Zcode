@@ -1,0 +1,32 @@
+{
+  "baseline": {
+    "tasks": 6,
+    "successRate": 1,
+    "medianDurationMs": 24499.5,
+    "totalTokens": 3172822,
+    "duplicateClaims": 0,
+    "criticalRegressions": 0
+  },
+  "candidate": {
+    "tasks": 6,
+    "successRate": 1,
+    "medianDurationMs": 77715,
+    "totalTokens": 3929907,
+    "duplicateClaims": 0,
+    "criticalRegressions": 0
+  },
+  "deltas": {
+    "successRate": 0,
+    "medianDurationMs": 53215.5,
+    "totalTokens": 757085,
+    "duplicateClaims": 0,
+    "criticalRegressions": 0
+  },
+  "evidence": "real",
+  "minRepeats": 3,
+  "holdoutTasks": 6,
+  "verdict": "reject",
+  "reasons": [
+    "median latency regressed by more than 50%"
+  ]
+}

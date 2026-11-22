@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HostMessageTypes, HostResponseTypes } from "@zcode/shared";
+import { HostMessageTypes, HostResponseTypes, InternalChannels } from "@zcode/shared";
 import {
   disposeHostProcess,
   disposeHostProcessAndWait,
@@ -8,6 +8,11 @@ import {
   loadWindow,
   spawnHostProcess,
 } from "../src/main/desktopHostProcess.js";
+import {
+  MAX_HOST_PROCESS_RESPAWNS,
+  notifyHostProcessExit,
+  resolveHostProcessExitDecision,
+} from "../src/main/desktopHostProcessLifecycle.js";
 
 vi.mock("../src/main/databaseStartupRelay.js", () => ({
   bindDatabaseStartupRelay: (_win: unknown, _child: unknown, startupId: string) => ({
@@ -450,4 +455,133 @@ it("PRT-010: main 的真实 Host 消息分发即时报告 Bash 完成事实，�
     child.emit("exit", 0);
     sendCustom.mockRestore();
   }
+});
+
+describe("desktopHostProcess unexpected exit recovery", () => {
+  function createWindowFake() {
+    return {
+      id: 7,
+      isDestroyed: () => false,
+      webContents: {
+        id: 11,
+        isDestroyed: () => false,
+        postMessage: vi.fn(),
+        send: vi.fn(),
+      },
+    };
+  }
+
+  function spawnWithRespawn(win: ReturnType<typeof createWindowFake>, map = new Map()) {
+    const child = spawnHostProcess(
+      win as never,
+      "local-window",
+      { type: HostMessageTypes.InitLocal, workspacePath: "/repo" },
+      {
+        hostProcessLocalEnv: {},
+        logger: { info: vi.fn(), warn: vi.fn() },
+        broadcastHub: { register: vi.fn(), unregister: vi.fn() } as never,
+        windowHostProcessMap: map,
+        hostRunningTaskCountMap: new Map(),
+      },
+      { respawnOnExit: true },
+    );
+    // 生产由 createWindow 负责登记；这里模拟同一窗口映射，退出处理才能识别旧实例。
+    map.set(win.webContents.id, child);
+    return child;
+  }
+
+  it("respawns once and notifies renderer with bounded retry semantics", () => {
+    electronMock.fork.mockClear();
+    const first = new MockUtilityProcess();
+    const second = new MockUtilityProcess();
+    electronMock.fork.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const win = createWindowFake();
+    const map = new Map();
+    const child = spawnWithRespawn(win, map);
+
+    expect(map.get(win.webContents.id)).toBe(child);
+    child.emit("exit", 1);
+
+    expect(electronMock.fork).toHaveBeenCalledTimes(2);
+    expect(map.get(win.webContents.id)).toBe(second);
+    expect(win.webContents.send).toHaveBeenLastCalledWith(InternalChannels.HostProcessExited, {
+      label: "local-window",
+      code: 1,
+      willRespawn: true,
+      respawnAttempt: 0,
+      at: expect.any(Number),
+    });
+
+    second.emit("exit", 2);
+
+    // 第二次失败不再 respawn，但必须继续通知，UI 才能从 loading 切到错误态。
+    expect(electronMock.fork).toHaveBeenCalledTimes(2);
+    expect(win.webContents.send).toHaveBeenLastCalledWith(InternalChannels.HostProcessExited, {
+      label: "local-window",
+      code: 2,
+      willRespawn: false,
+      respawnAttempt: MAX_HOST_PROCESS_RESPAWNS,
+      at: expect.any(Number),
+    });
+  });
+});
+
+describe("desktopHostProcess exit decision", () => {
+  it("notifies and respawns exactly once for unexpected exits", () => {
+    expect(
+      resolveHostProcessExitDecision({
+        intentional: false,
+        windowDestroyed: false,
+        webContentsDestroyed: false,
+        respawnAttempt: 0,
+      }),
+    ).toEqual({ notify: true, respawn: true });
+
+    expect(
+      resolveHostProcessExitDecision({
+        intentional: false,
+        windowDestroyed: false,
+        webContentsDestroyed: false,
+        respawnAttempt: MAX_HOST_PROCESS_RESPAWNS,
+      }),
+    ).toEqual({ notify: true, respawn: false });
+  });
+
+  it("stays silent for intentional dispose or a destroyed window", () => {
+    expect(
+      resolveHostProcessExitDecision({
+        intentional: true,
+        windowDestroyed: false,
+        webContentsDestroyed: false,
+        respawnAttempt: 0,
+      }),
+    ).toEqual({ notify: false, respawn: false });
+
+    expect(
+      resolveHostProcessExitDecision({
+        intentional: false,
+        windowDestroyed: true,
+        webContentsDestroyed: false,
+        respawnAttempt: 0,
+      }),
+    ).toEqual({ notify: false, respawn: false });
+  });
+
+  it("sends the exit notification through the existing renderer channel", () => {
+    const win = {
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send: vi.fn() },
+    };
+    const payload = {
+      label: "main-window",
+      code: 134,
+      willRespawn: false,
+      respawnAttempt: 1,
+      at: 123,
+    };
+
+    notifyHostProcessExit(win as never, payload);
+
+    expect(win.webContents.send).toHaveBeenCalledWith(InternalChannels.HostProcessExited, payload);
+  });
 });

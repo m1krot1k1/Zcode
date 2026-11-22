@@ -418,6 +418,28 @@ nodes:
       - "docs/product-capability-map.md"
       - "apps/zcode-cli/docs/design/v2/runtime-refactor.md"
       - "apps/zcode-cli/docs/design/v2/loop/architecture.md"
+      - "docs/specs/cursor-harness-runtime-adaptation.md"
+      - "docs/specs/zcode-swarm-mode.md"
+    codeSeeds:
+      - symbol: "executeSwarmRun"
+        file: "apps/zcode-cli/packages/core/src/runtime/methods/turn.ts"
+      - symbol: "agentHandler"
+        file: "apps/zcode-cli/packages/core/src/tool/handlers/agent.ts"
+      - symbol: "AgentToolCallBlock"
+        file: "packages/ui/src/ToolCallBlocks/renderers/agent.tsx"
+      - symbol: "normalizeAgentProfiles"
+        file: "apps/zcode-cli/packages/core/src/subagent/profile.ts"
+      - symbol: "NodeContextSourceAdapter"
+        file: "apps/zcode-cli/packages/adapters/src/context/index.ts"
+      - symbol: "resolveZCodeBuiltinPromptCommandInvocation"
+        file: "apps/zcode-cli/packages/bootstrap/src/builtin-prompt-command.ts"
+      - symbol: "listProtocolSlashCommands"
+        file: "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/slash-commands.ts"
+    invariants:
+      - "Agent and Task select an exact active named role; omission or an unknown ID never falls back to a generic role."
+      - "Workspace rules and skills are runtime-loaded, inherited through one accepted snapshot and filtered by ancestor permissions."
+      - "Recursive foreground descendants share a root-owned 24-item concurrency quota; admission beyond the quota waits cancellably for a slot instead of failing with active_limit."
+      - "Child transcript previews stream from authoritative child sessions while root Swarm is running; root synthesis remains a separate message."
 
   - id: "capability.read-pdf"
     kind: "capability"
@@ -1594,6 +1616,34 @@ nodes:
       - symbol: "useV4SessionQuotaBanner"
         file: "packages/ui/src/v4/useV4SessionQuotaBanner.ts"
 
+  - id: "capability.mcp-curated-catalog"
+    kind: "capability"
+    label: "Curated MCP server catalog with explicit provenance and auth metadata"
+    aliases: ["MCP catalog", "MCP marketplace", "каталог MCP", "маркетплейс MCP"]
+    docs: ["docs/specs/prism10-runtime-integration.md", "docs/specs/mcp-marketplace-discovery.md"]
+    codeSeeds:
+      - symbol: "COMMUNITY_MCP_PRESETS"
+        file: "packages/shared/src/mcp.ts"
+      - symbol: "filterCommunityMcpPresets"
+        file: "packages/shared/src/mcp.ts"
+      - symbol: "parseClineMcpMarketplaceCatalog"
+        file: "packages/shared/src/mcp.ts"
+      - symbol: "loadMarketplaceCatalog"
+        file: "packages/services/src/mcp-sync/mcpSyncService.ts"
+      - symbol: "McpCommunityCatalog"
+        file: "packages/ui/src/settings/McpSettingsSection.tsx"
+      - symbol: "handleCreateFromPreset"
+        file: "packages/ui/src/settings/McpSettingsSection.tsx"
+      - symbol: "loadClineMcpCatalog"
+        file: "packages/ui/src/settings/McpSettingsSection.tsx"
+      - symbol: "handleSave"
+        file: "packages/ui/src/settings/McpSettingsSection.tsx"
+    invariants:
+      - "Catalog entries are immutable metadata; selecting a card creates an editable draft and only the existing Save action writes through the MCP settings owner."
+      - "No API key, OAuth token or profile secret is embedded in a catalog entry. Account-backed Cline endpoints remain user imports until their ZCode auth flow is independently verified."
+      - "The curated MCP catalog is separate from Plugin Marketplace listing and lifecycle."
+      - "The fixed Cline catalog feed is untrusted discovery metadata; its command, args, environment, headers, auth, version and source never become executable configuration. Unknown feed entries have no configure/install action; a matching ID can only open the local curated preset draft."
+
   - id: "capability.subagents"
     kind: "capability"
     label: "Subagents"
@@ -1605,6 +1655,7 @@ nodes:
     docs:
       - "docs/subagents-built-in-model-overrides.md"
       - "docs/subagent-session-side-tabs.md"
+      - "docs/specs/prism10-runtime-integration.md"
       - "docs/working-memory/provider-refactor/steps/todo-97-subagent-markdown-in-place-migration-and-legacy-read-audit.md"
       - "docs/working-memory/provider-refactor/design/execution/execution.md"
       - "docs/working-memory/provider-refactor/steps/04-model-execution-cutover.md"
@@ -1622,6 +1673,7 @@ nodes:
         file: "packages/shared/src/subagent-markdown-selection.ts"
     invariants:
       - "Host and standalone Agent await offline migration of user-directory Markdown and builtin state before formal reads. Markdown keeps model/thoughtLevel; intermediate modelSelection is not consumed. Only user Markdown provider values are rewritten, preserving unrelated bytes; project/plugin files and symlinks are excluded. JSON uses builtInModelSelectionOverrides after one-way import. Ordinary readers do not remap legacy identities or fall back to old fields. Explicit execution still validates its concrete selection; Host effective-selection protocol remains a separate Todo96 decision."
+      - "PRISM task_graph is a runtime dependency scheduler, separate from the display-only workflow graph. The root Agent invocation owns a validated request-local ready set; actual child lifecycle, admission and cancellation remain owned by the shared RuntimeTaskRegistry. Only completed dependencies without Host rejection release descendants; failed branches block their descendants while independent branches continue."
 
   - id: "capability.provider-registry"
     kind: "capability"
@@ -3991,6 +4043,8 @@ nodes:
         file: "packages/ui/src/slashCommandPanelSections.tsx"
       - symbol: "buildSlashApplyMentionPayload"
         file: "packages/ui/src/lib/slashApplyMentionPayload.ts"
+      - symbol: "APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES"
+        file: "apps/zcode-cli/packages/bootstrap/src/slash-command-surface.ts"
 
   - id: "surface.conversation-selection-side-slash"
     kind: "ui-surface"
@@ -5498,7 +5552,116 @@ nodes:
       - symbol: "ConversationShareReadonlyTimeline"
         file: "packages/ui/src/v4/ConversationShareReadonlyTimeline.tsx"
 
+  - id: "capability.opencode-delegated-runtime"
+    kind: "capability"
+    label: "Legacy OpenCode ACP runtime awaiting retirement"
+    aliases: ["legacy OpenCode ACP", "opencode acp", "delegated OpenCode agent"]
+    docs:
+      ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
+    codeSeeds:
+      - file: "packages/services/src/opencode-acp-runtime/index.ts"
+      - file: "packages/services/src/node.ts"
+        symbol: "getOpenCodeAcpRuntime"
+    invariants:
+      - "The ACP implementation is legacy migration debt, not the accepted user-facing OpenCode CLI model-provider flow. Do not route new Composer selections through this separate transcript or session lifecycle."
+      - "The accepted flow is a local-auth Provider Registry model in ordinary Composer and the standard ZCode conversation runtime, as specified by docs/specs/opencode-cli-model-provider.md."
+      - "Retire the ACP-only route, panel, and persistence when the standard provider path is proven; preserve unrelated shared CLI discovery/install code only where still used."
+  - id: "service.opencode-acp-runtime"
+    kind: "service"
+    label: "Legacy Host-local OpenCode ACP lifecycle and session adapter"
+    docs:
+      ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
+    codeSeeds:
+      - file: "packages/services/src/opencode-acp-runtime/contract.ts"
+      - file: "packages/services/src/opencode-acp-runtime/adapters/openCodeAcpRuntime.ts"
+      - file: "packages/services/src/node.ts"
+        symbol: "disposeServiceResourcesAndWait"
+  - id: "surface.opencode-agent-settings-ui"
+    kind: "surface"
+    label: "Legacy separate OpenCode ACP settings panel awaiting retirement"
+    docs:
+      ["docs/specs/opencode-acp-delegated-runtime.md", "docs/specs/opencode-cli-model-provider.md"]
+    codeSeeds:
+      - file: "packages/ui/src/opencode-agent-settings/OpenCodeAgentSettingsPanel.tsx"
+      - file: "packages/ui/src/settings/ModelProviderSection.tsx"
+      - file: "packages/ui/src/settings/model-provider-section/useModelProviderNavigation.ts"
+    invariants:
+      - "This panel is legacy UI and must not be presented as the product path for OpenCode CLI model selection."
+      - "The accepted OpenCode UI is the existing Provider settings surface plus ordinary conversation model control; it does not ask the user to select a workspace or start a separate session."
+  - id: "evidence.opencode-acp-runtime-tests"
+    kind: "evidence"
+    label: "Legacy fake-child OpenCode ACP lifecycle contract tests"
+    docs: ["docs/specs/opencode-acp-delegated-runtime.md"]
+    codeSeeds:
+      - file: "packages/services/src/opencode-acp-runtime/contract.test.ts"
+
+  - id: "capability.opencode-cli-model-provider"
+    kind: "capability"
+    label: "OpenCode CLI as a local-auth model provider in ordinary chat"
+    aliases: ["OpenCode CLI provider", "OpenCode local auth", "Cline-style OpenCode provider"]
+    docs: ["docs/specs/opencode-cli-model-provider.md"]
+    codeSeeds:
+      - symbol: "ProviderConfigResolver"
+        file: "packages/provider/src/resolver.ts"
+      - symbol: "ProviderRegistry"
+        file: "packages/provider/src/registry.ts"
+      - symbol: "ApiProviderModelRuntime"
+        file: "apps/zcode-cli/packages/bootstrap/src/app/provider-registry-model-runtime.ts"
+      - symbol: "V4ComposerModelControlsImpl"
+        file: "packages/ui/src/v4/composer/V4ComposerToolbar.tsx"
+    invariants:
+      - "OpenCode CLI uses its own Host-local authentication and appears as a normal provider/model choice in the Composer; no ZCode API key or fabricated API endpoint is used."
+      - "Ordinary ModelSelection, CommandInbox admission, ZCode run lifecycle, cancellation, and transcript remain authoritative. OpenCode Go/API credentials stay independent."
+      - "OpenCode-side tools and upstream limits remain owned by OpenCode; ZCode never reads/copies credentials, dispatches the same tool event twice, bypasses rate limits, or silently switches providers/models."
+      - "No separate ACP panel, workspace/session form, or transcript is part of the accepted user flow. The existing ACP implementation is retirement work and its tests do not prove this provider integration."
+
 edges:
+  - from: "capability.opencode-delegated-runtime"
+    to: "surface.opencode-agent-settings-ui"
+    type: "renders-in"
+    rank: "evidence-only"
+    condition: "Legacy ACP panel and transcript are tracked for retirement; they are not the accepted Composer provider experience."
+  - from: "surface.opencode-agent-settings-ui"
+    to: "service.opencode-acp-runtime"
+    type: "commits-to"
+    rank: "evidence-only"
+    condition: "This edge describes only the legacy ACP panel slated for retirement, not the standard provider path."
+  - from: "capability.opencode-delegated-runtime"
+    to: "service.opencode-acp-runtime"
+    type: "owned-by"
+    rank: "evidence-only"
+    condition: "The service is the legacy ACP route; the ordinary provider integration uses Provider Registry and the standard model runtime."
+  - from: "service.opencode-acp-runtime"
+    to: "evidence.opencode-acp-runtime-tests"
+    type: "verified-by"
+    rank: "evidence-only"
+
+  - from: "capability.opencode-cli-model-provider"
+    to: "surface.provider-settings"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "The user enables or installs the Host-local CLI from the ordinary Model Providers page; no separate agent-settings panel is required."
+  - from: "capability.opencode-cli-model-provider"
+    to: "surface.conversation-model-control"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "CLI-reported models use the ordinary Composer ModelSelection picker and persist through the standard draft/session behavior."
+  - from: "capability.opencode-cli-model-provider"
+    to: "capability.provider-registry"
+    type: "registered-as"
+    rank: "must-inspect"
+    condition: "OpenCode CLI has typed local-auth semantics and a target-Host-owned catalog; do not model it as OpenCode Go/API or a fake-key custom provider."
+  - from: "capability.opencode-cli-model-provider"
+    to: "capability.model-selection"
+    type: "selected-through"
+    rank: "must-inspect"
+    condition: "Composer submission carries the complete ordinary provider/model identity into standard Registry validation and ModelFactory construction."
+  - from: "capability.opencode-cli-model-provider"
+    to: "capability.conversation-runtime"
+    type: "executes-through"
+    rank: "must-inspect"
+    condition: "The normal ZCode conversation admission, run lifecycle, cancellation, stream projection, and transcript are used; the legacy ACP route is not used."
+
   - from: "capability.tool-search"
     to: "surface.tool-search-settings"
     type: "renders-in"
@@ -8994,6 +9157,16 @@ edges:
     type: "isolated-by"
     rank: "must-inspect"
     condition: "Status snapshots, failure diagnostics and Plugin projections use workspaceIdentity.trim() or workspacePath fallback and reject stale refresh epochs."
+  - from: "capability.mcp-curated-catalog"
+    to: "surface.customize-capability-settings"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "The catalog is a section inside MCP Settings; selecting an entry opens the existing draft form and persistence still uses the existing scoped MCP settings owner."
+  - from: "capability.mcp-curated-catalog"
+    to: "capability.mcp-settings-diagnostics"
+    type: "uses-settings-owner-and-diagnostics-with"
+    rank: "must-inspect"
+    condition: "Catalog entries become installed records through the same MCP settings flow and use the existing Host mcp/list status refresh; catalog metadata does not start processes from the UI."
   - from: "capability.official-server-mcp"
     to: "capability.mcp-dual-era-version-negotiation"
     type: "injects-current-identity-during-negotiation-for"

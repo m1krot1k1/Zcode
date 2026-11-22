@@ -60,7 +60,7 @@ export function useRemotePaneSessionLookup(
   return resolution.connectionKind === "remote-ready" ? lookup : undefined;
 }
 
-export interface UsePaneSessionPersistenceParams {
+interface UsePaneSessionPersistenceParams {
   workspaceKey: string;
   activeSessionId: string | null;
   /** startDraft 的显式用户意图代次；大于 0 时 null 表示草稿，不是待恢复。 */

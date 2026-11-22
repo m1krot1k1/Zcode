@@ -5,8 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import type { ProviderSettingsView } from "@zcode/services";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
-import { V4ComposerModelControls } from "@/v4/composer/V4ComposerToolbar.js";
+import {
+  shouldShowModelProviderSettingsShortcut,
+  V4ComposerModelControls,
+} from "@/v4/composer/V4ComposerToolbar.js";
 import type { ModelConfigSelect } from "@/ModelConfigSelect.js";
+import type { ComposerPlanGroup } from "@/lib/composerPlanGroups.js";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -108,6 +112,9 @@ vi.mock("@/store/StoreProvider.js", () => ({
     selector(mocks.auth),
 }));
 vi.mock("@/hooks/useWorkspaceServices.js", () => ({ useBaseWorkspaceServices: () => ({}) }));
+vi.mock("@/hooks/useServices.js", () => ({
+  useServices: () => ({}),
+}));
 vi.mock("@/hooks/useComposerConnectionSwitch.js", () => ({
   useComposerConnectionSwitch: () => ({
     pending: false,
@@ -130,6 +137,20 @@ vi.mock("@/ModelConfigSelect.js", async () => {
         "data-testid": "mock-model-select",
         disabled: props.disabled,
       });
+    },
+  };
+});
+
+vi.mock("@/components/ui/button.js", async () => {
+  const React = await import("react");
+  return {
+    Button: (props: {
+      children?: React.ReactNode;
+      onClick?: () => void;
+      "data-testid"?: string;
+      [key: string]: unknown;
+    }) => {
+      return React.createElement("button", props, props.children);
     },
   };
 });
@@ -168,6 +189,7 @@ vi.mock("@/chat-input-toolbar/modelSelection.js", () => ({
 
 vi.mock("@/store/TabStoreProvider.js", () => ({
   useTabStore: () => vi.fn(),
+  useOptionalTabStore: () => undefined,
 }));
 
 vi.mock("@/hooks/useProviderSettingsView.js", () => ({
@@ -494,6 +516,112 @@ afterEach(() => {
 });
 
 describe("V4ComposerModelControls recovery", () => {
+  it("оставляет выбор модели доступным, когда OpenCode CLI — единственный источник", () => {
+    expect(
+      shouldShowModelProviderSettingsShortcut({
+        modelMenuVisible: true,
+        providerSourcesLoading: false,
+        selectableModelGroupCount: 1,
+        connectionSwitchPending: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowModelProviderSettingsShortcut({
+        modelMenuVisible: true,
+        providerSourcesLoading: false,
+        selectableModelGroupCount: 0,
+        connectionSwitchPending: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("показывает OpenCode CLI из общего ModelSelection и выбирает его обычным callback Composer", () => {
+    const modelId = "opencode/deepseek-v4.1-flash-free";
+    const selectionView = {
+      revision: 2,
+      providers: [
+        {
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+          config: { access: { type: "local-auth" }, api: { type: "opencode-sdk" } },
+          models: [{ modelId, config: completeDisabledModelConfig() }],
+        },
+      ],
+    } as unknown as NonNullable<V4ComposerModelControlsProps["modelSelectionView"]>;
+    const config = {
+      provider: "",
+      model: "",
+      thought: "disabled",
+      thoughtLevels: [],
+      followupMode: "queue" as const,
+      mode: "build" as const,
+    };
+    renderToolbarMarkup({
+      modelSelectionView: selectionView,
+      config,
+      draftConfig: { mode: "build", modelSelection: { providerId: "", modelId: "" } },
+    });
+
+    const openCodeGroup = captured.modelSelectProps?.modelGroups.find(
+      (group) => group.key === "registry-provider:opencode",
+    );
+    expect(openCodeGroup).toEqual(
+      expect.objectContaining({
+        label: "OpenCode CLI",
+        labelBadge: "CLI",
+        items: [expect.objectContaining({ name: modelId })],
+      }),
+    );
+    const modelValue = openCodeGroup?.items[0]?.value;
+    expect(modelValue).toBe("custom:opencode:opencode%2Fdeepseek-v4.1-flash-free");
+    captured.modelSelectProps?.onValueChange(modelValue ?? "");
+    expect(mocks.selectModel).toHaveBeenCalledWith("opencode", modelId, null);
+  });
+
+  it("выбор группы OpenCode CLI в меню Composer не запускает синхронизацию аккаунта", () => {
+    const modelId = "opencode/big-pickle";
+    const selectionView = {
+      revision: 2,
+      providers: [
+        {
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+          config: { access: { type: "local-auth" }, api: { type: "opencode-sdk" } },
+          models: [{ modelId, config: completeDisabledModelConfig() }],
+        },
+      ],
+    } as unknown as NonNullable<V4ComposerModelControlsProps["modelSelectionView"]>;
+    renderToolbarMarkup({
+      modelSelectionView: selectionView,
+      config: {
+        provider: "custom-openai",
+        model: "gpt-4o",
+        thought: "disabled",
+        thoughtLevels: [],
+        followupMode: "queue",
+        mode: "build",
+      },
+      draftConfig: {
+        mode: "build",
+        modelSelection: { providerId: "custom-openai", modelId: "gpt-4o" },
+      },
+    });
+
+    const openCodeGroup = captured.modelSelectProps?.composerOptions?.providerMenu?.groups.find(
+      (group) => group.key === "registry-provider:opencode",
+    );
+    expect(openCodeGroup).toBeDefined();
+    captured.modelSelectProps?.composerOptions?.providerMenu?.onSelect(
+      openCodeGroup as ComposerPlanGroup,
+    );
+
+    expect(mocks.selectModel).toHaveBeenCalledWith("opencode", modelId, {
+      provider: "custom-openai",
+      model: "gpt-4o",
+    });
+    expect(mocks.selectConnection).not.toHaveBeenCalled();
+  });
+
   it("同 Host 重读保留目录时入口不切成禁用态，首次加载仍禁用", () => {
     renderToolbarMarkup({
       modelSelectionState: { status: "loading", catalog: mocks.modelSelectionView },

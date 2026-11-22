@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-multi-file-refactor",
+  "family": "multi-file-refactor",
+  "arm": "baseline",
+  "repeat": 3,
+  "startedAt": "2026-11-21T07:59:55.924Z",
+  "durationMs": 22949,
+  "tokens": 151372,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "clamp refactor acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Done. The duplicated `clamp` now lives in one module.\n\n**What changed**\n\n- Added `src/clamp.mjs` with `export function clamp(n, min, max)`, the exact same `Math.min(max, Math.max(min, n))` implementation as before.\n- `src/a.mjs` now does `import { clamp } from './clamp.mjs'` and re-exports it (`export { clamp }`), so the module's existing public surface is unchanged; `percent` is untouched otherwise.\n- `src/b.mjs` now imports `clamp` from `./clamp.mjs`; `volume` is otherwise untouched.\n- No local `clamp` declaration remains in either consumer (confirmed by grep: the only definition is in `src/clamp.mjs`).\n\n**Verified** by running node against the modules:\n\n```\npercent(120) = '100%'   percent(-5) = '0%'\nvolume(12)   = 11       volume(-1)  = 0\n```\n\n`clamp(5,0,3) = 3` and `clamp` re-exported from `a.mjs` is the same function object as the one in `clamp.mjs`. Result printed `ACCEPTANCE_OK` with exit code 0.\n\n**Not run:** no test/lint/typecheck tooling exists in this fixture workspace (only",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

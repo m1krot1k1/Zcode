@@ -16,7 +16,7 @@ import { isReservedZCodeSlashCommandName } from "./slash-command-surface.js";
 const CUSTOM_COMMAND_NOT_FOUND_PATTERN = /not found/i;
 const PROMPT_CUSTOM_COMMAND_PATTERN = /^\/([^\s]+)(?:\s+([\s\S]*))?$/;
 
-export interface ResolveZCodeCustomCommandPromptOptions extends ListZCodeCustomCommandsOptions {
+interface ResolveZCodeCustomCommandPromptOptions extends ListZCodeCustomCommandsOptions {
   executionPort?: ExecutionPort;
   sessionId?: SessionId;
   signal?: AbortSignal;

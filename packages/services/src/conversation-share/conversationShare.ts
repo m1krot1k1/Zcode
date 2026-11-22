@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- Share 的错误/预检公共契约与跨 RPC 脱敏规则必须保持在同一边界，避免 UI、Host 和 API 各自漂移。 */
 import type {
   ConversationShareAccessMode,
   ConversationShareCapabilities,
@@ -153,8 +152,8 @@ export interface ConversationShareFailureIssue {
     | "unknown";
 }
 
-export type ConversationShareFailureDiagnosticValue = string | number | boolean;
-export type ConversationShareFailureDiagnostics = Readonly<
+type ConversationShareFailureDiagnosticValue = string | number | boolean;
+type ConversationShareFailureDiagnostics = Readonly<
   Record<string, ConversationShareFailureDiagnosticValue>
 >;
 
@@ -193,7 +192,7 @@ function inferFailureReasonCode(message: string): ConversationShareFailureReason
   return "invalid_conversation";
 }
 
-export interface ConversationShareFailureDetails {
+interface ConversationShareFailureDetails {
   requestId?: string;
   status?: number;
   code?: number;

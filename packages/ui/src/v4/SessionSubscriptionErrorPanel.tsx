@@ -6,7 +6,7 @@ import { useFeedbackStore } from "@/feedback/feedbackStore.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { buildErrorFeedbackDescription } from "@/lib/errorFeedbackDraft.js";
 
-export interface SessionSubscriptionErrorPanelProps {
+interface SessionSubscriptionErrorPanelProps {
   error: string;
   sessionId: string;
   workspacePath: string;

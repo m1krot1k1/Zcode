@@ -110,18 +110,7 @@ export async function resolveOAuthBusinessCredentialValidationRequest(options: {
     // BigModel 注销后 customerInfo 返回零字节200；不扩散到 ZAI 或任意空业务响应。
     emptyBodyMeansInvalid: provider === BIGMODEL_PROVIDER_ID,
   };
-}
-
-export async function isCurrentOAuthBusinessCredentialRequest(options: {
-  input: string | URL;
-  headers: Headers;
-  credentialService: Pick<ICredentialService, "load">;
-  env?: NodeJS.ProcessEnv;
-}): Promise<boolean> {
-  return isCurrentBusinessOAuthCredentialRequest(options);
-}
-
-// 这里只判定候选请求；实际退出须由 OAuthService 在会话变更队列内复核，不能依赖异步旧快照。
+}// 这里只判定候选请求；实际退出须由 OAuthService 在会话变更队列内复核，不能依赖异步旧快照。
 export async function isCurrentOAuthCredentialRequest(options: {
   input: string | URL;
   headers: Headers;

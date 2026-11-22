@@ -125,7 +125,7 @@ function createRestartHook() {
   return {
     fire() {
       act(() => {
-        for (const listener of [...listeners]) listener();
+        for (const listener of Array.from(listeners)) listener();
       });
     },
     subscribe: (listener: () => void) => {
@@ -141,7 +141,7 @@ function createLifecycleHook() {
   return {
     fire(state: "available" | "unavailable") {
       act(() => {
-        for (const listener of [...listeners]) listener(state);
+        for (const listener of Array.from(listeners)) listener(state);
       });
     },
     subscribe: (listener: (state: "available" | "unavailable") => void) => {
@@ -243,7 +243,11 @@ describe("reduceDraftRuntimeRebuildGate", () => {
 describe("useDraftRuntimeRebuildGate", () => {
   it("草稿态换代 → 触发 invalidateDraftRuntime 并禁用发送", () => {
     const restart = createRestartHook();
-    renderProbe({ enabled: true, onRuntimeRestart: restart.subscribe, prewarmSessionId: "draft-1" });
+    renderProbe({
+      enabled: true,
+      onRuntimeRestart: restart.subscribe,
+      prewarmSessionId: "draft-1",
+    });
 
     expect(latest?.rebuilding).toBe(false);
     restart.fire();
@@ -283,7 +287,11 @@ describe("useDraftRuntimeRebuildGate", () => {
   it("超时未重建 → 解除禁用回落无预热发送", () => {
     vi.useFakeTimers();
     const restart = createRestartHook();
-    renderProbe({ enabled: true, onRuntimeRestart: restart.subscribe, prewarmSessionId: "draft-1" });
+    renderProbe({
+      enabled: true,
+      onRuntimeRestart: restart.subscribe,
+      prewarmSessionId: "draft-1",
+    });
     restart.fire();
     expect(latest?.rebuilding).toBe(true);
 
@@ -297,7 +305,11 @@ describe("useDraftRuntimeRebuildGate", () => {
   it("重建中再次换代 → 计时器重置，不提前解除", () => {
     vi.useFakeTimers();
     const restart = createRestartHook();
-    renderProbe({ enabled: true, onRuntimeRestart: restart.subscribe, prewarmSessionId: "draft-1" });
+    renderProbe({
+      enabled: true,
+      onRuntimeRestart: restart.subscribe,
+      prewarmSessionId: "draft-1",
+    });
     restart.fire();
 
     act(() => {

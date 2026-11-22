@@ -25,7 +25,7 @@ import {
   type PluginUiModelContext,
 } from "@/plugin-ui/index.js";
 
-export interface ComposerPromptContexts {
+interface ComposerPromptContexts {
   codeComments: readonly CodeCommentComposerAttachment[];
   conversationSelections: readonly ConversationSelectionDisplayReference[];
   webElements: readonly WebElementContextComposerAttachment[];
@@ -62,18 +62,9 @@ export function serializeComposerPromptContexts(
     text,
     contexts.conversationSelections,
   );
-  const withCodeComments = buildPromptWithCodeComments(
-    withSelections,
-    contexts.codeComments,
-  );
-  const withWebElements = buildPromptWithWebElementContexts(
-    withCodeComments,
-    contexts.webElements,
-  );
-  const withPptx = buildPromptWithPptxElementReferences(
-    withWebElements,
-    contexts.pptxElements,
-  );
+  const withCodeComments = buildPromptWithCodeComments(withSelections, contexts.codeComments);
+  const withWebElements = buildPromptWithWebElementContexts(withCodeComments, contexts.webElements);
+  const withPptx = buildPromptWithPptxElementReferences(withWebElements, contexts.pptxElements);
   return buildPromptWithPluginUiContexts(withPptx, contexts.pluginUiContexts ?? []);
 }
 

@@ -1,18 +1,10 @@
 /** 与 core `model-errors.ts` 中 anomaly guard 文案保持一致。 */
-export const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
-  "Model returned no text, no tool calls, and no usage before completing the turn.";
+const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
+  "Model completed without returning visible text or tool calls.";
 
-import {
-  requestVerificationActionMessages,
-  requestVerificationRecoveryAction,
-  type RequestVerificationRecoveryAction,
-} from "@/request-security-edition/errors.js";
+import { requestVerificationRecoveryAction, type RequestVerificationRecoveryAction } from "@/request-security-edition/errors.js";
 export {
-  resolveRequestVerificationBusinessCode,
-  isRequestVerificationTerminalError,
-  isRequestVerificationRejectedMessage,
-  REQUEST_VERIFICATION_REJECTED_MESSAGE,
-} from "@/request-security-edition/errors.js";
+  resolveRequestVerificationBusinessCode} from "@/request-security-edition/errors.js";
 /**
  * zcode-plan / Coding Plan 业务错误码与前端处理约定。
  *
@@ -30,7 +22,7 @@ export {
  */
 import { isOffPeakTicketExpiredError } from "@zcode/shared";
 
-export const PROVIDER_BUSINESS_ERROR_CODES = [
+const PROVIDER_BUSINESS_ERROR_CODES = [
   "1006",
   "1005",
   "3006",
@@ -45,7 +37,7 @@ export const PROVIDER_BUSINESS_ERROR_CODES = [
   "429",
 ] as const;
 
-export type ProviderBusinessErrorCode = (typeof PROVIDER_BUSINESS_ERROR_CODES)[number];
+type ProviderBusinessErrorCode = (typeof PROVIDER_BUSINESS_ERROR_CODES)[number];
 
 export type ProviderBusinessErrorUiAction =
   | "login"
@@ -55,7 +47,7 @@ export type ProviderBusinessErrorUiAction =
   | "retry-later"
   | "upgrade";
 
-export const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCode, string> = {
+const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCode, string> = {
   "1006": "zcode.error.providerBusiness.1006",
   "1005": "zcode.error.providerBusiness.1005",
   "3006": "zcode.error.providerBusiness.3006",
@@ -68,21 +60,7 @@ export const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCo
   "3102": "zcode.error.providerBusiness.3102",
   "2007": "zcode.error.providerBusiness.2007",
   "429": "zcode.error.providerBusiness.429",
-};
-
-export const PROVIDER_BUSINESS_ERROR_ACTION_MESSAGE_IDS: Record<
-  ProviderBusinessErrorUiAction,
-  string
-> = {
-  login: "chat.error.action.relogin",
-  "refresh-quota": "chat.error.action.refreshQuota",
-  "switch-model": "chat.error.action.switchModel",
-  ...requestVerificationActionMessages,
-  "retry-later": "chat.error.action.retryLater",
-  upgrade: "chat.quota.action.upgrade",
-};
-
-const PROVIDER_BUSINESS_ERROR_UI_ACTIONS: Record<
+};const PROVIDER_BUSINESS_ERROR_UI_ACTIONS: Record<
   ProviderBusinessErrorCode,
   ProviderBusinessErrorUiAction | null
 > = {
@@ -160,11 +138,7 @@ export function resolveStartPlanQuotaExhaustedBusinessCode(
   }
 
   return undefined;
-}
-
-const CONCURRENT_LIMIT_BUSINESS_CODES = new Set(["3008", "3009", "3010"]);
-
-const CONCURRENT_LIMIT_WRAPPER_CODES = new Set([
+}const CONCURRENT_LIMIT_WRAPPER_CODES = new Set([
   "PROVIDER_BUSINESS_ERROR",
   "SEND_FAILED",
   "unknown_error",
@@ -239,14 +213,7 @@ export function resolveStartPlanConcurrentLimitBusinessCode(
   }
 
   return undefined;
-}
-
-/** 判断业务码是否为并发上限类型。 */
-export function isConcurrentLimitBusinessCode(code: string | undefined): boolean {
-  return Boolean(code && CONCURRENT_LIMIT_BUSINESS_CODES.has(code));
-}
-
-export function resolveGlmQuotaBannerBusinessCode(
+}export function resolveGlmQuotaBannerBusinessCode(
   code: string | undefined,
 ): GlmQuotaBannerBusinessCode | undefined {
   const normalizedCode = code?.trim();

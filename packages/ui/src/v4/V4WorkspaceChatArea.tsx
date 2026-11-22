@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- V4WorkspaceChatArea 是分屏 workbench 宿主，集中管理 pane layout/focus/session binding；拆散会让 store action 和 shell binding 链路跨文件跳转。 */
 import { useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type {
   GitChangeSourceId,
@@ -55,7 +54,7 @@ import {
   type WorkbenchSessionBinding,
 } from "@/v4/workbenchGroupStore.js";
 
-export interface V4WorkspaceChatAreaProps {
+interface V4WorkspaceChatAreaProps {
   workspacePath: string;
   workspaceIdentity?: string;
   /** Prompt 模板埋点当前仅覆盖 Desktop；Web / 手机远控保留 UI 行为但不触发该事件。 */

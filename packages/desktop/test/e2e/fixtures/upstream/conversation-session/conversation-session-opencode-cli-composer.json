@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-opencode-cli-composer",
+  "spec": "./test/e2e/conversation-session/conversation-session-opencode-cli-composer.test.ts",
+  "fixtures": []
+}

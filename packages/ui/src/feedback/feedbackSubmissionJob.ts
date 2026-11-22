@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 反馈后台提交状态机集中维护创建、截图、日志上传、取消和降级逻辑；本次修 413/fetch 回归，不拆文件避免扩大行为面。 */
 import type { CreateFeedbackTicketInput, FeedbackAttachmentKind } from "@zcode/shared";
 import type { FeedbackUploadProgress, IFeedbackService } from "@zcode/services";
 import type { FeedbackSubmitDraft } from "@/feedback/feedbackStore.js";
@@ -548,13 +547,13 @@ async function uploadLogsUntilComplete(
   }
 }
 
-export function formatBytes(size: number) {
+function formatBytes(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }
 
-export function formatUploadProgress(
+function formatUploadProgress(
   progress: FeedbackUploadProgress,
   copy: FeedbackSubmissionCopy = DEFAULT_SUBMISSION_COPY,
 ): FeedbackSubmissionProgressState {

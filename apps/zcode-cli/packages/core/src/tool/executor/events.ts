@@ -1,7 +1,7 @@
 import {
+  BashInputSchema,
+  BashOutputSchema,
   SessionEventType,
-  createRootTraceContext,
-  traceContextToLogContext,
   type PermissionBrokerResult,
   type PermissionOptionsPolicy,
   type PermissionUpdate,
@@ -12,6 +12,7 @@ import {
   type TraceContext,
   type TurnId,
 } from "@zcode/contracts";
+import { createHash } from "node:crypto";
 import type { PermissionContext } from "../../permission/service.js";
 import type { ExecutableToolCall, ToolExecutionResult, ToolResultSerialization } from "../types.js";
 import type { ToolExecutorDeps } from "./types.js";
@@ -59,7 +60,14 @@ export async function emitToolCallResult(
   perf: ToolExecutionTelemetry | undefined,
   skillMetadata: SkillTelemetryMetadata | undefined,
   pluginId?: string,
+  executionInput?: unknown,
+  executionOutput?: unknown,
 ): Promise<void> {
+  const executionEvidence = createBashExecutionEvidence(
+    toolCall.name,
+    executionInput,
+    executionOutput,
+  );
   await deps.emitEvent({
     id: crypto.randomUUID() as any,
     sessionId: deps.sessionId,
@@ -75,6 +83,7 @@ export async function emitToolCallResult(
       result: {
         success: true,
         content: serialization.content,
+        ...(executionEvidence ? { executionEvidence } : {}),
         display,
         perf,
         truncated: serialization.truncated,
@@ -86,6 +95,40 @@ export async function emitToolCallResult(
       duration: durationMs,
     },
   });
+}
+
+export function createBashExecutionEvidence(
+  toolName: string,
+  input: unknown,
+  output: unknown,
+):
+  | {
+      kind: "bash_process";
+      commandSha256: string;
+      status: "completed" | "failed" | "timed_out" | "cancelled" | "spawn_error" | "backgrounded";
+      exitCode?: number;
+      signal?: string;
+      timedOut?: boolean;
+      cancelled?: boolean;
+    }
+  | undefined {
+  if (toolName !== "Bash") return undefined;
+  const parsedInput = BashInputSchema.safeParse(input);
+  const parsedOutput = BashOutputSchema.safeParse(output);
+  if (!parsedInput.success || !parsedOutput.success || parsedOutput.data.status === undefined) {
+    return undefined;
+  }
+  return {
+    kind: "bash_process",
+    commandSha256: createHash("sha256").update(parsedInput.data.command, "utf8").digest("hex"),
+    status: parsedOutput.data.status,
+    ...(parsedOutput.data.exitCode === undefined ? {} : { exitCode: parsedOutput.data.exitCode }),
+    ...(parsedOutput.data.signal === undefined ? {} : { signal: parsedOutput.data.signal }),
+    ...(parsedOutput.data.timedOut === undefined ? {} : { timedOut: parsedOutput.data.timedOut }),
+    ...(parsedOutput.data.cancelled === undefined
+      ? {}
+      : { cancelled: parsedOutput.data.cancelled }),
+  };
 }
 
 export async function emitToolCallError(
@@ -111,29 +154,6 @@ export async function emitToolCallError(
       ...(skillMetadata ? { skillMetadata } : {}),
       ...(pluginId ? { pluginId } : {}),
     },
-  });
-}
-
-export async function emitSkippedToolError(
-  deps: ToolExecutorDeps,
-  result: ToolExecutionResult,
-  traceContext?: TraceContext,
-): Promise<void> {
-  const eventTraceContext =
-    traceContext ??
-    deps.traceContext ??
-    createRootTraceContext({ sessionId: deps.sessionId, turnId: deps.turnId });
-  const turnId = eventTraceContext.turnId ?? deps.turnId;
-
-  await emitToolCallError(deps, result.toolCallId, eventTraceContext, turnId, result.error);
-
-  deps.logger?.warn("Tool call skipped after blocking failure", {
-    ...traceContextToLogContext(eventTraceContext),
-    event: "tool.call.skipped",
-    module: "core.tool.executor",
-    status: "failed",
-    toolCallId: result.toolCallId,
-    toolName: result.toolName,
   });
 }
 

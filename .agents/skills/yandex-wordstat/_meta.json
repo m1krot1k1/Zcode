@@ -1,0 +1,10 @@
+{
+  "source": "artwist-polyakov/polyakov-claude-skills",
+  "skillId": "yandex-wordstat",
+  "name": "yandex-wordstat",
+  "scope": "workspace",
+  "hash": "sha256:59647457e284f4e37727e737d1e3a6f0ce160aa7bedbb81479354fcec7942f55",
+  "remoteHash": "59647457e284f4e37727e737d1e3a6f0ce160aa7bedbb81479354fcec7942f55",
+  "installedAt": "2026-11-07T15:33:11.306Z",
+  "manager": "skills.sh"
+}

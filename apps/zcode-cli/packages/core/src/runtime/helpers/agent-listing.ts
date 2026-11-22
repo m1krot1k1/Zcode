@@ -1,8 +1,10 @@
 import { createMessageId, type TraceContext } from "@zcode/contracts";
 import type { RuntimeAttachmentEntry, RuntimeMessageEntry } from "../../agent/message-history.js";
 import { collectAgentListingAttachment } from "../../subagent/listing.js";
+import { filterAgentTypesForCaller } from "../../subagent/profile.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { resolveRuntimeEmbeddedSearchEnabled } from "../methods/embedded-search-branch.js";
+import { resolveRuntimeDelegationToolNames } from "../methods/subagent.js";
 import { commitTurnRequestEntries } from "../methods/turn-output-token-continuation.js";
 import type { TurnRequestState } from "../methods/turn-loop-state.js";
 
@@ -11,11 +13,30 @@ export function collectRuntimeAgentListing(
   entries: readonly RuntimeMessageEntry[],
   tools: readonly { name: string }[],
 ): RuntimeAttachmentEntry | undefined {
-  if (!tools.some((tool) => tool.name === "Agent")) return undefined;
+  // Причина бага: каталог профилей читался до проверки toolset и мог сорвать обычный turn,
+  // когда Agent/Task выключен или запрещён. В этом случае listing не нужен вовсе.
+  if (!tools.some((tool) => tool.name === "Agent" || tool.name === "Task")) return undefined;
+  // Router (start/orchestrator) не использует worker-tools сам, но может делегировать
+  // их named worker'у. Каталог должен показывать фактическую delegation-capability, иначе
+  // start видит coder без Write/Bash и ошибочно считает запись недоступной. Набор берётся
+  // через ту же границу, что и spawn: allowlist/disallowlist сессии и общие child-запреты,
+  // поэтому каталог не рекламирует инструмент, который spawn всё равно срежет.
+  const delegationToolNames = resolveRuntimeDelegationToolNames(runtime);
+  const listingTools = delegationToolNames.length
+    ? [...tools, ...delegationToolNames.map((name) => ({ name }))]
+    : tools;
+  // Каталог caller-scoped: start видит только orchestrator, orchestrator — worker-роли.
+  // Фильтр тот же, что у getAvailableAgentTypes, поэтому каталог и admission не расходятся.
+  const definitions = runtime.getAgentDefinitions();
   return collectAgentListingAttachment({
-    definitions: runtime.getAgentDefinitions(),
+    definitions: {
+      activeAgents: filterAgentTypesForCaller(
+        definitions.activeAgents,
+        runtime.config.agentType,
+      ),
+    },
     entries,
-    tools,
+    tools: listingTools,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
   });
 }

@@ -10,24 +10,16 @@ import { PLUGIN_SANDBOX_SHELL_CSP, buildPluginSandboxPermissionsPolicy } from ".
 import { createGenUiVendorResources, type GenUiVendorResources } from "./genUiVendor.js";
 
 /** 打包产物在 out/renderer 下的文件名（vite input 名 `plugin-sandbox`）。 */
-export const PLUGIN_SANDBOX_SHELL_HTML_FILE = "plugin-sandbox.html";
+const PLUGIN_SANDBOX_SHELL_HTML_FILE = "plugin-sandbox.html";
 /** 注入插件 HTML 顶部的 `window.zcode` 别名脚本；同源加载，避免依赖 inline nonce。 */
-export const PLUGIN_SANDBOX_ALIAS_SCRIPT_PATH = "/__zcode__/alias.js";
-export const PLUGIN_SANDBOX_ALIAS_SCRIPT_FILE = "plugin-sandbox-alias.js";
-
-export interface PluginSandboxSchemeRegistrar {
-  registerSchemesAsPrivileged(
-    schemes: Array<{ scheme: string; privileges: Record<string, boolean> }>,
-  ): void;
-}
-
-/** 与 zcode-media 必须在同一次 registerSchemesAsPrivileged 调用里注册（第二次调用会覆盖第一次）。 */
+const PLUGIN_SANDBOX_ALIAS_SCRIPT_PATH = "/__zcode__/alias.js";
+const PLUGIN_SANDBOX_ALIAS_SCRIPT_FILE = "plugin-sandbox-alias.js";/** 与 zcode-media 必须在同一次 registerSchemesAsPrivileged 调用里注册（第二次调用会覆盖第一次）。 */
 export const PLUGIN_SANDBOX_PRIVILEGED_SCHEME = {
   scheme: PLUGIN_SANDBOX_SCHEME,
   privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
 } as const;
 
-export interface PluginSandboxProtocolHost {
+interface PluginSandboxProtocolHost {
   handle(scheme: string, handler: (request: Request) => Promise<Response> | Response): void;
   unhandle(scheme: string): void;
   isProtocolHandled(scheme: string): boolean;
@@ -45,7 +37,7 @@ export interface PluginSandboxAssetSource {
   devServerUrl?: string;
 }
 
-export interface PluginSandboxRequestTarget {
+interface PluginSandboxRequestTarget {
   kind: "shell" | "plugin";
   sandboxId: string;
   pathname: string;
@@ -80,7 +72,7 @@ export function parsePluginSandboxUrl(rawUrl: string): PluginSandboxRequestTarge
 }
 
 /** 在插件 HTML 的 `<head>` 顶部（或文档最前）注入别名脚本引用。 */
-export function injectPluginSandboxAliasScript(html: string, sandboxId?: string): string {
+function injectPluginSandboxAliasScript(html: string, sandboxId?: string): string {
   const tag = `<script src="${sandboxId ? `/instance/${sandboxId}` : ""}${PLUGIN_SANDBOX_ALIAS_SCRIPT_PATH}"></script>`;
   const headMatch = /<head[^>]*>/i.exec(html);
   if (headMatch) {
@@ -282,10 +274,4 @@ export function installPluginSandboxProtocol(
   if (installedProtocols.has(protocol)) return;
   protocol.handle(PLUGIN_SANDBOX_SCHEME, handler);
   installedProtocols.add(protocol);
-}
-
-export function uninstallPluginSandboxProtocol(protocol: PluginSandboxProtocolHost): void {
-  if (!installedProtocols.has(protocol)) return;
-  if (protocol.isProtocolHandled(PLUGIN_SANDBOX_SCHEME)) protocol.unhandle(PLUGIN_SANDBOX_SCHEME);
-  installedProtocols.delete(protocol);
 }

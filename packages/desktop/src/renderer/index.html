@@ -3,6 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      主窗口 CSP。生产包通过 file:// 加载本页，Electron 无法对 file: 响应加 CSP 头，
+      所以策略放在 meta 里（docs/electron/docs/tutorial/security.md:406-411）。
+      细节与取舍见 docs/specs/2026-11-11-desktop-csp-navigation.md。
+      - 'unsafe-inline' остаётся только для Vite dev: React Fast Refresh вставляет inline
+        module preamble. Production-сборка прогоняет страницу через плагин
+        `zcode-production-csp` (packages/desktop/scripts/production-csp.ts) и вырезает
+        'unsafe-inline' из script-src.
+      - 'wasm-unsafe-eval' 只放行 WebAssembly 编译（office 预览 / shiki oniguruma / pdf.js），
+        不放行 eval 或 new Function 的任意 JS。
+      - file: 覆盖生产 file:// 文档与同目录资源；ws://…:5174 仅覆盖 Vite HMR。
+      - IPv6-литерал `ws://[::1]:5174` из connect-src убран: Chromium считает такой
+        host-source невалидным и игнорирует его ("contains an invalid source"), засоряя
+        консоль renderer. Vite HMR в dev подключается по `localhost`/`127.0.0.1`
+        (scripts/dev.mjs выбирает URL из этих же адресов), поэтому они и оставлены.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: blob: zcode-media: http: https: file:; media-src 'self' data: blob: zcode-media: http: https: file:; font-src 'self' data: file:; connect-src 'self' http: https: file: blob: ws://localhost:5174 ws://127.0.0.1:5174; worker-src 'self' blob: file:; object-src 'none'; base-uri 'none'; form-action 'self'"
+    />
     <title>ZCode</title>
     <style>
       html,
@@ -107,7 +127,13 @@
   </head>
   <body>
     <div id="root"></div>
-    <div id="loading" class="[app-region:drag]" role="status" aria-busy="true" aria-label="Loading...">
+    <div
+      id="loading"
+      class="[app-region:drag]"
+      role="status"
+      aria-busy="true"
+      aria-label="Loading..."
+    >
       <div class="startup-logo-shell">
         <svg
           xmlns="http://www.w3.org/2000/svg"

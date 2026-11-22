@@ -26,7 +26,7 @@ export function resolveLoginApiKeyProviderLabel(choice: ApiKeyProviderChoice): s
   return choice === "zai" ? "Z.ai" : "BigModel";
 }
 
-export function resolveLoginApiKeyProviderFamilyDomain(
+function resolveLoginApiKeyProviderFamilyDomain(
   choice: ApiKeyProviderChoice,
 ): ProviderFamilyDomain {
   return choice;

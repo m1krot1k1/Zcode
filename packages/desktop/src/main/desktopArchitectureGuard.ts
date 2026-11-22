@@ -1,18 +1,14 @@
 import type { BrowserWindow, NativeImage } from "electron";
-import {
-  DEFAULT_ZCODE_ENDPOINT_ORIGIN,
-  buildZCodeEndpointUrls,
-  type Locale,
-} from "@zcode/shared";
+import { DEFAULT_ZCODE_ENDPOINT_ORIGIN, buildZCodeEndpointUrls, type Locale } from "@zcode/shared";
 
-export interface ArchitectureMismatch {
+interface ArchitectureMismatch {
   /** 当前运行的二进制架构，例如 x64。 */
   binaryArch: string;
   /** 推荐安装的原生架构，目前翻译运行只会回退到 arm64。 */
   nativeArch: string;
 }
 
-export interface DetectArchitectureMismatchOptions {
+interface DetectArchitectureMismatchOptions {
   platform?: NodeJS.Platform;
   binaryArch?: string;
   /**
@@ -95,7 +91,7 @@ export function formatArchitectureMismatchDialogText(
   };
 }
 
-export interface ArchitectureGuardLogger {
+interface ArchitectureGuardLogger {
   info: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
 }

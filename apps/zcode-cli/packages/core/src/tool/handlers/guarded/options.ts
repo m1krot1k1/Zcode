@@ -1,8 +1,8 @@
 import type { CommandWord } from "./word.js";
 
-export type OptionArity = "flag" | "value" | "optional";
-export type OptionTable = Readonly<Record<string, OptionArity>>;
-export interface ParsedOptions {
+type OptionArity = "flag" | "value" | "optional";
+type OptionTable = Readonly<Record<string, OptionArity>>;
+interface ParsedOptions {
   flags: string[];
   operands: CommandWord[];
   unsupported: boolean;
@@ -15,7 +15,7 @@ export interface ParsedOptions {
  *   目标命令的存在性规则（rm -rf、--delete、--force）不因后面多一个未知词而失效，
  *   continue 只标记 unsupported、不消费下一个词、不进入 flags，让调用方按"命中优先"收敛。
  */
-export interface OptionScanPolicy {
+interface OptionScanPolicy {
   ordering: "stop-at-operand" | "interspersed";
   unknown: "abort" | "continue";
 }

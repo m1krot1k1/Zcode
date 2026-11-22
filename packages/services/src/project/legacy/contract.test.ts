@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { appSettingsSchema, type ZCodeTaskMeta } from "@zcode/shared";
 import { createLegacySingleRootProjectService } from "#src/project/index.js";
 
-function fixture() {
+function fixture(options?: {
+  knownWorkspaces?: readonly {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    workspacePurpose?: "project" | "conversation";
+  }[];
+}) {
   const get = vi.fn(async () =>
     appSettingsSchema.parse({
       lastWorkspaceSession: [
@@ -39,12 +45,15 @@ function fixture() {
     directories,
     hostId: "remote:server:old",
     readSettings: get,
-    readTasks: ({ workspacePath, kind }) =>
-      kind === "pinned"
-        ? tasks.listPinnedTasks({ workspacePath })
+    readKnownWorkspaces: async () => options?.knownWorkspaces ?? [],
+    readTasks: ({ workspacePath, workspaceIdentity, kind }) => {
+      const scope = { workspacePath, ...(workspaceIdentity ? { workspaceIdentity } : {}) };
+      return kind === "pinned"
+        ? tasks.listPinnedTasks(scope)
         : kind === "archived"
-          ? tasks.listArchivedTasks({ workspacePath })
-          : tasks.listTasks({ workspacePath }),
+          ? tasks.listArchivedTasks(scope)
+          : tasks.listTasks(scope);
+    },
     ensureConversation,
   });
   return { service, tasks, ensureConversation, get, directories };
@@ -106,6 +115,23 @@ describe("legacy single-root project adapter", () => {
     expect(get).not.toHaveBeenCalled();
     expect(tasks.listTasks).not.toHaveBeenCalled();
     expect(ensureConversation).not.toHaveBeenCalled();
+  });
+
+  it("passes workspaceIdentity from known remote roots into task queries", async () => {
+    const workspaceIdentity = "remote:server:old:/a";
+    const { service, tasks } = fixture({
+      knownWorkspaces: [{ workspacePath: "/a", workspaceIdentity }],
+    });
+
+    await service.readTree();
+
+    expect(tasks.listTasks).toHaveBeenCalledWith({ workspacePath: "/a", workspaceIdentity });
+    expect(tasks.listPinnedTasks).toHaveBeenCalledWith({ workspacePath: "/a", workspaceIdentity });
+    expect(tasks.listArchivedTasks).toHaveBeenCalledWith({
+      workspacePath: "/a",
+      workspaceIdentity,
+    });
+    expect(tasks.listTasks).toHaveBeenCalledWith({ workspacePath: "/b" });
   });
 
   it("旧分区查询期间任务被置顶时，同一 task 只保留一个投影行", async () => {

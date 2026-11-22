@@ -23,6 +23,10 @@ export const CoreErrorType = {
   ModelTimeout: "model_timeout",
   ModelRateLimited: "model_rate_limited",
   ModelContextExceeded: "model_context_exceeded",
+  // 执行入口没有可用模型选择（缺失，或 providerId/modelId 为空）。
+  // createCoreError 会把 type 转成大写 code，因此这里必须是独立条目，
+  // 不能复用 ConfigurationError 的 code。
+  NoModelSelected: "no_model_selected",
 
   // Tool errors
   ToolNotFound: "tool_not_found",

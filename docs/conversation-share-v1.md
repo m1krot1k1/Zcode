@@ -242,7 +242,7 @@ artifact 只经 `window.open` 打开、不做 `<img src>`，因此不受 `img-sr
 
 公开投影从正式 `ConversationRow[]` 构建，不从 DOM、legacy MessageWithParts 或 Web DTO 反推。
 
-- 允许：`turnHeader`、`userInput`、`assistantText`、`reasoning`、`toolCall`、`timelineMarker`、`artifact`。
+- 允许：`turnHeader`、`userInput`、`assistantText`、`reasoning`、`toolCall`、`timelineMarker`、`artifact`。`swarmRun` 是内部编排状态，包含本地子会话身份，不进入公开分享；构建公开投影时必须显式拒绝，不能透传或把本地 session ID 暴露给分享对象。
 - `subagent` 详情过滤，但对应 Agent toolCall 与同轮其它公开 Rows 保留。
 - 每类 Row 使用 allow-list 新建对象，删除 actions、source/root command ID、client ID、approval ID、
   active progress 和本地 artifact 引用。

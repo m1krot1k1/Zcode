@@ -5,6 +5,7 @@ import {
   writeFile,
   rename,
   readFile,
+  readdir,
   chmod,
   symlink,
   stat,
@@ -14,6 +15,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSubagentsService } from "../src/subagents/subagentsService.js";
+import { createFsFaultInjector, setFsFaultInjectorForTests } from "../src/fs/fsFaultInjection.js";
 
 // 仅观察真实补扫的 stat 次数，以实际进入稳定等待作为时序证据。
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -22,21 +24,41 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
+  setFsFaultInjectorForTests(null);
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
   vi.mocked(stat).mockClear();
 });
-const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 8000, interval: 20 });
-async function pair(prepareHome?: (homeDir: string) => Promise<void>) {
+// FSEvents watcher startup and full-suite load can delay the first real event beyond 8s;
+// waitFor is the correctness retry, so keep a generous ceiling without weakening assertions.
+const until = (assertion: () => unknown) =>
+  vi.waitFor(assertion, { timeout: 15_000, interval: 20 });
+async function pair(prepareHome?: (homeDir: string) => Promise<void>, isDesktopRuntime = false) {
   const homeDir = await mkdtemp(join(tmpdir(), "subagent-host-watch-"));
   cleanup.push(() => rm(homeDir, { recursive: true, force: true }));
   await prepareHome?.(homeDir);
-  const a = createSubagentsService({ homeDir }),
-    b = createSubagentsService({ homeDir });
+  // Keep user roots below the fixture home. Without this, prepareRuntimeState climbs to shared /tmp
+  // for missing ~/.zcode paths and every Host competes for watchers on the same system directory.
+  await mkdir(join(homeDir, ".zcode"), { recursive: true });
+  const a = createSubagentsService({ homeDir, isDesktopRuntime }),
+    b = createSubagentsService({ homeDir, isDesktopRuntime });
   cleanup.push(
     () => a.disposeAll(),
     () => b.disposeAll(),
   );
   const workspace = { workspacePath: join(homeDir, "workspace") };
+  // Host watcher roots must have a real workspace ancestor, as in Desktop; otherwise
+  // each test watches shared /tmp and exhausts the process watcher limit with unrelated siblings.
+  await mkdir(workspace.workspacePath, { recursive: true });
+  // Give each scope its own local watch anchor. Missing all four roots makes the watcher
+  // fall back to duplicate ancestor watches and can exhaust FSEvents resources in CI.
+  await Promise.all(
+    [
+      join(homeDir, ".zcode", "agents"),
+      join(homeDir, ".zcode", "v2"),
+      join(workspace.workspacePath, ".zcode", "agents"),
+      join(workspace.workspacePath, ".zcode", "v2"),
+    ].map((path) => mkdir(path, { recursive: true })),
+  );
   await a.prepareRuntimeState(workspace);
   await b.prepareRuntimeState(workspace);
   // Bug 根因：macOS 上 fs.watch 走 FSEvents，watch() 返回、Chokidar ready 之后原生流仍需
@@ -50,7 +72,7 @@ async function pair(prepareHome?: (homeDir: string) => Promise<void>) {
     });
   return { a, b, workspace, homeDir, both };
 }
-const config = (name = "researcher", systemPrompt = "old") => ({
+const config = (name = "watcher-researcher", systemPrompt = "old") => ({
   name,
   description: "Research",
   systemPrompt,
@@ -68,20 +90,57 @@ async function sameDirectory(left: string, right: string) {
 }
 
 describe("native subagent Host watchers", () => {
+  it("keeps the last published profile when atomic update fails before rename", async () => {
+    const f = await pair();
+    const { agent } = await f.a.createAgent({ config: config() });
+    await f.both({
+      kind: "ready",
+      profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+    });
+    setFsFaultInjectorForTests(
+      createFsFaultInjector([
+        {
+          id: "subagent-watcher-update-rename-failure",
+          code: "EACCES",
+          operations: ["rename"],
+          pathEndsWith: "/watcher-researcher.md",
+        },
+      ]),
+    );
+
+    await expect(
+      f.a.updateAgent({
+        agentId: agent.id,
+        oldFilePath: agent.path,
+        config: config("watcher-researcher", "partial update must not publish"),
+      }),
+    ).rejects.toMatchObject({
+      code: "EACCES",
+      zcodeFsFaultId: "subagent-watcher-update-rename-failure",
+    });
+
+    await f.both({
+      kind: "ready",
+      profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+    });
+    expect(await readFile(agent.path, "utf8")).toContain("old");
+    expect(await readFile(agent.path, "utf8")).not.toContain("partial update must not publish");
+  });
+
   it("keeps shared recovery in the background while new workspace preparations and queued saves finish", async () => {
     const f = await pair();
     const root = join(f.homeDir, ".zcode", "agents");
     await rm(root, { recursive: true, force: true });
     await f.both({ kind: "ready", profiles: [] });
-    const path = join(root, "researcher.md");
+    const path = join(root, "watcher-researcher.md");
     await mkdir(root, { recursive: true });
     let active = true,
       writes = 0;
-    await writeFile(path, markdown("researcher", `write-${writes}`));
+    await writeFile(path, markdown("watcher-researcher", `write-${writes}`));
     const writer = (async () => {
       while (active) {
         await delay(100);
-        if (active) await writeFile(path, markdown("researcher", `write-${++writes}`));
+        if (active) await writeFile(path, markdown("watcher-researcher", `write-${++writes}`));
       }
     })();
     const stop = async () => {
@@ -89,11 +148,8 @@ describe("native subagent Host watchers", () => {
       await writer;
     };
     cleanup.push(stop);
-    await until(() =>
-      expect(vi.mocked(stat).mock.calls.filter(([p]) => p === path).length).toBeGreaterThanOrEqual(
-        4,
-      ),
-    );
+    // Не привязываем сигнал к числу внутренних stat-вызовов: это деталь реализации, а не контракт.
+    await until(() => expect(writes).toBeGreaterThanOrEqual(4));
     const before = await f.a.readRuntimeConfig(f.workspace);
     expect(before).toMatchObject({ kind: "ready", profiles: [] });
     const others = ["b", "c"].map((name) => ({ workspacePath: join(f.homeDir, name) }));
@@ -134,26 +190,29 @@ describe("native subagent Host watchers", () => {
           await mkdir(actual, { recursive: true });
           if (!(await sameDirectory(actual, join(parent, "agents"))))
             skip("Requires a case-insensitive test filesystem");
-          await writeFile(join(actual, "researcher.md"), markdown("researcher"));
+          await writeFile(join(actual, "watcher-researcher.md"), markdown("watcher-researcher"));
         });
-        await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
+        await f.both({
+          kind: "ready",
+          profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+        });
         const parent =
           scope === "user" ? join(f.homeDir, ".zcode") : join(f.workspace.workspacePath, ".zcode");
-        const logical = join(parent, "agents", "researcher.md");
-        const actual = join(parent, "AGENTS", "researcher.md");
+        const logical = join(parent, "agents", "watcher-researcher.md");
+        const actual = join(parent, "AGENTS", "watcher-researcher.md");
         if (operation === "delete") await rm(logical);
         else {
           const agentId =
             scope === "user"
-              ? "user:user:researcher"
-              : `workspace:${f.workspace.workspacePath}:researcher`;
+              ? "user:user:watcher-researcher"
+              : `workspace:${f.workspace.workspacePath}:watcher-researcher`;
           await f.a.updateAgent({
             agentId,
             oldFilePath: logical,
             ...(scope === "project"
               ? ({ scope: "workspace", workspacePath: f.workspace.workspacePath } as const)
               : {}),
-            config: config(operation === "rename" ? "renamed" : "researcher", "new"),
+            config: config(operation === "rename" ? "renamed" : "watcher-researcher", "new"),
           });
           expect(
             await readFile(
@@ -169,7 +228,12 @@ describe("native subagent Host watchers", () => {
           profiles:
             operation === "delete"
               ? []
-              : [{ name: operation === "rename" ? "renamed" : "researcher", systemPrompt: "new" }],
+              : [
+                  {
+                    name: operation === "rename" ? "renamed" : "watcher-researcher",
+                    systemPrompt: "new",
+                  },
+                ],
         });
       }, 15000);
     }
@@ -188,14 +252,17 @@ describe("native subagent Host watchers", () => {
       const logical = join(parent, "agents");
       if (mode === "recreation") {
         await mkdir(logical, { recursive: true });
-        await writeFile(join(logical, "researcher.md"), markdown("researcher"));
-        await f.both({ profiles: [{ name: "researcher", systemPrompt: "old" }] });
+        await writeFile(join(logical, "watcher-researcher.md"), markdown("watcher-researcher"));
+        await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "old" }] });
         await rm(logical, { recursive: true });
         await f.both({ profiles: [] });
       }
       await mkdir(join(parent, "AGENTS"), { recursive: true });
-      await writeFile(join(logical, "researcher.md"), markdown("researcher", "new"));
-      await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+      await writeFile(
+        join(logical, "watcher-researcher.md"),
+        markdown("watcher-researcher", "new"),
+      );
+      await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
     }, 20000);
   }
 
@@ -208,32 +275,38 @@ describe("native subagent Host watchers", () => {
       if (await sameDirectory(root, join(home, ".zcode", "AGENTS")))
         skip("Requires a case-sensitive test filesystem");
       await mkdir(join(home, ".zcode", "AGENTS"));
-      await writeFile(join(root, "researcher.md"), markdown("researcher"));
+      await writeFile(join(root, "watcher-researcher.md"), markdown("watcher-researcher"));
       await writeFile(join(home, ".zcode", "AGENTS", "unrelated.md"), markdown("unrelated"));
     });
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "old" }] });
     await writeFile(
       join(f.homeDir, ".zcode", "AGENTS", "unrelated.md"),
       markdown("unrelated", "wrong"),
     );
     await writeFile(
-      join(f.homeDir, ".zcode", "agents", "researcher.md"),
-      markdown("researcher", "new"),
+      join(f.homeDir, ".zcode", "agents", "watcher-researcher.md"),
+      markdown("watcher-researcher", "new"),
     );
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
   });
 
   it("removes the old cache entry after a filename-only case rename", async () => {
     const f = await pair(async (home) => {
       await mkdir(join(home, ".zcode", "agents"), { recursive: true });
-      await writeFile(join(home, ".zcode", "agents", "Researcher.MD"), markdown("researcher"));
+      await writeFile(
+        join(home, ".zcode", "agents", "Researcher.MD"),
+        markdown("watcher-researcher"),
+      );
     });
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "old" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "old" }] });
     const root = join(f.homeDir, ".zcode", "agents");
-    await rename(join(root, "Researcher.MD"), join(root, "researcher.md"));
-    await writeFile(join(root, "researcher.md"), markdown("researcher", "new"));
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
-    await rm(join(root, "researcher.md"));
+    await rename(join(root, "Researcher.MD"), join(root, "watcher-researcher.md"));
+    await writeFile(join(root, "watcher-researcher.md"), markdown("watcher-researcher", "new"));
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
+    // macOS 可延后送达大小写重命名的 unlink；先让该批次完成，再验证独立删除事件。
+    await delay(500);
+    await rm(join(root, "watcher-researcher.md"));
+    expect(await readdir(root)).toEqual([]);
     await f.both({ profiles: [] });
   });
 
@@ -249,21 +322,24 @@ describe("native subagent Host watchers", () => {
         process.platform === "win32" ? "junction" : "dir",
       );
       await writeFile(
-        join(storage, "agents", "researcher.md"),
-        "---\nname: researcher\ndescription: Research\n---\nold",
+        join(storage, "agents", "watcher-researcher.md"),
+        "---\nname: watcher-researcher\ndescription: Research\n---\nold",
       );
     });
-    await f.both({ kind: "ready", profiles: [{ name: "researcher", systemPrompt: "old" }] });
-    const agentId = "user:user:researcher";
+    await f.both({
+      kind: "ready",
+      profiles: [{ name: "watcher-researcher", systemPrompt: "old" }],
+    });
+    const agentId = "user:user:watcher-researcher";
     await f.a.updateAgent({
       agentId,
-      oldFilePath: join(f.homeDir, ".zcode", "agents", "researcher.md"),
-      config: config("researcher", "new"),
+      oldFilePath: join(f.homeDir, ".zcode", "agents", "watcher-researcher.md"),
+      config: config("watcher-researcher", "new"),
     });
     expect(
-      await readFile(join(f.homeDir, "linked-storage", "agents", "researcher.md"), "utf8"),
+      await readFile(join(f.homeDir, "linked-storage", "agents", "watcher-researcher.md"), "utf8"),
     ).toContain("new");
-    await f.both({ profiles: [{ name: "researcher", systemPrompt: "new" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher", systemPrompt: "new" }] });
     await f.a.setEnabled({ agentId, enabled: false });
     await f.both({ profiles: [] });
   }, 15000);
@@ -282,7 +358,7 @@ describe("native subagent Host watchers", () => {
     async (operation) => {
       const f = await pair();
       const { agent } = await f.a.createAgent({ config: config() });
-      await f.both({ kind: "ready", profiles: [{ name: "researcher" }] });
+      await f.both({ kind: "ready", profiles: [{ name: "watcher-researcher" }] });
       if (operation === "enable" || operation === "rename") {
         await f.a.setEnabled({ agentId: agent.id, enabled: false });
         await f.both({ profiles: [] });
@@ -293,7 +369,7 @@ describe("native subagent Host watchers", () => {
         await f.a.updateAgent({
           agentId: agent.id,
           oldFilePath: agent.path,
-          config: config(operation === "rename" ? "renamed" : "researcher", "new"),
+          config: config(operation === "rename" ? "renamed" : "watcher-researcher", "new"),
         });
       if (operation === "delete")
         await f.a.deleteAgent({ agentId: agent.id, filePath: agent.path });
@@ -306,7 +382,7 @@ describe("native subagent Host watchers", () => {
         });
       if (operation === "plugin")
         await f.a.setPluginAgentModelOverride({
-          agentId: "plugin:test:researcher",
+          agentId: "plugin:test:watcher-researcher",
           modelSelection: { providerId: "test", modelId: "new" },
         });
       await until(async () => {
@@ -412,7 +488,7 @@ describe("native subagent Host watchers", () => {
   it("reads state from the prepared path without re-resolving CLI storage on every event", async () => {
     const f = await pair();
     const { agent } = await f.a.createAgent({ config: config() });
-    await f.both({ profiles: [{ name: "researcher" }] });
+    await f.both({ profiles: [{ name: "watcher-researcher" }] });
     const cliRoot = join(f.homeDir, ".zcode", "cli");
     await mkdir(cliRoot, { recursive: true });
     await writeFile(
@@ -449,28 +525,35 @@ describe("native subagent Host watchers", () => {
   it.skipIf(process.platform === "win32")(
     "does not publish a write rejected before disk mutation, but consumes a partially failed rename",
     async () => {
-      const f = await pair();
+      const f = await pair(undefined, true);
       const { agent } = await f.a.createAgent({ config: config() });
-      await f.both({ profiles: [{ name: "researcher" }] });
+      await f.both({ profiles: [{ name: "watcher-researcher" }] });
       await expect(f.a.createAgent({ config: config() })).rejects.toThrow();
       await f.both({ profiles: [{ systemPrompt: "old" }] });
       await f.a.setEnabled({ agentId: agent.id, enabled: false });
       await f.both({ profiles: [] });
       await f.a.setEnabled({ agentId: agent.id, enabled: true });
-      await f.both({ profiles: [{ name: "researcher" }] });
-      // state 无读取权限使迁移失败；先写入的新 Markdown 是真实磁盘事实，watcher 仍会观察。
-      const statePath = join(f.homeDir, ".zcode", "v2", "agents-state.json");
-      await mkdir(join(f.homeDir, ".zcode", "v2"), { recursive: true });
-      await writeFile(statePath, JSON.stringify({ disabledAgentIds: [] }));
-      await chmod(statePath, 0);
-      cleanup.push(() => chmod(statePath, 0o600));
+      await f.both({ profiles: [{ name: "watcher-researcher" }] });
+      // 在目标发布前注入故障，验证 journal 留存后由下一次 profile 读取安全完成事务。
+      setFsFaultInjectorForTests(
+        createFsFaultInjector([
+          {
+            id: "subagent-watcher-rename-publish-failure",
+            code: "EACCES",
+            operations: ["rename"],
+            pathEndsWith: "/renamed.md",
+          },
+        ]),
+      );
       await expect(
         f.a.updateAgent({ agentId: agent.id, oldFilePath: agent.path, config: config("renamed") }),
       ).rejects.toThrow();
-      await f.both({ kind: "built-in-fallback" });
-      await chmod(statePath, 0o600);
-      await writeFile(statePath, JSON.stringify({ disabledAgentIds: [] }));
-      await f.both({ kind: "ready", profiles: [{ name: "renamed" }, { name: "researcher" }] });
+      expect(await readdir(join(f.homeDir, ".zcode", "agents"))).toContain("watcher-researcher.md");
+      setFsFaultInjectorForTests(null);
+      // 恢复由 SubagentsService 的下一次 profile 读取入口拥有；watcher 只观察已恢复的文件。
+      const recovered = await f.a.list({ workspacePath: f.workspace.workspacePath });
+      expect(recovered.agents.map(({ name }) => name)).toContain("renamed");
+      await f.both({ kind: "ready", profiles: [{ name: "renamed" }] });
     },
     15000,
   );
@@ -482,10 +565,13 @@ describe("native subagent Host watchers", () => {
     const root = join(f.workspace.workspacePath, ".zcode", "agents");
     await rename(root, root + "-saved");
     await writeFile(root, "not a directory");
-    await f.both({ kind: "built-in-fallback" });
+    await f.both({ kind: "ready", profiles: [] });
     await rm(root);
     await rename(root + "-saved", root);
-    await writeFile(join(root, "researcher.md"), markdown("researcher", "restored"));
+    await writeFile(
+      join(root, "watcher-researcher.md"),
+      markdown("watcher-researcher", "restored"),
+    );
     await f.both({ kind: "ready", profiles: [{ systemPrompt: "restored" }] });
   }, 20000);
 });

@@ -51,7 +51,7 @@ export interface SessionQuotaBannerState {
   priority: number;
 }
 
-export const HIDDEN_SESSION_QUOTA_BANNER_STATE: SessionQuotaBannerState = {
+const HIDDEN_SESSION_QUOTA_BANNER_STATE: SessionQuotaBannerState = {
   visible: false,
   kind: null,
   concurrentLimitBusinessCode: null,

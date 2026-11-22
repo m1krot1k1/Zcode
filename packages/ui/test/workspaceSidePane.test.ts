@@ -4,6 +4,7 @@ import {
   activateNewTabSidePane,
   activateSidePaneTab,
   activateDeveloperToolsSidePane,
+  activateAgentWorkbenchSidePane,
   activatePluginMarketSidePane,
   applyBrowserUseSidePaneEvent,
   applyBrowserUseSidePaneVisibilityEvent,
@@ -1339,6 +1340,38 @@ describe("workspaceSidePane", () => {
     });
   });
 
+  it("reuses one Agent Workbench tab per workspace identity", () => {
+    const first = activateAgentWorkbenchSidePane(null, {
+      workspaceKey: "remote:workspace-a",
+      workspacePath: "/workspace",
+      workspaceIdentity: "remote:workspace-a",
+    });
+    const second = activateAgentWorkbenchSidePane(first, {
+      workspaceKey: "remote:workspace-a",
+      workspacePath: "/workspace",
+      workspaceIdentity: "remote:workspace-a",
+    });
+    const otherWorkspace = activateAgentWorkbenchSidePane(second, {
+      workspaceKey: "remote:workspace-b",
+      workspacePath: "/workspace",
+      workspaceIdentity: "remote:workspace-b",
+    });
+    expect(second.tabs.filter((tab) => tab.type === "agent-workbench")).toHaveLength(1);
+    expect(otherWorkspace.tabs.filter((tab) => tab.type === "agent-workbench")).toHaveLength(2);
+    expect(
+      isSidePaneTabVisibleInScope(otherWorkspace.tabs[0]!, {
+        workspaceKey: "remote:workspace-a",
+        ownerTaskId: "task-a",
+      }),
+    ).toBe(true);
+    expect(
+      isSidePaneTabVisibleInScope(otherWorkspace.tabs.at(-1)!, {
+        workspaceKey: "remote:workspace-a",
+        ownerTaskId: "task-a",
+      }),
+    ).toBe(false);
+  });
+
   it("reuses the plugin market tab and preserves other panels", () => {
     const first = activatePluginMarketSidePane(activateDeveloperToolsSidePane(null));
     const second = activatePluginMarketSidePane(first);
@@ -2545,6 +2578,16 @@ describe("workspaceSidePane", () => {
       git: { tab: { ...base, id: "git", type: "git" }, owner: null },
       "developer-tools": {
         tab: { ...base, id: "developer-tools", type: "developer-tools" },
+        owner: null,
+      },
+      "agent-workbench": {
+        tab: {
+          id: "agent-workbench:workspace",
+          type: "agent-workbench",
+          workspaceKey: base.workspaceKey,
+          workspacePath: base.workspacePath,
+          ownerTaskId: null,
+        },
         owner: null,
       },
       // 插件市场是工作区级标签：同一工作区的各对话共用，跨工作区隔离。

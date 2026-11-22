@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Server lifecycle、首装、迁移与卸载命令共享同一 CLI 解析和安全边界。 */
 import { fork } from "node:child_process";
 import { access, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -54,7 +53,7 @@ export interface CliIO {
   legacyDelegate?: (argv: readonly string[]) => Promise<number>;
 }
 
-export interface ServerCliRuntimeOptions {
+interface ServerCliRuntimeOptions {
   bundledAgentWiring?: BundledAgentWiring | null;
   proxyStdioStreams?: { input: Readable; output: Writable };
   workspaceAliasRepo?: Pick<SourceServerWorkspaceAliasRepo, "retryFailedWorkspace">;
@@ -66,6 +65,11 @@ const stdout = (io: CliIO, value: unknown): void =>
   io.stdout?.write(`${typeof value === "string" ? value : JSON.stringify(value)}\n`);
 const stderr = (io: CliIO, value: unknown): void =>
   io.stderr?.write(`${value instanceof Error ? value.message : String(value)}\n`);
+
+// Supervisor may spend the full CORE_READY_TIMEOUT_MS before it reports readiness.
+// The outer wait must outlive that budget plus service registration, otherwise a
+// healthy cold start is reported as a timeout.
+export const DAEMON_READY_WAIT_TIMEOUT_MS = CORE_READY_TIMEOUT_MS + 10_000;
 
 async function acquireLifecycleCommandLock(
   layout: ReturnType<typeof resolveServerLayout>,
@@ -634,9 +638,11 @@ async function waitForPersistedStatus(
   assertStillWaiting?: () => void,
   expectedServiceRegistered?: boolean,
 ): Promise<ServerStatus> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + DAEMON_READY_WAIT_TIMEOUT_MS;
+  let lastStatus: ServerStatus | null = null;
   while (Date.now() < deadline) {
     const status = await readPersistedStatus(layout);
+    lastStatus = status;
     if (
       status?.state === expectedState &&
       status.updatedAt > minUpdatedAt &&
@@ -644,10 +650,33 @@ async function waitForPersistedStatus(
         status.serviceRegistered === expectedServiceRegistered)
     )
       return status;
+    if (
+      expectedState === "ready" &&
+      status !== null &&
+      status.updatedAt > minUpdatedAt &&
+      status.state === "crash-loop-stopped"
+    ) {
+      throw new Error(`Server Core entered crash-loop-stopped${formatLastExitReason(status)}`);
+    }
     assertStillWaiting?.();
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`Timed out waiting for Server ${expectedState}`);
+  throw new Error(
+    `Timed out waiting for Server ${expectedState}${formatDaemonStatusDetail(lastStatus, layout)}`,
+  );
+}
+
+function formatLastExitReason(status: ServerStatus): string {
+  const reason = status.lastExitReason?.replace(/\s+/g, " ").trim();
+  return reason === undefined || reason.length === 0 ? "" : `: ${reason.slice(0, 300)}`;
+}
+
+function formatDaemonStatusDetail(
+  status: ServerStatus | null,
+  layout: ReturnType<typeof resolveServerLayout>,
+): string {
+  if (status === null) return ` (status file: ${layout.statusFile})`;
+  return ` (last state: ${status.state}${formatLastExitReason(status)}; status file: ${layout.statusFile})`;
 }
 
 async function waitForSupervisorReady(supervisor: {

@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { AgentInputSchema, BashInputJsonSchema, BashOutputJsonSchema } from "@zcode/contracts";
-import { agentToolEntry } from "../src/tool/handlers/agent.js";
+import {
+  AgentErrorCode,
+  AgentInputSchema,
+  AgentTaskGraphSchema,
+  AGENT_TASK_GRAPH_MAX_BYTES,
+  BashInputJsonSchema,
+  BashOutputJsonSchema,
+  CoreErrorType,
+  TaskInputSchema,
+} from "@zcode/contracts";
+import { agentToolEntry, taskToolEntry } from "../src/tool/handlers/agent.js";
 import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { editToolEntry } from "../src/tool/handlers/edit.js";
 import { globToolEntry } from "../src/tool/handlers/glob.js";
@@ -33,6 +42,9 @@ const DIRECT_BRANCH_REFERENCE_SEARCH_DESCRIPTIONS = {
 
 const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "Agent",
+  // ApplyPatch/MultiEdit входят в стабильный отсортированный префикс: F-03 снимает
+  // модельный гейт и делает атомарные мультифайловые правки доступными всем моделям.
+  "ApplyPatch",
   "AskUserQuestion",
   "Bash",
   "Edit",
@@ -40,6 +52,7 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "ExitPlanMode",
   "Glob",
   "Grep",
+  "MultiEdit",
   "Read",
   "Skill",
   "TaskOutput",
@@ -54,6 +67,10 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "SendMessage",
   "ReadSessionContext",
   "ReplyToChannel",
+  // Marketplace tools are local-only and therefore follow the shared provider partition.
+  "SkillSearch",
+  "SkillInstall",
+  "InstallCapability",
   "CreateWorkflow",
   // 修订入口紧随 CreateWorkflow 注册（docs/dynamic-workflow/launch.md「The `AmendWorkflow` tool」）。
   "AmendWorkflow",
@@ -76,10 +93,8 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "ListModels",
 ] as const;
 
-const EMBEDDED_SEARCH_EXPECTED_PROVIDER_TOOL_ORDER =
-  DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER.filter(
-    (toolName) => toolName !== "Glob" && toolName !== "Grep",
-  );
+// Embedded Bash search complements Glob/Grep; the provider-visible order is unchanged.
+const EMBEDDED_SEARCH_EXPECTED_PROVIDER_TOOL_ORDER = DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER;
 
 const SOURCE_DERIVED_WEBFETCH_DESCRIPTION = [
   "Fetches a URL, converts the page to markdown, and answers `prompt` against it using a small fast model.",
@@ -94,7 +109,10 @@ const SOURCE_DERIVED_READ_SHORT_DESCRIPTION = [
   "",
   "- `file_path` must be an absolute path.",
   "- Reads up to 2000 lines by default.",
-  "- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters",
+  // Описание приоритезирует диапазон: измерено 89 427 токенов на tool-вызов, и чтение
+  // целых крупных файлов — основная причина роста контекста на каждом следующем шаге.
+  "- Prefer a targeted range: pass offset and limit when a CodeIndex/Grep hit already shows the lines you need. Reading a whole large file keeps costing context on every later step of the turn and is the main reason turns get slow.",
+  "- Read the whole file only when you must edit it and no narrower range suffices. When several ranges are needed, issue the Reads in one parallel batch instead of widening one of them.",
   "- Results are returned using cat -n format, with line numbers starting at 1",
   "- Reads images (PNG, JPG, …) and presents them visually.",
   // video 输入一期新增能力行：Read 支持读取视频作为模型输入。
@@ -614,6 +632,7 @@ describe("tool contract declarations", () => {
       {
         description: "scan cache",
         prompt: "scan cache",
+        subagent_type: "researcher",
         run_in_background: true,
       },
       {
@@ -625,6 +644,7 @@ describe("tool contract declarations", () => {
       {
         description: "scan cache",
         prompt: "scan cache",
+        subagent_type: "researcher",
         run_in_background: true,
       },
       {
@@ -635,6 +655,49 @@ describe("tool contract declarations", () => {
 
     expect(launches[0]?.callerCanReadOutputFile).toBe(false);
     expect(launches[1]?.callerCanReadOutputFile).toBe(true);
+  });
+
+  it.each([
+    ["Agent", agentToolEntry],
+    ["Task", taskToolEntry],
+  ] as const)("rejects internal compatibility roles through %s before child admission", async (_name, entry) => {
+    let launchCount = 0;
+    const context = {
+      abortSignal: new AbortController().signal,
+      availableAgentTypes: ["implementer", "reviewer"],
+      sessionId: "sess_parent",
+      toolCallId: "toolu_agent_compat",
+      traceId: "trace_parent",
+      workingDirectory: "/workspace",
+      workspaceRoot: "/workspace",
+      subagentPort: {
+        async launch() {
+          launchCount += 1;
+          return {};
+        },
+      },
+    };
+    await expect(
+      entry.handler(
+        {
+          description: "delegate task",
+          prompt: "do the task",
+          subagent_type: "general-purpose",
+        },
+        context as any,
+      ),
+    ).rejects.toThrow("Choose one exact active role ID: implementer, reviewer");
+    expect(launchCount).toBe(0);
+
+    await entry.handler(
+      {
+        description: "delegate task",
+        prompt: "do the task",
+        subagent_type: "general-purpose",
+      },
+      { ...context, availableAgentTypes: ["general-purpose"] } as any,
+    );
+    expect(launchCount).toBe(1);
   });
 
   it("passes the active Loop Model to an Agent child that has no execution override", async () => {
@@ -651,6 +714,7 @@ describe("tool contract declarations", () => {
       {
         description: "review current loop",
         prompt: "inherit the parent model",
+        subagent_type: "reviewer",
       },
       {
         abortSignal: new AbortController().signal,
@@ -944,8 +1008,16 @@ describe("tool contract declarations", () => {
     expect(agentRegistry.has("Task")).toBe(true);
     expect(agentRegistry.toContracts().map((tool) => tool.name)).toContain("Agent");
     expect(agentRegistry.toContracts().map((tool) => tool.name)).not.toContain("Task");
-    expect(agentRegistry.get("Task")?.handler).toBe(agentRegistry.get("Agent")?.handler);
-    expect(agentRegistry.get("Task")?.inputSchema).toBe(agentRegistry.get("Agent")?.inputSchema);
+    expect(agentRegistry.get("Task")?.handler).not.toBe(agentRegistry.get("Agent")?.handler);
+    expect(agentRegistry.get("Task")?.inputSchema).not.toBe(
+      agentRegistry.get("Agent")?.inputSchema,
+    );
+    expect(getSchemaPath(agentRegistry.get("Task")?.inputSchema, ["required"])).toContain(
+      "subagent_type",
+    );
+    expect(
+      TaskInputSchema.safeParse({ description: "Inspect", prompt: "Inspect the runtime" }).success,
+    ).toBe(false);
     expect(agentRegistry.get("Task")?.permission?.permission).toBe("subagent");
     expect(agentRegistry.get("Agent")?.metadata.concurrentSafe).toBe(true);
     expect(agentRegistry.get("Task")?.metadata.concurrentSafe).toBe(true);
@@ -1046,8 +1118,10 @@ describe("tool contract declarations", () => {
 
     const byName = new Map(registry.toContracts().map((contract) => [contract.name, contract]));
 
-    expect(byName.has("Glob")).toBe(false);
-    expect(byName.has("Grep")).toBe(false);
+    // Embedded Bash search complements Glob/Grep instead of hiding them: child
+    // profiles explicitly allowlist both tools and must keep them visible.
+    expect(byName.has("Glob")).toBe(true);
+    expect(byName.has("Grep")).toBe(true);
 
     const bashDescription = byName.get("Bash")?.description ?? "";
     expect(bashDescription).toBe(
@@ -1113,7 +1187,7 @@ describe("tool contract declarations", () => {
     );
     expect(agentInput.properties.prompt.description).toBe("The task for the agent to perform");
     expect(agentInput.properties.subagent_type.description).toBe(
-      "The type of specialized agent to use for this task",
+      "Required exact ID of an active agent profile listed in the current conversation",
     );
     expect(agentInput.properties.run_in_background.description).toBe(
       "Set to true to run this agent in the background. You will be notified when it completes.",
@@ -1143,9 +1217,9 @@ describe("tool contract declarations", () => {
     expect(bashInput.properties.run_in_background.description).toBe(
       "Set to true to run this command in the background.",
     );
-    expect(bashInput.properties.dangerouslyDisableSandbox.description).toBe(
-      "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
-    );
+    // R04 вариант B: sandbox-поле удалено из provider-visible схемы.
+    expect(bashInput.properties).not.toHaveProperty("dangerouslyDisableSandbox");
+    expect(JSON.stringify(bashInput)).not.toContain("sandbox");
   });
 
   it("drops the legacy Agent model field at the runtime input boundary", () => {
@@ -1163,6 +1237,391 @@ describe("tool contract declarations", () => {
       prompt: "Find the model selection path.",
       subagent_type: "Explore",
     });
+  });
+
+  it("requires an exact named profile for Agent and Task calls", () => {
+    const request = {
+      description: "Inspect runtime",
+      prompt: "Find the model selection path.",
+    };
+
+    expect(AgentInputSchema.safeParse(request).success).toBe(false);
+    expect(TaskInputSchema.safeParse(request).success).toBe(false);
+    expect(AgentInputSchema.safeParse({ ...request, subagent_type: "researcher" }).success).toBe(
+      true,
+    );
+  });
+
+  it("accepts only the bounded PRISM Bash exit-code criterion contract", () => {
+    const parsed = AgentInputSchema.parse({
+      description: "Run typecheck",
+      prompt: "Run the typecheck and report failures.",
+      subagent_type: "test-engineer",
+      acceptance_criteria: [
+        {
+          id: "typecheck",
+          description: "The required typecheck exits with code zero",
+          check: {
+            kind: "bash_exit_code",
+            command: "pnpm typecheck",
+            expectedExitCode: 0,
+          },
+        },
+      ],
+    });
+
+    expect(parsed.acceptance_criteria).toHaveLength(1);
+    expect(() =>
+      AgentInputSchema.parse({
+        description: "Run arbitrary evaluator",
+        prompt: "Run check.",
+        subagent_type: "test-engineer",
+        acceptance_criteria: [
+          {
+            id: "untrusted",
+            description: "Untrusted evaluator",
+            check: { kind: "arbitrary_shell", command: "true", expectedExitCode: 0 },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("validates Agent task graphs, safe concurrency, and dependency shapes", () => {
+    const node = (id: string, depends_on?: string[]) => ({
+      id,
+      description: `Work on ${id}`,
+      prompt: `Complete task ${id}`,
+      subagent_type: "researcher",
+      ...(depends_on === undefined ? {} : { depends_on }),
+    });
+    const validInput = {
+      description: "Build independent tasks",
+      prompt: "Run the task graph and report the node outcomes.",
+      subagent_type: "orchestrator",
+    };
+    const parseGraph = (nodes: unknown[], max_parallel?: number) =>
+      AgentInputSchema.safeParse({
+        ...validInput,
+        task_graph: {
+          nodes,
+          ...(max_parallel === undefined ? {} : { max_parallel }),
+        },
+      });
+
+    expect(parseGraph([node("scan"), node("implement", ["scan"])], 2).success).toBe(true);
+    expect(parseGraph([node("same"), node("same")]).success).toBe(false);
+    expect(
+      parseGraph([
+        {
+          ...node("check"),
+          acceptance_criteria: [
+            {
+              id: "same-check",
+              description: "First check",
+              check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+            },
+            {
+              id: "same-check",
+              description: "Second check",
+              check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+            },
+          ],
+        },
+      ]).success,
+    ).toBe(false);
+    expect(
+      parseGraph([
+        {
+          ...node("utf8-bound"),
+          acceptance_criteria: [
+            {
+              id: "utf8-check",
+              description: "Я".repeat(500),
+              check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+            },
+          ],
+        },
+      ]).success,
+    ).toBe(false);
+    expect(parseGraph([node("scan", ["missing"])]).success).toBe(false);
+    expect(parseGraph([node("scan", ["scan"])]).success).toBe(false);
+    expect(parseGraph([node("scan"), node("implement", ["scan", "scan"])]).success).toBe(false);
+    expect(parseGraph([node("first", ["second"]), node("second", ["first"])]).success).toBe(false);
+    expect(parseGraph([node("scan")], 0).success).toBe(false);
+    expect(parseGraph([node("scan")], 25).success).toBe(true);
+    expect(parseGraph([node("scan")], 256).success).toBe(true);
+    expect(parseGraph([node("scan")], Number.MAX_SAFE_INTEGER).success).toBe(true);
+    expect(parseGraph([node("scan")], Number.MAX_SAFE_INTEGER + 1).success).toBe(false);
+    expect(parseGraph([node("scan")], 1.5).success).toBe(false);
+    const dependencyIds = Array.from({ length: 129 }, (_, index) => `dep-${index}`);
+    expect(
+      parseGraph(
+        [...dependencyIds.map((id) => node(id)), node("join", dependencyIds)],
+        256,
+      ).success,
+    ).toBe(true);
+    expect(parseGraph([{ ...node("scan"), prompt: "x".repeat(20_001) }]).success).toBe(false);
+    expect(
+      parseGraph(
+        Array.from({ length: 7 }, (_, index) => ({
+          ...node(`n${index}`),
+          prompt: "x".repeat(19_000),
+        })),
+      ).success,
+    ).toBe(false);
+    expect(AGENT_TASK_GRAPH_MAX_BYTES).toBe(120_000);
+    const structureHeavyGraph = {
+      nodes: Array.from({ length: 128 }, (_, nodeIndex) => ({
+        ...node(`heavy-${nodeIndex}`),
+        acceptance_criteria: Array.from({ length: 16 }, (_, criterionIndex) => ({
+          id: `criterion-${criterionIndex}`,
+          description: "x",
+          check: {
+            kind: "bash_exit_code" as const,
+            command: "x",
+            expectedExitCode: 0 as const,
+          },
+        })),
+      })),
+    };
+    expect(
+      new TextEncoder().encode(JSON.stringify(structureHeavyGraph)).byteLength,
+    ).toBeGreaterThan(AGENT_TASK_GRAPH_MAX_BYTES);
+    expect(AgentTaskGraphSchema.safeParse(structureHeavyGraph).success).toBe(false);
+    expect(
+      AgentTaskGraphSchema.safeParse({ nodes: [{ ...node("scan"), unexpected: true }] }).success,
+    ).toBe(false);
+  });
+
+  it("keeps task graph acceptance criteria node-scoped and disallows async wrapper mode", () => {
+    const graph = {
+      nodes: [
+        {
+          id: "typecheck",
+          description: "Run typecheck",
+          prompt: "Run the typecheck and report failures.",
+          subagent_type: "test-engineer",
+          acceptance_criteria: [
+            {
+              id: "typecheck-exit",
+              description: "Typecheck exits successfully",
+              check: {
+                kind: "bash_exit_code",
+                command: "pnpm typecheck",
+                expectedExitCode: 0,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const input = {
+      description: "Run typecheck",
+      prompt: "Execute the graph.",
+      subagent_type: "test-engineer",
+      task_graph: graph,
+    };
+
+    expect(AgentInputSchema.safeParse(input).success).toBe(true);
+    // 修复依据：角色相关的组合限制在 handler 检查，以便 start 能纠正误传的 DAG。
+    expect(AgentInputSchema.safeParse({ ...input, run_in_background: true }).success).toBe(true);
+    expect(AgentInputSchema.safeParse({ ...input, acceptance_criteria: [] }).success).toBe(true);
+    expect(AgentInputSchema.safeParse({ ...input, run_in_background: false }).success).toBe(true);
+  });
+
+  it("dispatches a validated task graph through runTaskDag with the inherited model and abort signal", async () => {
+    const calls: Array<{ request: Record<string, unknown>; options?: Record<string, unknown> }> =
+      [];
+    const abortSignal = new AbortController().signal;
+    const activeModel = {
+      providerId: "provider-a",
+      modelId: "model-a",
+      properties: {},
+      optionSpecs: {},
+      options: {},
+    };
+    const output = {
+      status: "completed" as const,
+      agentId: "agent_dag",
+      agentType: "general-purpose",
+      description: "Run task graph",
+      prompt: "Run task graph",
+      content: [{ type: "text" as const, text: "All nodes completed." }],
+      totalToolUseCount: 2,
+      totalDurationMs: 10,
+    };
+
+    await agentToolEntry.handler(
+      {
+        description: "Run task graph",
+        prompt: "Coordinate the listed work and report each outcome.",
+        subagent_type: "orchestrator",
+        task_graph: {
+          nodes: [
+            {
+              id: "scan",
+              description: "Scan files",
+              prompt: "Inspect the source.",
+              subagent_type: "researcher",
+            },
+            {
+              id: "report",
+              description: "Write report",
+              prompt: "Summarize the scan.",
+              depends_on: ["scan"],
+              subagent_type: "Explore",
+            },
+          ],
+          max_parallel: 3,
+        },
+      },
+      {
+        abortSignal,
+        model: activeModel,
+        sessionId: "sess_parent",
+        toolCallId: "toolu_agent_dag",
+        traceId: "trace_parent",
+        spanId: "span_parent",
+        workingDirectory: "/workspace",
+        workspaceRoot: "/workspace",
+        subagentPort: {
+          async launch() {
+            throw new Error("task_graph must not use launch");
+          },
+          async runTaskDag(request: Record<string, unknown>, options: Record<string, unknown>) {
+            calls.push({ request, options });
+            return output;
+          },
+        },
+      } as any,
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.request).toMatchObject({
+      sessionId: "sess_parent",
+      parentToolCallId: "toolu_agent_dag",
+      agentType: "orchestrator",
+      description: "Run task graph",
+      prompt: "Coordinate the listed work and report each outcome.",
+      nodes: [
+        {
+          id: "scan",
+          description: "Scan files",
+          prompt: "Inspect the source.",
+          subagent_type: "researcher",
+        },
+        {
+          id: "report",
+          depends_on: ["scan"],
+          subagent_type: "Explore",
+        },
+      ],
+      maxParallel: 3,
+    });
+    expect(calls[0]?.request).not.toHaveProperty("acceptanceCriteria");
+    expect(calls[0]?.request).not.toHaveProperty("runInBackground");
+    expect(calls[0]?.options).toEqual({ signal: abortSignal, model: activeModel });
+  });
+
+  it("returns a configuration error when task graph dispatch is unavailable", async () => {
+    await expect(
+      agentToolEntry.handler(
+        {
+          description: "Run task graph",
+          prompt: "Coordinate the listed work.",
+          subagent_type: "orchestrator",
+          task_graph: {
+            nodes: [
+              {
+                id: "scan",
+                description: "Scan files",
+                prompt: "Inspect the source.",
+                subagent_type: "researcher",
+              },
+            ],
+          },
+        },
+        {
+          abortSignal: new AbortController().signal,
+          sessionId: "sess_parent",
+          toolCallId: "toolu_agent_dag_missing",
+          traceId: "trace_parent",
+          workingDirectory: "/workspace",
+          workspaceRoot: "/workspace",
+          subagentPort: {
+            async launch() {
+              throw new Error("must not launch");
+            },
+          },
+        } as any,
+      ),
+    ).rejects.toMatchObject({
+      type: CoreErrorType.ConfigurationError,
+      context: { code: AgentErrorCode.TASK_DAG_UNAVAILABLE },
+      recoverable: false,
+    });
+  });
+
+  it("rejects an invalid task graph before calling the subagent port", async () => {
+    let dispatchCount = 0;
+    await expect(
+      agentToolEntry.handler(
+        {
+          description: "Run task graph",
+          prompt: "Coordinate the listed work.",
+          subagent_type: "orchestrator",
+          task_graph: {
+            nodes: [
+              {
+                id: "first",
+                description: "First task",
+                prompt: "Run first.",
+                subagent_type: "researcher",
+                acceptance_criteria: [
+                  {
+                    id: "duplicate",
+                    description: "First check",
+                    check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+                  },
+                  {
+                    id: "duplicate",
+                    description: "Second check",
+                    check: { kind: "bash_exit_code", command: "true", expectedExitCode: 0 },
+                  },
+                ],
+              },
+              {
+                id: "second",
+                description: "Second task",
+                prompt: "Run second.",
+                depends_on: ["first"],
+                subagent_type: "reviewer",
+              },
+            ],
+          },
+        },
+        {
+          abortSignal: new AbortController().signal,
+          sessionId: "sess_parent",
+          toolCallId: "toolu_agent_dag_invalid",
+          traceId: "trace_parent",
+          workingDirectory: "/workspace",
+          workspaceRoot: "/workspace",
+          subagentPort: {
+            async launch() {
+              dispatchCount += 1;
+              throw new Error("invalid task graph must not launch");
+            },
+            async runTaskDag() {
+              dispatchCount += 1;
+              throw new Error("invalid task graph must not dispatch");
+            },
+          },
+        } as any,
+      ),
+    ).rejects.toThrow();
+    expect(dispatchCount).toBe(0);
   });
 
   it("aligns provider-visible hard schema diffs for P-12", () => {
@@ -1312,32 +1771,37 @@ describe("tool contract declarations", () => {
     expect(properties).toHaveProperty("timeout");
     expect(properties).toHaveProperty("description");
     expect(properties).toHaveProperty("run_in_background");
-    expect(properties).toHaveProperty("dangerouslyDisableSandbox");
+    // R04 вариант B: sandbox-поле не объявляется ни модели, ни runtime-входу.
+    expect(properties).not.toHaveProperty("dangerouslyDisableSandbox");
     expect(properties).not.toHaveProperty("argv");
     expect(properties).not.toHaveProperty("cwd");
     expect(properties).not.toHaveProperty("env");
     expect(properties.timeout?.type).toBe("number");
     expect(properties.run_in_background?.type).toBe("boolean");
-    expect(properties.dangerouslyDisableSandbox?.type).toBe("boolean");
 
     expect(
       bashToolEntry.runtimeInputSchema.parse({
         command: "npm test",
         timeout: "30000",
         run_in_background: "true",
-        dangerouslyDisableSandbox: "0",
       }),
     ).toEqual({
       command: "npm test",
       timeout: 30000,
       run_in_background: true,
-      dangerouslyDisableSandbox: false,
     });
 
     expect(() =>
       bashToolEntry.runtimeInputSchema.parse({
         command: "node -v",
         argv: { file: "node", args: ["-v"] },
+      }),
+    ).toThrow();
+    // Legacy-аргумент отклоняется strict-схемой, а не игнорируется молча.
+    expect(() =>
+      bashToolEntry.runtimeInputSchema.parse({
+        command: "node -v",
+        dangerouslyDisableSandbox: "0",
       }),
     ).toThrow();
   });
@@ -1465,7 +1929,7 @@ function scanProviderSchema(value: unknown, path: string, issues: string[]): voi
 
   if (!isRecord(value)) return;
 
-  for (const key of ["$id", "$ref", "$defs", "definitions", "anyOf"]) {
+  for (const key of ["$id", "$ref", "$defs", "definitions", "anyOf", "propertyNames"]) {
     if (key in value) {
       issues.push(`${path} contains provider-internal key ${key}`);
     }
@@ -1479,21 +1943,34 @@ function scanProviderSchema(value: unknown, path: string, issues: string[]): voi
   if (
     typeValues.includes("object") &&
     !isRecord(value.properties) &&
-    value.additionalProperties === undefined &&
-    value.propertyNames === undefined
+    value.additionalProperties === undefined
   ) {
     issues.push(`${path} is an object schema without properties`);
   }
 
-  if (isRecord(value.properties)) {
-    for (const [key, child] of Object.entries(value.properties)) {
-      scanProviderSchema(child, `${path}.properties.${key}`, issues);
-    }
-  }
+  scanSchemaMap(value.properties, `${path}.properties`, issues);
+  scanSchemaMap(value.patternProperties, `${path}.patternProperties`, issues);
+  scanSchemaMap(value.dependentSchemas, `${path}.dependentSchemas`, issues);
   scanProviderSchema(value.items, `${path}.items`, issues);
+  scanProviderSchema(value.prefixItems, `${path}.prefixItems`, issues);
   scanProviderSchema(value.additionalProperties, `${path}.additionalProperties`, issues);
+  scanProviderSchema(value.additionalItems, `${path}.additionalItems`, issues);
+  scanProviderSchema(value.unevaluatedProperties, `${path}.unevaluatedProperties`, issues);
+  scanProviderSchema(value.unevaluatedItems, `${path}.unevaluatedItems`, issues);
+  scanProviderSchema(value.contains, `${path}.contains`, issues);
+  scanProviderSchema(value.not, `${path}.not`, issues);
+  scanProviderSchema(value.if, `${path}.if`, issues);
+  scanProviderSchema(value.then, `${path}.then`, issues);
+  scanProviderSchema(value.else, `${path}.else`, issues);
   scanProviderSchema(value.oneOf, `${path}.oneOf`, issues);
   scanProviderSchema(value.allOf, `${path}.allOf`, issues);
+}
+
+function scanSchemaMap(value: unknown, path: string, issues: string[]): void {
+  if (!isRecord(value)) return;
+  for (const [key, child] of Object.entries(value)) {
+    scanProviderSchema(child, `${path}.${key}`, issues);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

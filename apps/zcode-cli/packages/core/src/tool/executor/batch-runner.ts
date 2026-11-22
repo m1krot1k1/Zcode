@@ -28,9 +28,19 @@ export async function executeToolBatch(
   options?: ToolBatchExecuteOptions,
 ): Promise<ToolExecutionResult[]> {
   const maxConcurrency = options?.maxConcurrency ?? deps.maxConcurrency;
+  const parallelAgentBatchSize = toolCalls.filter(
+    (tc) => tc.name === "Agent" || tc.name === "Task",
+  ).length;
 
   if (toolCalls.length <= maxConcurrency) {
-    return Promise.all(toolCalls.map((tc) => executeOne(tc, options)));
+    return Promise.all(
+      toolCalls.map((tc) =>
+        executeOne(tc, {
+          ...options,
+          parallelAgentBatchSize,
+        }),
+      ),
+    );
   }
 
   const results: ToolExecutionResult[] = [];
@@ -39,13 +49,12 @@ export async function executeToolBatch(
     const batchResults = await Promise.all(
       batch.map((tc) =>
         executeOne(tc, {
-          automationTurn: options?.automationTurn,
-          offPeakTurn: options?.offPeakTurn,
-          signal: options?.signal,
-          traceContext: options?.traceContext,
-          subagentModelOverride: options?.subagentModelOverride,
-          model: options?.model,
-          toolSearch: options?.toolSearch,
+          // 修复：分块分支原先是手工列举字段，漏掉 finishReason 与
+          // consecutiveSchemaFailuresByTool，导致超过 maxConcurrency 的批次里
+          // finishReason="length" 的截断恢复和连续 schema 失败计数失效。
+          // 统一展开 options，与快路径一致，保证 ToolExecuteOptions 全字段透传。
+          ...options,
+          parallelAgentBatchSize,
         }),
       ),
     );
@@ -79,12 +88,11 @@ export async function* executeToolSchedule(
     yield { type: "batch_start", parallelGroupIndex: groupIndex, toolCallIds: group };
 
     const groupResults = await executeBatch(groupTools, {
-      automationTurn: options?.automationTurn,
-      signal: options?.signal,
-      traceContext: options?.traceContext,
-      subagentModelOverride: options?.subagentModelOverride,
-      model: options?.model,
-      toolSearch: options?.toolSearch,
+      // 修复：这里原先是手工重建的选项对象，漏掉 offPeakTurn / finishReason /
+      // consecutiveSchemaFailuresByTool。offPeakTurn 丢失会让 assertNotOffPeakTurn
+      // 提前返回，绕过闲时轮的 handler 级拒绝；后两者丢失会让截断恢复与连续 schema
+      // 失败计数失效。展开 options 保证调度分支不遗漏任何 ToolExecuteOptions 字段。
+      ...options,
       maxConcurrency,
     });
     allResults.push(...groupResults);

@@ -950,13 +950,7 @@ export interface StoredEvent {
 }
 
 // 读面选项（kinds / types / withResult / reportItems …）住在 journal-read-types.ts（max-lines 拆分）。
-export type {
-  GetNodeOptions,
-  ListActorsOptions,
-  ListEventsOptions,
-  ListNodesOptions,
-  RunEventType,
-} from "./journal-read-types.js";
+export type {GetNodeOptions, ListActorsOptions, ListEventsOptions, ListNodesOptions} from "./journal-read-types.js";
 
 /**
  * run 结算随附的落库内容。存在的理由是**一笔写**：终态状态与产物分两次 UPDATE，

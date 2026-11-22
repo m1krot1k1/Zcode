@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 // 安全说明：签名锁定、进程启动与协议解析必须保留在同一审计边界，避免拆分后重新引入校验/执行间隙。
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -40,7 +39,7 @@ interface BrowserDataLogger {
   warn: (...args: unknown[]) => void;
 }
 
-export type WindowsChromeAppBoundImportErrorCode =
+type WindowsChromeAppBoundImportErrorCode =
   | "chrome_cookie_elevation_cancelled"
   | "chrome_cookie_helper_verification_failed"
   | "chrome_cookie_app_bound_decryption_failed";
@@ -91,10 +90,7 @@ interface ReadAppBoundKeyOptions {
   ) => Promise<HelperProcessResult>;
   userDataDir: string;
   trustedPowerShellPath?: string;
-  verifySignature?: (
-    helperPath: string,
-    appExecutablePath: string,
-  ) => Promise<boolean | string>;
+  verifySignature?: (helperPath: string, appExecutablePath: string) => Promise<boolean | string>;
 }
 
 function toSafeProcessError(error: unknown): { code?: string; name: string } {

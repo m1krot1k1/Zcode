@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 模型菜单同时维护触发器、模型项、provider family 连接方式子菜单和焦点恢复，拆开会增加受控 Dropdown 状态同步成本。 */
 import {
   Fragment,
   memo,
@@ -129,7 +128,7 @@ export function isModelSelectGroupSelected(
   return group.items.some((item) => item.value === normalizedValue);
 }
 
-export function getModelTriggerLabelClassName({
+function getModelTriggerLabelClassName({
   labelVisibilityClassName,
   triggerLabelClassName,
 }: {

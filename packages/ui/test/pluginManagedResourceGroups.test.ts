@@ -133,7 +133,7 @@ describe("pluginManagedResourceGroups", () => {
   it("builds plugin MCP items from enabled plugin metadata", () => {
     const servers: ZCodeMcpServer[] = [
       {
-        config: { command: "npx", type: "stdio" },
+        config: { args: ["-y", "@example/memory-mcp@1.2.3"], command: "npx", type: "stdio" },
         enabled: true,
         id: "zcodeagentmcp-global-memory",
         name: "memory",
@@ -165,6 +165,9 @@ describe("pluginManagedResourceGroups", () => {
     ];
 
     expect(filterLocalMcpServers(servers, "MEMORY").map((server) => server.name)).toEqual([
+      "memory",
+    ]);
+    expect(filterLocalMcpServers(servers, "memory-mcp").map((server) => server.name)).toEqual([
       "memory",
     ]);
     expect(buildPluginMcpServerItems(plugins, "IoS")).toEqual([

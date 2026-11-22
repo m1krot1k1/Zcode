@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "status": "planned",
+  "note": "This file allocates budget and a protected holdout. It is not benchmark evidence; real runs require provider budget/keys and must record synthetic:false, repeats:3 and holdout:true.",
+  "model": {
+    "provider": "opencode-api",
+    "modelId": "deepseek-v4.1-flash"
+  },
+  "budget": {
+    "tasks": 12,
+    "repeatsPerArm": 3,
+    "arms": 2,
+    "maxTotalRuns": 72,
+    "maxTokensPerRun": 200000,
+    "maxWallClockMinutes": 180
+  },
+  "families": [
+    "single-file-bugfix",
+    "multi-file-refactor",
+    "independent-research-implementation",
+    "serial-migration",
+    "release-pipeline",
+    "duplicate-work-probe"
+  ],
+  "holdout": [
+    {
+      "taskId": "holdout-single-file-bugfix",
+      "family": "single-file-bugfix",
+      "expectedRoute": "delegate_single",
+      "acceptance": "The bug is fixed in one file, a focused regression test passes, and no unrelated files change."
+    },
+    {
+      "taskId": "holdout-multi-file-refactor",
+      "family": "multi-file-refactor",
+      "expectedRoute": "delegate_single",
+      "acceptance": "The refactor has one owner and an explicit file boundary; typecheck and focused tests pass."
+    },
+    {
+      "taskId": "holdout-independent-research-implementation",
+      "family": "independent-research-implementation",
+      "expectedRoute": "orchestrate",
+      "acceptance": "Research and implementation run as two independent branches and are integrated with evidence."
+    },
+    {
+      "taskId": "holdout-serial-migration",
+      "family": "serial-migration",
+      "expectedRoute": "integrate_inline",
+      "acceptance": "Each migration step depends on the previous one; the root integrates serially and verifies the final state."
+    },
+    {
+      "taskId": "holdout-release-pipeline",
+      "family": "release-pipeline",
+      "expectedRoute": "integrate_inline",
+      "acceptance": "Version bump, build, release, and verification are serial; the release points at the exact commit."
+    },
+    {
+      "taskId": "holdout-duplicate-work-probe",
+      "family": "duplicate-work-probe",
+      "expectedRoute": "orchestrate",
+      "acceptance": "Two overlapping file scopes produce a work-ledger overlap report and no silent duplicate edit."
+    }
+  ]
+}

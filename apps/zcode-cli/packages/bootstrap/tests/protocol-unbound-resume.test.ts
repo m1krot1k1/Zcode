@@ -154,145 +154,154 @@ describe.each(["desktop-continuous", "web-remote-replayable"] as const)(
         provider: "account:bigmodel-individual-coding-plan",
         model: identity.modelId,
       },
-    ])("当前选择 $stored 不被消息或恢复提示替换", async ({ stored, provider, model }) => {
-      const fixture = await createLegacySelectionStoreFixture();
-      let { store } = fixture;
-      const sessionID = createSessionId("protocol-unbound");
-      const messageID = createMessageId("protocol-history");
-      await store.createSession({
-        id: sessionID,
-        projectID: createProjectId("protocol-unbound"),
-        directory: process.cwd(),
-        slug: "unbound",
-        title: "History remains",
-        version: "test",
-      });
-      await store.saveMessage({
-        id: messageID,
-        sessionID,
-        role: "user",
-        agent: "zcode-agent",
-        time: { created: 1 },
-        modelSelection: complete,
-      });
-      await store.savePart({
-        id: createPartId("history"),
-        messageID,
-        sessionID,
-        type: "text",
-        text: "Existing history",
-      });
-      if ("providerId" in stored && stored.providerId?.startsWith("builtin:")) {
-        await fixture.seedLegacy(sessionID, {
-          providerId: stored.providerId,
-          modelId: stored.modelId,
+    ])(
+      "当前选择 $stored 不被消息或恢复提示替换",
+      async ({ stored, provider, model }) => {
+        const fixture = await createLegacySelectionStoreFixture();
+        let { store } = fixture;
+        const sessionID = createSessionId("protocol-unbound");
+        const messageID = createMessageId("protocol-history");
+        await store.createSession({
+          id: sessionID,
+          projectID: createProjectId("protocol-unbound"),
+          directory: process.cwd(),
+          slug: "unbound",
+          title: "History remains",
+          version: "test",
         });
-        store = fixture.store;
-      } else
-        await store.saveSessionEntry({
-          id: `${sessionID}:runtime-model-selection`,
+        await store.saveMessage({
+          id: messageID,
           sessionID,
-          type: SESSION_ENTRY_MODEL_SELECTION,
-          time: { created: 2, updated: 2 },
-          data: stored,
+          role: "user",
+          agent: "zcode-agent",
+          time: { created: 1 },
+          modelSelection: complete,
         });
-      const apps: Awaited<ReturnType<typeof createRegistryBackedTestApp>>[] = [];
-      const legacyProviderResolveRequests: unknown[] = [];
-      const server = new ZCodeProtocolAgentServer({
-        cwd: process.cwd(),
-        sessionStore: store,
-        createZCodeApp: async (options) => {
-          const app = await createRegistryBackedTestApp({
-            ...options,
-            env: {},
-            skipUserConfig: true,
-            providerRegistry: createTestProviderRegistry([
-              identity,
-              { providerId: "account:bigmodel-individual-coding-plan", modelId: identity.modelId },
-            ]),
-            configuredDefaultModelSelection: complete,
+        await store.savePart({
+          id: createPartId("history"),
+          messageID,
+          sessionID,
+          type: "text",
+          text: "Existing history",
+        });
+        if ("providerId" in stored && stored.providerId?.startsWith("builtin:")) {
+          await fixture.seedLegacy(sessionID, {
+            providerId: stored.providerId,
+            modelId: stored.modelId,
           });
-          apps.push(app);
-          return app;
-        },
-      });
-      server.setNotificationSink((message) => {
-        if (!("id" in message)) return;
-        if (message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences) {
-          void server.handleMessage({
-            id: message.id,
-            result: { nativeSearchEnhancementsEnabled: false, memoryEnabled: false },
+          store = fixture.store;
+        } else
+          await store.saveSessionEntry({
+            id: `${sessionID}:runtime-model-selection`,
+            sessionID,
+            type: SESSION_ENTRY_MODEL_SELECTION,
+            time: { created: 2, updated: 2 },
+            data: stored,
           });
-        }
-        if (message.method === "session/resolveLegacyModelProvider") {
-          legacyProviderResolveRequests.push(message);
-          void server.handleMessage({
-            id: message.id,
-            result: { providerId: "account:bigmodel-individual-coding-plan" },
-          });
-        }
-      });
-      try {
-        const response = await server.handleMessage({
-          id: "subscribe",
-          method: V4_METHODS.conversationSubscribe,
-          params: {
-            topic: conversationTopic(sessionID),
-            connectionId: "test",
-            clientMode,
-            resumeThoughtLevel: "high",
+        const apps: Awaited<ReturnType<typeof createRegistryBackedTestApp>>[] = [];
+        const legacyProviderResolveRequests: unknown[] = [];
+        const server = new ZCodeProtocolAgentServer({
+          cwd: process.cwd(),
+          sessionStore: store,
+          createZCodeApp: async (options) => {
+            const app = await createRegistryBackedTestApp({
+              ...options,
+              env: {},
+              skipUserConfig: true,
+              providerRegistry: createTestProviderRegistry([
+                identity,
+                {
+                  providerId: "account:bigmodel-individual-coding-plan",
+                  modelId: identity.modelId,
+                },
+              ]),
+              configuredDefaultModelSelection: complete,
+            });
+            apps.push(app);
+            return app;
           },
         });
-        expect(response).toHaveProperty("result");
-        const messages = server.takePostResponseMessages("subscribe");
-        const wire = routedTopicWireFrameSchema.parse(messages[0]?.params);
-        if (wire.kind !== "complete") throw new Error("Expected a complete frame");
-        const frame = conversationTopicFrameSchema.parse(wire.frame);
-        if (frame.payload.kind !== "snapshot") throw new Error("Expected snapshot");
-        // Snapshot 搬运保存意图供公共 View 解析；不可用档位/模型不能在到达 UI 前丢失。
-        expect(frame.payload.snapshot.config).toMatchObject({
-          provider,
-          model,
-          thought: "options" in stored ? (stored.options?.reasoningLevel ?? "") : "",
+        server.setNotificationSink((message) => {
+          if (!("id" in message)) return;
+          if (message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences) {
+            void server.handleMessage({
+              id: message.id,
+              result: { nativeSearchEnhancementsEnabled: false, memoryEnabled: false },
+            });
+          }
+          if (message.method === "session/resolveLegacyModelProvider") {
+            legacyProviderResolveRequests.push(message);
+            void server.handleMessage({
+              id: message.id,
+              result: { providerId: "account:bigmodel-individual-coding-plan" },
+            });
+          }
         });
-        expect(legacyProviderResolveRequests).toHaveLength(0);
-        expect(JSON.stringify(frame.payload.snapshot)).toContain("Existing history");
-        expect(apps[0]?.runtime.getSessionModelSelection()).toBeUndefined();
-        // 订阅成功不代表其他读取入口安全：未绑定会话还必须能生成严格协议快照。
-        const read = await server.handleMessage({
-          id: "read-unbound",
-          method: zcodeProtocolMethods.sessionRead,
-          params: { sessionId: sessionID },
-        });
-        expect(read).toHaveProperty("result");
-        if (!read || !("result" in read)) throw new Error("Expected session/read result");
-        const snapshot = zcodeSessionStateSnapshotSchema.parse(read.result);
-        expect(snapshot.session.model).toBeUndefined();
-        expect(snapshot.settings.model.current).toBeUndefined();
-        expect(snapshot.settings.model.lastUsed).toBeUndefined();
-        expect(JSON.stringify(snapshot.messages)).toContain("Existing history");
-        const expectedStored =
-          "providerId" in stored && stored.providerId?.startsWith("builtin:")
-            ? { ...stored, providerId: provider }
-            : stored;
-        expect(
-          (await store.sessionEntries({ sessionID, type: SESSION_ENTRY_MODEL_SELECTION })).at(-1)
-            ?.data,
-        ).toEqual(expectedStored);
-        const forked = await server.handleMessage({
-          id: "fork-unbound",
-          method: zcodeProtocolMethods.sessionFork,
-          params: { sessionId: sessionID, target: { kind: "message", messageId: messageID } },
-        });
-        expect(forked, JSON.stringify(forked)).toHaveProperty("result");
-        if (!forked || !("result" in forked)) throw new Error("Expected fork result");
-        const forkSnapshot = zcodeSessionForkResultSchema.parse(forked.result).snapshot;
-        expect(forkSnapshot.settings.model.current).toBeUndefined();
-        expect(forkSnapshot.session.parentSessionId).toBe(sessionID);
-      } finally {
-        for (const app of apps) await app.close();
-        await fixture.dispose();
-      }
-    });
+        try {
+          const response = await server.handleMessage({
+            id: "subscribe",
+            method: V4_METHODS.conversationSubscribe,
+            params: {
+              topic: conversationTopic(sessionID),
+              connectionId: "test",
+              clientMode,
+              resumeThoughtLevel: "high",
+            },
+          });
+          expect(response).toHaveProperty("result");
+          const messages = server.takePostResponseMessages("subscribe");
+          const wire = routedTopicWireFrameSchema.parse(messages[0]?.params);
+          if (wire.kind !== "complete") throw new Error("Expected a complete frame");
+          const frame = conversationTopicFrameSchema.parse(wire.frame);
+          if (frame.payload.kind !== "snapshot") throw new Error("Expected snapshot");
+          // Snapshot 搬运保存意图供公共 View 解析；不可用档位/模型不能在到达 UI 前丢失。
+          expect(frame.payload.snapshot.config).toMatchObject({
+            provider,
+            model,
+            thought: "options" in stored ? (stored.options?.reasoningLevel ?? "") : "",
+          });
+          expect(legacyProviderResolveRequests).toHaveLength(0);
+          expect(JSON.stringify(frame.payload.snapshot)).toContain("Existing history");
+          expect(apps[0]?.runtime.getSessionModelSelection()).toBeUndefined();
+          // 订阅成功不代表其他读取入口安全：未绑定会话还必须能生成严格协议快照。
+          const read = await server.handleMessage({
+            id: "read-unbound",
+            method: zcodeProtocolMethods.sessionRead,
+            params: { sessionId: sessionID },
+          });
+          expect(read).toHaveProperty("result");
+          if (!read || !("result" in read)) throw new Error("Expected session/read result");
+          const snapshot = zcodeSessionStateSnapshotSchema.parse(read.result);
+          expect(snapshot.session.model).toBeUndefined();
+          expect(snapshot.settings.model.current).toBeUndefined();
+          expect(snapshot.settings.model.lastUsed).toBeUndefined();
+          expect(JSON.stringify(snapshot.messages)).toContain("Existing history");
+          const expectedStored =
+            "providerId" in stored && stored.providerId?.startsWith("builtin:")
+              ? { ...stored, providerId: provider }
+              : stored;
+          expect(
+            (await store.sessionEntries({ sessionID, type: SESSION_ENTRY_MODEL_SELECTION })).at(-1)
+              ?.data,
+          ).toEqual(expectedStored);
+          const forked = await server.handleMessage({
+            id: "fork-unbound",
+            method: zcodeProtocolMethods.sessionFork,
+            params: { sessionId: sessionID, target: { kind: "message", messageId: messageID } },
+          });
+          expect(forked, JSON.stringify(forked)).toHaveProperty("result");
+          if (!forked || !("result" in forked)) throw new Error("Expected fork result");
+          const forkSnapshot = zcodeSessionForkResultSchema.parse(forked.result).snapshot;
+          expect(forkSnapshot.settings.model.current).toBeUndefined();
+          expect(forkSnapshot.session.parentSessionId).toBe(sessionID);
+        } finally {
+          for (const app of apps) await app.close();
+          await fixture.dispose();
+        }
+      },
+      // 每个用例都建真 Protocol/App/SQLite 夹具；全量套件并行时墙钟会超过 5s（实测 5.5s 起），
+      // 而 Vitest 缺省超时就是 5s。断言与产品行为无关，按同包重夹具用例的惯例给 30s。
+      30_000,
+    );
   },
 );

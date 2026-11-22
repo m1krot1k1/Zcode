@@ -35,7 +35,7 @@ import type {
   PluginUiWorkspaceTarget,
 } from "./contract.js";
 
-export interface PluginUiBridgeServiceDependencies {
+interface PluginUiBridgeServiceDependencies {
   reportTelemetryEvent?: (event: RendererTelemetryEventPayload) => void | Promise<void>;
   recycleInstance?: (params: import("./contract.js").PluginUiPluginScope) => Promise<boolean>;
   validateInstance?: (params: import("./contract.js").PluginUiPluginScope) => Promise<void>;
@@ -321,7 +321,7 @@ function unavailable(feature: string): PluginUiBridgeError {
  * 8 MiB 总量守卫：结果经 MessagePort 结构化克隆进沙箱，
  * agent 侧已按同一常量限流，这里再算一次解码后大小（text 按 UTF-8、blob 按 base64 解码长度）防止旧 agent 漏检。
  */
-export function assertUiReadResourceSize(result: ZCodeMcpUiReadResourceResult, uri: string): void {
+function assertUiReadResourceSize(result: ZCodeMcpUiReadResourceResult, uri: string): void {
   let total = 0;
   for (const content of result.contents) {
     if (typeof content.text === "string") total += Buffer.byteLength(content.text, "utf8");
@@ -340,14 +340,7 @@ function decodedBase64Length(value: string): number {
   if (trimmed.length === 0) return 0;
   const padding = trimmed.endsWith("==") ? 2 : trimmed.endsWith("=") ? 1 : 0;
   return Math.floor((trimmed.length * 3) / 4) - padding;
-}
-
-/** 兼容旧调用：只要 HTML 文本。 */
-export function pickHtmlContent(result: ZCodeMcpReadResourceResult, uri: string): string {
-  return pickHtmlResource(result, uri).html;
-}
-
-const LIST_LEVEL_META_MAX_PAGES = 8;
+}const LIST_LEVEL_META_MAX_PAGES = 8;
 
 /**
  * resources/read 的 HTML 项没带 `_meta` 时，翻 resources/list 找同 uri 条目的 `_meta`（最多 8 页）。
@@ -388,7 +381,7 @@ async function readListLevelResourceMeta(
  * （同 uri 的优先）；从**该项**的 `_meta` 读资源级 csp / prefersBorder / 尺寸提示。
  * blob、超限一律拒绝，不降级、不截断；没有任何 HTML 项时按第一项的 mimeType 报错。
  */
-export function pickHtmlResource(
+function pickHtmlResource(
   result: ZCodeMcpReadResourceResult,
   uri: string,
 ): { html: string; meta: McpAppResourceMeta | null } {

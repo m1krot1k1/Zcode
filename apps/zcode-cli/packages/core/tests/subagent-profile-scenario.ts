@@ -33,7 +33,7 @@ export const send = (id: string, message: string) => ({
   input: { to: id, message, summary: message },
 });
 type Call = ReturnType<typeof spawn> | ReturnType<typeof send>;
-export interface ChildRequest {
+interface ChildRequest {
   sessionId: SessionId;
   model: string;
   reasoning: unknown;
@@ -54,7 +54,15 @@ export function setup(onChild?: (record: ChildRequest) => Promise<ModelResult>) 
   const load = vi.fn(async () => ({ activeAgents: [profile] }));
   const runtime = createTestAgentRuntime(
     sessionId,
-    { mode: "yolo", compact: { enabled: false }, titleGeneration: { enabled: false } },
+    {
+      mode: "yolo",
+      compact: { enabled: false },
+      titleGeneration: { enabled: false },
+      // Grep must be available to the parent before a child profile may inherit it.
+      // SendMessage is required by the resume half of these scenarios; without it the
+      // parent tool call is filtered and the child never resumes.
+      toolAllowlist: ["Agent", "Task", "SendMessage", "Read", "Grep"],
+    },
     {
       sessionStore: store,
       eventStore: events,

@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- 一个端点一个方法 + 统一的鉴权/脱敏/错误归一化 requestData，拆分会让 HTTP 契约失去单一入口。 */
 import {
   conversationShareArtifactDescriptorSchema,
   conversationShareArtifactUploadDataSchema,
@@ -192,7 +191,7 @@ function normalizeRequestId(value: string | null | undefined): string | undefine
   return trimmed && /^[A-Za-z0-9._:-]{1,128}$/u.test(trimmed) ? trimmed : undefined;
 }
 
-export interface ConversationShareHttpClientOptions {
+interface ConversationShareHttpClientOptions {
   apiClient: ApiClient;
   baseUrl: string;
   tokenProvider: () => Promise<string | null>;

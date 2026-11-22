@@ -1,0 +1,90 @@
+# PRISM10 локальная проверка инфраструктуры самоулучшения
+
+## Цель и границы
+
+Добавить локальную команду, которая наблюдает выполнение одного фиксированного self-test для уже закоммиченной базы `HEAD`, сохраняя evidence только о состоянии инфраструктуры evaluator/helper.
+
+Staged LLM candidate никогда не загружается, не импортируется и не запускается этой командой. Его `HEAD` и SHA-256 staged patch записываются только как контекст запуска. `VALIDATED_LOCAL` означает исключительно, что фиксированный self-test trusted `HEAD` snapshot завершился с кодом 0 и его вывод сохранён; это не результат, оценка качества или подтверждение candidate.
+
+Команда не создаёт ветки, коммиты, PR или releases. Существующий dry-run self-improve PR plan остаётся доступен. Фактический `--apply` блокируется, пока в репозитории нет заранее существующего внешнего защищённого secret gate; локальный env-флаг или receipt таким gate не считается.
+
+## Единственный владелец и порядок событий
+
+`scripts/self-improve-contract.mjs` — единственный источник allowlist-критерия: ID, команда, argv, scope, timeout и лимит вывода; карта criteria для receipt строится из той же записи. `scripts/self-improve-evaluator.mjs` владеет admission staged patch, извлечением минимального trusted test snapshot из Git объектов `HEAD`, запуском описанного контрактом allowlist и локальным evidence. `scripts/self-improve-pr.mjs` сохраняет dry-run планирование и проверяет receipts; единственный текущий criterion явно ограничен инфраструктурой `HEAD`.
+
+```text
+dev + HEAD + staged index
+  → проверить staged-only состояние, secret-like paths и отсутствие изменений trusted evaluator/check fixtures
+  → вычислить HEAD SHA и точный SHA-256 staged patch, не загружая candidate-файлы
+  → проверить типы Git objects fixed self-test файлов в HEAD (обычные blobs; не symlink/gitlink)
+  → создать минимальный read-only по смыслу temp snapshot только из этих HEAD blobs вне checkout
+  → запустить фиксированный Node self-test в snapshot, с ограниченным env и деревом процессов
+  → сохранить stdout/stderr и пересчитать artifact SHA-256
+  → только при наблюдённом exit 0 выдать receipt v3 со scope HEAD_INFRASTRUCTURE_ONLY
+  → отдельный self-improve CLI может показать dry-run план; фактический --apply заблокирован без внешнего protected gate
+```
+
+## Контракт идентификации запросов для будущей оценки промптов
+
+Текущий локальный infrastructure evaluator выше не запускает модель и не получает оценку candidate. Для отдельного будущего prompt evaluator `AgentRuntime.generateWorkspaceText` возвращает успешный provider `requestId`, если он опубликован runtime status sink; CLI protocol передаёт поле дальше как optional для совместимости со старыми app-server. При отсутствии ID trial не может быть принят в пару и recorder должен отказать, а не генерировать фиктивный ID.
+
+Единственный владелец ID — `AgentRuntime`: порядок событий `ModelRequest` → provider `model_request_completed` → `ModelComplete` → runtime result → protocol response. Во всех представлениях присутствует один и тот же ID. Bootstrap/server только проецируют результат и не создают второй ID. Это связывает локальный результат с наблюдавшимся запросом; поле не удостоверяет ответ провайдера и не создаёт внешнюю attestation.
+
+## Локальный PRISM gate предъявленных пар
+
+`scripts/prism10-experiment-gate.mjs` — перенос локального PRISM sign-test gate на Node, поэтому установленный ZCode не зависит от Python. Он принимает только заранее записанный JSONL и считает пары baseline/candidate; пользовательский ввод не исполняется и модель не вызывается. Предел входа — 10 MiB и 10 000 строк. По умолчанию требуется не менее 20 разных case и 2 trial на каждый; все записи обязаны иметь единый `environment_id`, `grader_id` и `split=protected_holdout`.
+
+Gate повторяет направления исходного алгоритма PRISM: двоичный успех либо `confirmed_discoveries`, парный односторонний exact sign test по агрегированному результату на case, veto на candidate safety violations и critical regressions, ограничения на среднюю стоимость (1.25x) и latency (1.30x), отказ в promotion для синтетических записей. Если baseline resource average равен нулю, а candidate тратит больше нуля, соответствующая ratio выводится как JSON `null` и результат отклоняется, чтобы не сериализовать `Infinity`. Ручная сверка алгоритма и порога выполнена по Python-оригиналу и README; автоматического differential test между реализациями пока нет. Статус `PROMOTE_CANDIDATE` остаётся лишь локальной рекомендацией технической проверки, не меняет prompt/model config, не создаёт ветки/PR/release и всегда требует ручной независимой проверки исходных receipts и holdout. Missing/invalid data дают `INVALID_INPUT`; REJECT и INSUFFICIENT_EVIDENCE не равны PASS.
+
+Команда: `node scripts/prism10-experiment-gate.mjs --input <jsonl> [--objective success|discovery] [--min-cases N] [--min-trials N]`. Exit code 0 означает только `PROMOTE_CANDIDATE`, 2 — корректно рассчитанный `REJECT`/`INSUFFICIENT_EVIDENCE`, 3 — некорректный ввод. В локальный `verify:pre-push` входит regression-suite самого gate. Vendor-файл с Python остаётся неизменённым; Node-перенос и различие порога по умолчанию проверяются против исходного алгоритма и README PRISM.
+
+## Admission и snapshot
+
+- CLI принимает только необязательный `--evidence-dir <path>`; команда, executable, argv, exit code, timestamp, artifact hash, base SHA и patch hash не принимаются от вызывающего.
+- `HEAD` должен быть на `dev`; допускаются только staged изменения без unstaged, untracked, rename/copy, secret-like пути или изменений evaluator/allowlist/test fixtures.
+- Candidate path, symlink и gitlink никогда не используются как snapshot source. Фиксированные helper и test bytes читаются через Git object database по exact `HEAD` path/object id; требуются blob mode `100644` или `100755`. Snapshot создаётся отдельным temp каталогом с обычными файлами, без `.git`, submodule traversal или worktree link.
+- Snapshot включает только фиксированные файлы, необходимые self-test: helper, его shared receipt contract и тест. Они должны быть точными blobs из проверенного `HEAD`; если объект отсутствует, имеет иной mode/type или не копируется, evaluator завершает работу без receipt.
+- Evidence создаётся с приватными правами вне checkout; candidate patch и self-test snapshot остаются разными каталогами.
+
+## Allowlist, evidence и процессы
+
+- Единственный criterion: `SELF-IMPROVE-HEAD-INFRASTRUCTURE-TESTS`, команда `node --test scripts/test/self-improve-pr.test.mjs`, запускаемая из минимального exact-HEAD snapshot через `process.execPath` и `spawn(..., shell: false)`.
+- Criterion, executable arguments, timeout, stdout/stderr cap, artifact cap, evidence-JSONL cap and receipt allowlist are defined once in `scripts/self-improve-contract.mjs`; evaluator and PR parser consume that contract rather than duplicating values. The captured-output limit reserves 1 KiB for artifact metadata. A contract change must update this spec and its focused tests.
+- Child получает только разрешённые системные env keys. Staged candidate source не доступен ему через cwd, module resolution или импорт.
+- Один timeout — 5 минут; stdout+stderr ограничен 10 MiB. На POSIX runner запускает отдельную process group, посылает ей `SIGTERM`, ждёт завершения до секунды, затем при необходимости посылает `SIGKILL` и ждёт ещё до секунды. На Windows runner до `taskkill /T /F` фиксирует PID и время создания root/descendants, затем опрашивает процессный список до секунды. Receipt возможен только если каждая исходная identity исчезла; ошибка опроса, timeout или отсутствие root identity блокируют receipt. Если root identity не удалось зафиксировать, runner останавливает root через принадлежащий child handle best-effort и не вызывает `taskkill` по непроверенному PID.
+- Timeout, spawn error, сигнал, ненулевой exit code, output cap, snapshot/admission ошибка или artifact-write/hash ошибка завершают evaluator без receipt. Диагностический artifact может остаться.
+- Receipt schema `zcode.prism.receipt.v3` содержит `evaluation_scope: "HEAD_INFRASTRUCTURE_ONLY"`. Статус `pass` относится только к этому фиксированному infrastructure self-test; scope проверяется повторно PR helper-ом. Результат не называется semantic evaluation или candidate pass.
+- Receipt не является подписанной или внешне аттестованной записью. Локальный владелец контролирует ОС и Git object database; для promotion и применения изменений нужен отдельный защищённый gate и человеческое решение.
+
+## Dry-run и защищённая публикация
+
+- Dry-run `scripts/self-improve-pr.mjs --evidence <receipt>` остаётся read-only и может построить draft plan по staged diff и инфраструктурному receipt с явным предупреждением, что candidate не оценивался.
+- `--apply` завершается отказом до `git fetch`, branch creation, commit, push или GitHub CLI вызовов, поскольку заранее существующий защищённый secret gate пока не настроен.
+- Возобновлять apply можно только после подключения и независимой проверки внешнего gate, который до публикации сканирует точный staged patch и защищает credentials. Сам факт receipt, env-переменная или post-push CI не удовлетворяют этому условию.
+
+### Текущее состояние candidate CI (2026-10-22)
+
+Локальный CI постоянно выполняется на Mac: `pnpm verify:pre-push`, а для сборки/релиза добавляются typecheck и локальные build/release gates согласно `docs/specs/prism10-candidate-ci.md`. Обычные `git push` и PR не запускают hosted runner. Отдельный version-tag workflow существует только для пользовательского кроссплатформенного Preview-релиза и расходует runner minutes при создании такого релиза. Ранее наблюдавшийся workflow `pull_request_target` и run `39692710606` относятся к историческому состоянию и не описывают текущий checkout.
+
+Локальный CI не заменяет внешний protected gate для `--apply`. Этот gate не подключён, поэтому `--apply` остаётся заблокированным до `git fetch`, branch creation, commit, push или GitHub CLI вызовов. Отсутствующий, неуспешный или неприменимый внешний gate не может быть заменён локальным receipt, env-переменной либо зелёным pre-push.
+
+## Критерии приёмки
+
+| ID           | Сценарий                                                                                              | Ожидаемый результат                                                                                                                   | Проверка                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| EVO-LOCAL-01 | Valid staged patch на dev                                                                             | Только exact-HEAD self-test исполняется; receipt scope равен `HEAD_INFRASTRUCTURE_ONLY`; вывод действительно получен от child process | Temp Git CLI integration и парсер receipt v3                                                           |
+| EVO-LOCAL-02 | Candidate helper содержит top-level sentinel side effect                                              | Sentinel отсутствует; тест выполняет helper bytes из HEAD snapshot                                                                    | Regression integration test                                                                            |
+| EVO-LOCAL-03 | Фиксированный self-test не проходит, timeout или output limit                                         | Нет receipt; завершено всё дерево процессов                                                                                           | Real child failure, timeout/output cap и descendant test                                               |
+| EVO-LOCAL-04 | Candidate пытается заменить helper/test symlink или gitlink/submodule                                 | Отказ до исполнения; snapshot всё равно строился бы только из HEAD blobs                                                              | Symlink и gitlink fixtures                                                                             |
+| EVO-LOCAL-05 | Checkout является linked worktree                                                                     | Admission и HEAD object extraction используют правильный worktree HEAD; candidate source не запускается                               | Temporary Git worktree integration                                                                     |
+| EVO-LOCAL-06 | CLI получает команду, exit code или artifact hash                                                     | Отказ до snapshot и child spawn                                                                                                       | CLI parser tests                                                                                       |
+| EVO-LOCAL-07 | `self-improve-pr.mjs` повторно читает receipt                                                         | Принимаются только v3 receipt с exact allowlist, scope, base, patch hash и локально пересчитанным artifact                            | Integration с `parseCandidateEvidence`                                                                 |
+| EVO-LOCAL-08 | `--apply` вызывается без pre-existing external protected gate                                         | Отказ до любого write/network command; dry-run продолжает работать                                                                    | Fake command runner проверяет ноль вызовов                                                             |
+| EVO-LOCAL-09 | Ветка не `dev`, unstaged/untracked/rename/copy/secret-like path                                       | Отказ до snapshot, process execution и evidence                                                                                       | Temp Git admission tests                                                                               |
+| EVO-LOCAL-10 | PR-controlled workflow, отсутствующий/runnerless/неуспешный gate или evidence относится к другому SHA | `--apply` блокируется до Git/GitHub write; локальный HEAD/index и remote refs неизменны                                               | **PENDING / NOT IMPLEMENTED**; текущий fake runner доказывает только безусловный fail-closed `--apply` |
+| EVO-LOCAL-11 | Фиксированный trusted secret-free gate завершил required checks на точном head/base SHA               | Внешний проверяющий может выдать защищённое свидетельство, но автоматический merge/release всё равно запрещён                         | **PENDING / NOT IMPLEMENTED**; внешняя provenance/attestation не реализована                           |
+| EVO-LOCAL-12 | Evaluator и receipt parser читают критерий allowlist                                                  | ID, команда, argv, scope и пределы выполнения имеют один источник в `self-improve-contract.mjs`                                       | Strict identity check between evaluator export and contract                                            |
+
+## Ограничения
+
+Этот срез проверяет только работоспособность доверенного helper/test кода на закоммиченном `HEAD`; он не запускает candidate и не сообщает, хорош ли его diff. Local artifact не является attestation. Пока нет отдельно проверенного внешнего secret gate, PR helper намеренно не выполняет apply. EVO-LOCAL-10/11 — будущие условия снятия блокировки, а не достигнутые локальные критерии. Trusted `HEAD` self-test — обычный Node-код и его subprocesses, поэтому runner ограничивает env, timeout, output и process tree, но не является полной OS sandbox; абсолютная защита требует изолированной CI/VM среды.

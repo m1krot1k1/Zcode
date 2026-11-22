@@ -10,7 +10,7 @@ interface NormalizeToolExecutionInputOptions {
 
 export type RuntimeInputValidationIssue = Readonly<Record<string, unknown>>;
 
-export interface PreparedInitialToolExecutionInput {
+interface PreparedInitialToolExecutionInput {
   input: unknown;
   runtimeValidationIssues?: readonly RuntimeInputValidationIssue[];
 }

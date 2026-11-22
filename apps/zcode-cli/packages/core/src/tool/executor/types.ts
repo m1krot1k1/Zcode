@@ -1,10 +1,14 @@
 import type { ToolSearchExecutionContext } from "@zcode/contracts";
+import type { PtySessionPort } from "../handlers/pty-session.js";
+import type { IFileLockRegistry } from "../file-transaction/contract.js";
+import type { IFileTransactionTaskRegistry } from "../file-transaction/task-contract.js";
 import type {
   AgentExecutionTelemetryPort,
   AgentTelemetryActorKind,
   AutomationPort,
   BackgroundResultOriginMeta,
   BrowserControlPort,
+  CodeIntelligencePort,
   CollaborationMode,
   CoordinatorResponsePort,
   DynamicWorkflowRunPort,
@@ -27,6 +31,7 @@ import type {
   SessionModePort,
   SessionStorePort,
   SkillPort,
+  CapabilityInstallPort,
   SubagentPort,
   SubagentRunOptions,
   ToolArtifactStorePort,
@@ -35,6 +40,7 @@ import type {
   WorkflowEscalatePort,
   WorkflowPort,
   WorkflowSubmitPort,
+  WorkspaceBoundaryMode,
 } from "@zcode/contracts";
 import type { HookRunner } from "../../hooks/index.js";
 import type { PermissionService } from "../../permission/service.js";
@@ -75,6 +81,9 @@ export type ShouldEnqueueBackgroundTaskNotification = (
 ) => boolean;
 
 export interface ToolExecutorOptions {
+  getAvailableAgentTypes?: () => readonly string[];
+  /** Каноническая роль вызывающего runtime; root/main — undefined. */
+  callerAgentType?: string;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;
@@ -90,9 +99,14 @@ export interface ToolExecutorOptions {
   logger?: Logger;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   executionPort?: ExecutionPort;
+  /** Порт интерактивных PTY-сессий; присутствие включает инструмент PtySession. */
+  ptySessionPort?: PtySessionPort;
   browserControlPort?: BrowserControlPort;
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
+  fileLockRegistry?: IFileLockRegistry;
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
+  enableToolCallSelfRepair?: boolean;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
@@ -100,6 +114,7 @@ export interface ToolExecutorOptions {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   subagentPort?: SubagentPort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;
@@ -109,6 +124,7 @@ export interface ToolExecutorOptions {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  codeIntelligencePort?: CodeIntelligencePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
@@ -118,14 +134,21 @@ export interface ToolExecutorOptions {
   /** 模型目录端口；缺席则 ListModels 报能力缺席，CreateWorkflow 的 subagent_model 被拒。 */
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
+  runtimeTaskOutputRootDir?: string;
   readFileState?: ReadFileStateMap;
   /** 技能门的探针（ToolInputResolutionContext.hasLoadedSkill）；runtime 按 provider 可见历史回答。 */
   hasLoadedSkill?: (skillName: string) => boolean;
   subagentBackgroundBashMaxMs?: number;
   bashShellSelection?: ExecutionShellSelection;
   getBashShellSelection?: () => ExecutionShellSelection | undefined;
+  /** Host sandbox mode for Bash/PTY; `off` disables OS isolation. */
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  /** Host network preference for sandboxed Bash/PTY. */
+  sandboxAllowNetwork?: boolean;
   workingDirectory?: string;
   workspaceRoot?: string;
+  /** Workspace 边界模式；缺省 = 兼容默认 `allow`。由 runtime config 投影。 */
+  workspaceBoundary?: WorkspaceBoundaryMode;
   workspaceIdentity?: string;
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
@@ -134,6 +157,8 @@ export interface ToolExecutorOptions {
   getWorkingDirectory?: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot?: () => string;
+  /** Явный write-scope runtime; undefined — без ограничения. */
+  getWriteScope?: () => readonly string[] | undefined;
   getMemoryRoot?: () => string | undefined;
   traceContext?: TraceContext;
   mode?: CollaborationMode;
@@ -183,6 +208,10 @@ export interface ToolExecuteOptions {
   traceContext?: TraceContext;
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   model?: Model;
+  finishReason?: string;
+  consecutiveSchemaFailuresByTool?: Map<string, number>;
+  /** Agent/Task calls in the same parallel group before maxConcurrency splitting. */
+  parallelAgentBatchSize?: number;
 }
 
 export interface ToolBatchExecuteOptions extends ToolExecuteOptions {
@@ -190,6 +219,9 @@ export interface ToolBatchExecuteOptions extends ToolExecuteOptions {
 }
 
 export interface ToolExecutorDeps {
+  getAvailableAgentTypes?: () => readonly string[];
+  /** Каноническая роль вызывающего runtime; root/main — undefined. */
+  callerAgentType?: string;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;
@@ -205,9 +237,15 @@ export interface ToolExecutorDeps {
   logger?: Logger;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   executionPort?: ExecutionPort;
+  /** Порт интерактивных PTY-сессий; присутствие включает инструмент PtySession. */
+  ptySessionPort?: PtySessionPort;
   browserControlPort?: BrowserControlPort;
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
+  fileLockRegistry?: IFileLockRegistry;
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
+  enableToolCallSelfRepair: boolean;
+  consecutiveSchemaFailuresByTool: Map<string, number>;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
@@ -215,6 +253,7 @@ export interface ToolExecutorDeps {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   subagentPort?: SubagentPort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;
@@ -224,6 +263,7 @@ export interface ToolExecutorDeps {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  codeIntelligencePort?: CodeIntelligencePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
@@ -233,14 +273,20 @@ export interface ToolExecutorDeps {
   /** 模型目录端口；缺席则 ListModels 报能力缺席，CreateWorkflow 的 subagent_model 被拒。 */
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
+  runtimeTaskOutputRootDir?: string;
   readFileState: ReadFileStateMap;
   hasLoadedSkill?: (skillName: string) => boolean;
   subagentBackgroundBashMaxMs?: number;
   bashShellSelection?: ExecutionShellSelection;
   getBashShellSelection?: () => ExecutionShellSelection | undefined;
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  sandboxAllowNetwork?: boolean;
   getWorkingDirectory: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot: () => string;
+  /** Явный write-scope текущего runtime (наследуется ребёнком). */
+  getWriteScope?: () => readonly string[] | undefined;
+  workspaceBoundary?: WorkspaceBoundaryMode;
   workspaceIdentity?: string;
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";

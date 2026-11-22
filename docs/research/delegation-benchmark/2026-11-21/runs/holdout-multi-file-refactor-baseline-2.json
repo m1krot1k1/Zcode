@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-multi-file-refactor",
+  "family": "multi-file-refactor",
+  "arm": "baseline",
+  "repeat": 2,
+  "startedAt": "2026-11-21T07:58:16.935Z",
+  "durationMs": 29320,
+  "tokens": 207157,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "clamp refactor acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Done — the duplicated `clamp` is now a single shared helper, and all acceptance values hold.\n\n**What changed** (3 files in `src/`):\n\n- **`src/clamp.mjs`** (new) — exports `clamp(n, min, max)` with the original body `Math.min(max, Math.max(min, n))`, character-for-character.\n- **`src/a.mjs`** — now `import { clamp } from './clamp.mjs'` and keeps `percent` unchanged. It still re-exports `clamp` (`export { clamp }`), because the old file exported it publicly; dropping it would have been a surface change nobody asked for.\n- **`src/b.mjs`** — now `import { clamp } from './clamp.mjs'`; `volume` unchanged.\n\n**Verified** (ran, not inferred):\n\n- Acceptance values: `percent(120) === '100%'`, `percent(-5) === '0%'`, `volume(12) === 11`, `volume(-1) === 0`.\n- Single implementation: `a.mjs`'s exported `clamp` is reference-identical (`===`) to `clamp.mjs`'s, so there is one function object, not two lookalikes.\n- No drift on edge cases the old inline bodies handled: exact boundaries (0/100, 0/11), fl",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

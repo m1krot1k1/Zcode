@@ -376,11 +376,7 @@ vi.mock("@/hooks/useWorkspaceServices.js", () => ({
   }),
 }));
 
-vi.mock("@/lib/providerCliIcon.js", () => ({
-  renderProviderCliIcon: () => createElement("span", null, "icon"),
-}));
-
-async function renderSkillsSection() {
+async function renderSkillsSection(searchQuery = "", onOpenPluginStore?: () => void) {
   useStateCallCount = 0;
   mockLoadedSkillTargetKeyState = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
   const { SkillsSection } = await import("../src/settings/SkillsSection.js");
@@ -391,8 +387,9 @@ async function renderSkillsSection() {
       remoteSessionId: activeRemoteSessionId,
       remoteTarget: activeRemoteTarget,
       scopeFilter: activeScopeFilter,
-      searchQuery: "",
+      searchQuery,
       onCreateTask: onCreateTaskMock,
+      onOpenPluginStore,
     }),
   );
 }
@@ -455,6 +452,18 @@ describe("SkillsSection", () => {
     await renderSkillsSection();
 
     expect(findButton("Refresh")).toBeTruthy();
+  });
+
+  it("empty installed-skill search result links to the marketplace", async () => {
+    activeScopeFilter = "user";
+    const openMarketplace = vi.fn();
+
+    await renderSkillsSection("yandex", openMarketplace);
+
+    const browseButton = findButton("settings.plugin.skills.browse");
+    expect(browseButton).toBeTruthy();
+    (browseButton?.onClick as (() => void) | undefined)?.();
+    expect(openMarketplace).toHaveBeenCalledTimes(1);
   });
 
   it("顶部展示包含导入能力的更多操作菜单", async () => {

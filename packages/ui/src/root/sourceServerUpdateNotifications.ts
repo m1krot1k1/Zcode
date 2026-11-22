@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { ISourceServerManagementService } from "@zcode/services";
+import type { ISourceServerManagementService } from "./contract.ts";
 import type { RemoteTarget, SourceServerManagementSnapshot } from "@zcode/shared";
 import { dismissToast, toast, type ToastOptions } from "@/components/ui/toast.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
@@ -33,7 +33,7 @@ interface NotificationControllerOptions {
 
 type SourceServerUpdateState = SourceServerManagementSnapshot["states"][number];
 
-export interface SourceServerUpdateNotificationController {
+interface SourceServerUpdateNotificationController {
   refresh(): void;
   dispose(): void;
 }
@@ -81,7 +81,7 @@ function getEligibleNotificationKey(
   return getSourceServerUpdateNotificationKey(state);
 }
 
-export function showSourceServerUpdateNotification(
+function showSourceServerUpdateNotification(
   options: NotificationControllerOptions & {
     snapshot: SourceServerManagementSnapshot;
     state: SourceServerUpdateState;

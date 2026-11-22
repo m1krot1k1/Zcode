@@ -15,7 +15,7 @@ export const WORKFLOW_MODE_SCOPE_ERROR =
 export const WORKFLOW_DISABLED_NOTICE =
   "Dynamic workflows are disabled in this session. Restart with --workflow-mode onDemand or --workflow-mode alwaysOn to use them.";
 
-export type CliWorkflowRuntimeConfig = {
+type CliWorkflowRuntimeConfig = {
   dynamicWorkflowEnabled: boolean;
   dynamicWorkflowToolsOnDemand: boolean;
 };

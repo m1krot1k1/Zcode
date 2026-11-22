@@ -16,7 +16,7 @@ import { resolveConversationShareScrollbarIndicatorMetrics } from "@/v4/conversa
 import type { ConversationSharePreflightState } from "@/conversation-share-interaction/ConversationSharePreflightStatus.js";
 import type { ConversationTurnNavigatorItem } from "@/v4/conversationTurnNavigatorHelpers.js";
 
-export interface ConversationShareSelectionPanelProps {
+interface ConversationShareSelectionPanelProps {
   onConfirm?: () => void;
   onCancel?: () => void;
   selectedCount?: number;

@@ -425,6 +425,9 @@ export interface AgentRuntimeTurnMethods {
           completed?: number;
           error?: { name: string; data?: Record<string, unknown> };
           finish?: string;
+          finishReason?: string;
+          rawFinishReason?: string;
+          stepDiagnostics?: import("@zcode/contracts").PersistedStepDiagnostics;
           tokens?: unknown;
         }
       | undefined,
@@ -436,6 +439,16 @@ export interface AgentRuntimeTurnMethods {
     traceContext: TraceContext,
     copyFrom?: Parameters<SessionStorePort["saveMessage"]>[1],
   ): Promise<void>;
+  persistTurnResultMarker(input: {
+    /** 当前 turn 的 user message id；仅在需要创建技术锚点时作为 parentID。 */
+    parentMessageId: MessageId;
+    resultType: "error_max_turns";
+    traceContext: TraceContext;
+    /** 标记只允许落在本 turn 的 assistant 上（docs/specs/max-turns-limit.md）。 */
+    turnId: TurnId;
+    historyRoundCount?: number;
+    model?: Model;
+  }): Promise<void>;
   persistPart(
     input: MessagePart,
     traceContext: TraceContext,

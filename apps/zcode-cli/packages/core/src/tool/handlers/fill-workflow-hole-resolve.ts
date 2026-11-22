@@ -99,7 +99,7 @@ export function resetFillWorkflowHoleRejectionsForTests(): void {
 // workflow-script-analysis.ts 的单槽记忆同一种姿态：值得收敛的重复只有这组紧邻的前后调用。
 
 /** 单槽里的一份预览：有效脚本，加上 run 的模型绑定表（prepareApproval 据它判断函数体点名的模型）。 */
-export interface FillPreview {
+interface FillPreview {
   effectiveScript: string;
   modelBindings: Record<string, string>;
 }

@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 
-const MOBILE_TEXT_INPUT_QUERY = "(max-width: 767px) and (hover: none) and (pointer: coarse)";
-const MOBILE_COMPACT_VIEWPORT_QUERY = "(max-width: 767px)";
-
-function getMediaQueryMatches(query: string): boolean {
+const MOBILE_TEXT_INPUT_QUERY = "(max-width: 767px) and (hover: none) and (pointer: coarse)";function getMediaQueryMatches(query: string): boolean {
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -34,21 +31,9 @@ function subscribeMediaQuery(query: string, listener: (matches: boolean) => void
 
 function getIsMobileTextInputViewport(): boolean {
   return getMediaQueryMatches(MOBILE_TEXT_INPUT_QUERY);
-}
-
-function getIsMobileCompactViewport(): boolean {
-  return getMediaQueryMatches(MOBILE_COMPACT_VIEWPORT_QUERY);
-}
-
-export function subscribeMobileTextInputViewport(listener: (matches: boolean) => void): () => void {
+}function subscribeMobileTextInputViewport(listener: (matches: boolean) => void): () => void {
   return subscribeMediaQuery(MOBILE_TEXT_INPUT_QUERY, listener);
-}
-
-export function subscribeMobileCompactViewport(listener: (matches: boolean) => void): () => void {
-  return subscribeMediaQuery(MOBILE_COMPACT_VIEWPORT_QUERY, listener);
-}
-
-export function useIsMobileTextInputViewport(): boolean {
+}export function useIsMobileTextInputViewport(): boolean {
   const [isMobileTextInputViewport, setIsMobileTextInputViewport] = useState(
     getIsMobileTextInputViewport,
   );
@@ -56,19 +41,7 @@ export function useIsMobileTextInputViewport(): boolean {
   useEffect(() => subscribeMobileTextInputViewport(setIsMobileTextInputViewport), []);
 
   return isMobileTextInputViewport;
-}
-
-export function useIsMobileCompactViewport(): boolean {
-  const [isMobileCompactViewport, setIsMobileCompactViewport] = useState(
-    getIsMobileCompactViewport,
-  );
-
-  useEffect(() => subscribeMobileCompactViewport(setIsMobileCompactViewport), []);
-
-  return isMobileCompactViewport;
-}
-
-export function resolveChatEnterSubmits({
+}export function resolveChatEnterSubmits({
   isMobileTextInputViewport,
   preferEnterNewline,
 }: {
@@ -103,7 +76,5 @@ export function resolveMobileInputTextSizeClassName({
 }): "text-ui-base leading-5" | "text-mobile-input-safe leading-6" {
   // Bugfix: iOS Safari / WKWebView 聚焦低于 16px 的可编辑输入区时会自动放大页面。
   // text-ui-lg 会随用户偏好降到 14px，因此手机远控必须使用固定 16px 的平台兼容 token。
-  return avoidIosInputFocusZoom
-    ? "text-mobile-input-safe leading-6"
-    : "text-ui-base leading-5";
+  return avoidIosInputFocusZoom ? "text-mobile-input-safe leading-6" : "text-ui-base leading-5";
 }

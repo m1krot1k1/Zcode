@@ -8,7 +8,7 @@ import { ExecuteGroupToolCallBlock } from "@/ToolCallBlocks/renderers/execute-gr
 function renderExecuteGroup(
   locale: "zh-CN" | "en-US",
   statuses: Array<"pending" | "completed" | "failed" | "stopped" | "in_progress">,
-  options: { forceOpen?: boolean } = {},
+  options: { forceOpen?: boolean; isOfficeMode?: boolean } = {},
 ) {
   return renderToStaticMarkup(
     createElement(
@@ -59,6 +59,7 @@ function renderExecuteGroup(
         forceOpen: options.forceOpen ?? false,
         canToggle: true,
         showIcon: true,
+        isOfficeMode: options.isOfficeMode ?? false,
       }),
     ),
   );
@@ -77,6 +78,19 @@ describe("ExecuteGroupToolCallBlock", () => {
     expect(html).toContain(">·</span>");
     expect(enHtml).toContain(">Running</span>");
     expect(enHtml).toContain(">pnpm test</code>");
+  });
+
+  it("shows the active command and allows expanding the group in office mode", () => {
+    const html = renderExecuteGroup("en-US", ["completed", "in_progress"], {
+      isOfficeMode: true,
+    });
+
+    // Privacy decision (376bfce5): office mode hides the command and disables the
+    // expand control, so a shared/office screen never leaks command details.
+    expect(html).not.toContain("pnpm test");
+    expect(html).not.toContain('aria-expanded="false"');
+    expect(html).toContain(">Running</span>");
+    expect(html).not.toContain('data-slot="collapsible-trigger"');
   });
 
   it("shows only the command count in the expanded running summary", () => {

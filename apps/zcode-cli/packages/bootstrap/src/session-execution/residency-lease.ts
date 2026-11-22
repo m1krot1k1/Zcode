@@ -1,5 +1,7 @@
 import type { SessionResidencyFinalizationOwner } from "./contract.js";
-export type { SessionResidencyFinalizationOwner } from "./contract.js";
+
+
+
 
 /**
  * residency lease 只覆盖 Bootstrap detached runner 的收尾窗口，避免 pool 回收仍在使用的

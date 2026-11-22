@@ -15,6 +15,7 @@ import type {
   SourceServerManagementSnapshot,
   SSHConfigAliasOption,
   DockerContainerInfo,
+  RemoteWorkspaceSessionEntry,
   WSLDistro,
 } from "@zcode/shared";
 import zhCN from "@/i18n/locales/zh-CN.js";
@@ -530,7 +531,7 @@ it.each(["success", "failure", "force", "force-cancel"] as const)(
       if (outcome === "force-cancel") {
         fireEvent.click(screen.getAllByRole("button", { name: "取消连接" }).at(-1)!);
         await screen.findByText("已取消");
-        expect(screen.queryByText("正在更新远端服务")).toBeNull();
+        expect(screen.queryByText("正在更新 ZCode 远程组件…")).toBeNull();
         expect(ports.management.updateSource).toHaveBeenCalledTimes(1);
         onConnect
           .mockReset()
@@ -555,7 +556,7 @@ it.each(["success", "failure", "force", "force-cancel"] as const)(
         force: outcome === "force",
       }),
     );
-    await screen.findByText("正在更新远端服务");
+    await screen.findByText("正在更新 ZCode 远程组件…");
     if (outcome === "failure") {
       await act(async () => update.reject(new Error("archive verification failed")));
       await screen.findByTestId("ssh-error");
@@ -902,6 +903,50 @@ it("首屏直接列出 config Host，搜索后点击并在连接屏补密码", a
       }),
       expect.any(String),
       undefined,
+    ),
+  );
+});
+
+const recentSshSessions = [
+  {
+    kind: "remote",
+    workspacePath: "/workspace/recent",
+    workspaceIdentity: "remote:ssh:prod.internal:/workspace/recent",
+    lastOpenedAt: 30,
+    lastConnectionStatus: "connected",
+    target: {
+      kind: "ssh",
+      host: "prod.internal",
+      username: "deploy",
+      privateKeyPath: "/keys/recent",
+    },
+  },
+] satisfies RemoteWorkspaceSessionEntry[];
+
+it("新建 SSH 连接时预填最近使用的私钥并切换到私钥认证", async () => {
+  mountDialog({ remoteWorkspaceSessions: recentSshSessions });
+  fireEvent.click(await screen.findByRole("button", { name: "新建 SSH 连接" }));
+  await waitFor(() =>
+    expect((screen.getByTestId("ssh-private-key-input") as HTMLInputElement).value).toBe(
+      "/keys/recent",
+    ),
+  );
+  expect(screen.getByTestId("ssh-auth-private-key").getAttribute("aria-pressed")).toBe("true");
+});
+
+it("显式选择私钥时不被最近使用的私钥覆盖", async () => {
+  mountDialog({
+    preferredTarget: {
+      kind: "ssh",
+      host: "explicit.example.com",
+      username: "dev",
+      privateKeyPath: "/keys/explicit",
+    },
+    remoteWorkspaceSessions: recentSshSessions,
+  });
+  await waitFor(() =>
+    expect((screen.getByTestId("ssh-private-key-input") as HTMLInputElement).value).toBe(
+      "/keys/explicit",
     ),
   );
 });

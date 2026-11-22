@@ -7,7 +7,7 @@ import {
   subscribePluginManagementChanges,
 } from "@/store/pluginManagementStoreLoading.js";
 
-export interface UsePluginUiSurfacesInput {
+interface UsePluginUiSurfacesInput {
   workspacePath: string;
   workspaceIdentity?: string;
   /** false 时不拉取（无会话 / 平台不支持），返回空数组。 */

@@ -41,6 +41,7 @@ describe("settingsPageConfig", () => {
           "general",
           "appearance",
           "modelProvider",
+          "voice",
           "browser",
           "remoteDevices",
           "shortcuts",
@@ -48,14 +49,17 @@ describe("settingsPageConfig", () => {
       },
       {
         id: "agentCapabilities",
-        sections: ["memory", "subagents", "plugin", "mcp", "skill", "commands", "hooks"],
+        // `stage4` — единая панель подсистем Этапа 4 (4.1–4.6), добавленная вместе
+        // с `ui-settings-stage4`; она публичная и входит в эту же группу.
+        sections: ["memory", "subagents", "plugin", "mcp", "skill", "commands", "hooks", "stage4"],
       },
-      { id: "dataAndStats", sections: ["usage", "archives"] },
+      { id: "dataAndStats", sections: ["usage", "codeGraph", "archives"] },
     ]);
     expect(settingsSections.map((section) => section.id)).toEqual([
       "general",
       "appearance",
       "modelProvider",
+      "voice",
       "memory",
       "subagents",
       "plugin",
@@ -66,7 +70,10 @@ describe("settingsPageConfig", () => {
       "browser",
       "remoteDevices",
       "shortcuts",
+      // `stage4` входит в группу agentCapabilities (см. проверку групп выше).
+      "stage4",
       "usage",
+      "codeGraph",
       "archives",
     ]);
   });
@@ -98,6 +105,7 @@ describe("settingsPageConfig", () => {
       "general",
       "appearance",
       "modelProvider",
+      "voice",
       "browser",
       "remoteDevices",
       "computerUse",

@@ -36,7 +36,7 @@ interface RuntimeToolMarker {
   version: 1;
 }
 
-export interface EnsureSeaRuntimeToolsOptions {
+interface EnsureSeaRuntimeToolsOptions {
   arch?: string;
   env?: CliEnv;
   platform?: NodeJS.Platform;

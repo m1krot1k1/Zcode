@@ -1,4 +1,4 @@
-export type SystemReminderDeliveryChannel =
+type SystemReminderDeliveryChannel =
   | "request_prefix"
   | "current_turn"
   | "tool_result"
@@ -6,7 +6,7 @@ export type SystemReminderDeliveryChannel =
   | "mid_turn_event"
   | "real_user";
 
-export type SystemReminderLifecycle =
+type SystemReminderLifecycle =
   | "request_prefix"
   | "per_current_turn"
   | "runtime_local"
@@ -15,7 +15,7 @@ export type SystemReminderLifecycle =
   | "mid_turn_event"
   | "real_user";
 
-export type SystemReminderProviderVisibility = "provider_visible" | "provider_hidden";
+type SystemReminderProviderVisibility = "provider_visible" | "provider_hidden";
 
 export const SYSTEM_REMINDER_PREFIX_SOURCES = ["context_prefix", "skills_listing"] as const;
 
@@ -53,6 +53,9 @@ export const SYSTEM_REMINDER_PER_REQUEST_SOURCES = [
   "model_anomaly",
   "prompt_attachment",
   "diagnostics",
+  "swarm_results",
+  "swarm_unavailable",
+  "code_index_hint",
 ] as const;
 
 export type SystemReminderPrefixSource = (typeof SYSTEM_REMINDER_PREFIX_SOURCES)[number];
@@ -64,7 +67,7 @@ export type SystemReminderSource =
   | SystemReminderPersistedSource
   | SystemReminderPerRequestSource;
 
-export interface SystemReminderSourceDescriptor {
+interface SystemReminderSourceDescriptor {
   source: SystemReminderSource;
   channel: SystemReminderDeliveryChannel;
   lifecycle: SystemReminderLifecycle;
@@ -181,6 +184,14 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
     "sr.shell_environment_change",
   ),
   diagnostics: descriptor("mid_turn_event", "mid_turn_event", true, "sr.diagnostics"),
+  swarm_results: descriptor("mid_turn_event", "mid_turn_event", true, "sr.swarm_results"),
+  swarm_unavailable: descriptor(
+    "mid_turn_event",
+    "mid_turn_event",
+    true,
+    "sr.swarm_unavailable",
+  ),
+  code_index_hint: descriptor("current_turn", "per_current_turn", true, "sr.code_index_hint"),
   // 第四批 4a-0（2026-09-12）：原 plugin_ui_state 源已删除，插件给模型的信息改走 ui/update-model-context。
 };
 

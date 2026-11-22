@@ -20,7 +20,7 @@ device-management 无指定 Profile/Source/Target 的新建入口直接进入默
 
 Source 管理器仍拥有连接与身份；onConnectionReady 接管项目创建时不准备会话。临时 attachment 取消和设备连接生命周期保持独立。最小化保留请求，真正关闭释放意图；force-update 的待确认 Promise 在卸载时完成为 false。
 
-index 保留完整 hook，调用和副作用顺序与原实现一致；不为行数限制拆散流程。桌面 continuous、手机 replayable 均复用原服务，不在此模块重写传输或持久化。
+`index.ts` 只做组装：按固定顺序调用 `useRemoteConnectionFlowState`（唯一状态 owner）、`useRemoteConnectionDialogLifecycle`（关闭确认与后台恢复）、`useRemoteConnectionConnect`（连接/升级编排）、`useRemoteConnectionActions`（表单与设备卡动作）、`useRemoteConnectionIntent`（外部入口偏好），最后用纯函数 `buildRemoteConnectionView` 投影 props。子 hook 的调用顺序与原单体实现逐一对应，副作用与清理顺序不变；`types.ts` 只放模块内共享意图类型。桌面 continuous、手机 replayable 均复用原服务，不在此模块重写传输或持久化。
 
 ## 后台操作与显式继续
 

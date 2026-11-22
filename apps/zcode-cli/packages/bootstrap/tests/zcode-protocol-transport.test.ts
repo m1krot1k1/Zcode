@@ -742,6 +742,124 @@ describe("ZCodeProtocolNdjsonConnection", () => {
     }
     expect(order.at(-1)).toBe("plugins/install#2");
   });
+
+  it("lets plugins/cancelOperation bypass a parked install while uninstall queues", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const installEntered = Promise.withResolvers<void>();
+    const finishInstall = Promise.withResolvers<void>();
+    const cancelHandled = Promise.withResolvers<void>();
+    const uninstallHandled = Promise.withResolvers<void>();
+    const responses: unknown[] = [];
+    const order: string[] = [];
+    let installActive = false;
+    let cancelSawActiveInstall = false;
+
+    output.on("data", (chunk: Buffer) => {
+      for (const line of chunk.toString("utf8").trim().split("\n")) {
+        if (line) responses.push(JSON.parse(line));
+      }
+    });
+
+    const connection = new ZCodeProtocolNdjsonConnection({
+      handleMessage: async (message) => {
+        if (!("method" in message) || !("id" in message)) return undefined;
+        order.push(`${message.method}#${message.id}`);
+        if (message.method === zcodeProtocolMethods.pluginsInstall) {
+          // 模拟真实 install handler：注册 AbortController 后长期占用串行队列。
+          installActive = true;
+          installEntered.resolve();
+          await finishInstall.promise;
+          installActive = false;
+          return { id: message.id, result: { status: "failed" } };
+        }
+        if (message.method === zcodeProtocolMethods.pluginsCancelOperation) {
+          cancelSawActiveInstall = installActive;
+          cancelHandled.resolve();
+          return {
+            id: message.id,
+            result: { operationId: "plugin-op-1", cancelled: true },
+          };
+        }
+        if (message.method === zcodeProtocolMethods.pluginsUninstall) {
+          uninstallHandled.resolve();
+        }
+        return { id: message.id, result: {} };
+      },
+      input,
+      output,
+    });
+    connection.start();
+
+    try {
+      input.write(
+        frame({
+          id: 1,
+          method: zcodeProtocolMethods.pluginsInstall,
+          params: { operationId: "plugin-op-1" },
+        }),
+      );
+      await installEntered.promise;
+
+      input.write(
+        frame({
+          id: 2,
+          method: zcodeProtocolMethods.pluginsCancelOperation,
+          params: { operationId: "plugin-op-1" },
+        }) +
+          frame({
+            id: 3,
+            method: zcodeProtocolMethods.pluginsUninstall,
+            params: { pluginName: "some-plugin" },
+          }),
+      );
+
+      const cancelOutcome = await Promise.race([
+        cancelHandled.promise.then(() => "handled" as const),
+        new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 1_000)),
+      ]);
+
+      expect(cancelOutcome).toBe("handled");
+      // 取消在 install handler 仍在执行时到达：真实链路里 install 已注册
+      // AbortController，因此 cancelPluginOperation 能按同一 operationId 命中。
+      expect(cancelSawActiveInstall).toBe(true);
+      expect(installActive).toBe(true);
+      // 只有取消旁路；破坏性操作（uninstall）仍须等 install 结束。
+      expect(order).toEqual([
+        `${zcodeProtocolMethods.pluginsInstall}#1`,
+        `${zcodeProtocolMethods.pluginsCancelOperation}#2`,
+      ]);
+      // 再让事件循环推进一轮，确认 uninstall 不是「稍后才被旁路」。
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(order).toEqual([
+        `${zcodeProtocolMethods.pluginsInstall}#1`,
+        `${zcodeProtocolMethods.pluginsCancelOperation}#2`,
+      ]);
+
+      finishInstall.resolve();
+
+      const uninstallOutcome = await Promise.race([
+        uninstallHandled.promise.then(() => "handled" as const),
+        new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 100)),
+      ]);
+      expect(uninstallOutcome).toBe("handled");
+      expect(order).toEqual([
+        `${zcodeProtocolMethods.pluginsInstall}#1`,
+        `${zcodeProtocolMethods.pluginsCancelOperation}#2`,
+        `${zcodeProtocolMethods.pluginsUninstall}#3`,
+      ]);
+      await vi.waitFor(() => {
+        expect(responses).toContainEqual({
+          id: 2,
+          result: { operationId: "plugin-op-1", cancelled: true },
+        });
+      });
+    } finally {
+      finishInstall.resolve();
+      input.end();
+      await connection.waitForClose();
+    }
+  });
 });
 
 function frame(message: ZCodeProtocolMessage): string {

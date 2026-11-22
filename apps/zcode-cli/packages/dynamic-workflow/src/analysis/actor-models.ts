@@ -56,7 +56,7 @@ export interface ModelReference {
   column: number;
 }
 
-export interface ActorModels {
+interface ActorModels {
   /** 每处出现一条，按发现顺序（`model()` 调用在前，其后是各 `agent()` 站点）。 */
   references: ModelReference[];
   /** 9010；非空即脚本不可提交。 */

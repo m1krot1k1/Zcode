@@ -22,7 +22,7 @@ export const OFF_PEAK_TICKET_EXPIRED_MARKER = "off-peak-ticket-expired";
 export const OFF_PEAK_QUEUE_WAIT_CAP_MS = 5 * 60_000;
 export const OFF_PEAK_QUEUE_WAIT_DEFAULT_MS = 60_000;
 
-export type OffPeakFailureDecision =
+type OffPeakFailureDecision =
   | { kind: "queued"; delayMs: number }
   | { kind: "ticketExpired" };
 

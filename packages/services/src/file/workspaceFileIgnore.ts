@@ -21,7 +21,7 @@ const GITIGNORE_FILE_NAME = ".gitignore";
 
 type WorkspaceFileIgnoreLogger = Pick<ServiceLogger, "info" | "warn">;
 
-export type WorkspaceFileSearchIgnoreRulesSource =
+type WorkspaceFileSearchIgnoreRulesSource =
   | "file"
   | "template"
   | "created-from-gitignore"
@@ -29,12 +29,12 @@ export type WorkspaceFileSearchIgnoreRulesSource =
   | "fallback-gitignore"
   | "fallback-builtin";
 
-export interface WorkspaceFileSearchIgnoreRules {
+interface WorkspaceFileSearchIgnoreRules {
   matcher: Ignore;
   source: WorkspaceFileSearchIgnoreRulesSource;
 }
 
-export interface WorkspaceFileSearchIgnoreContent {
+interface WorkspaceFileSearchIgnoreContent {
   content: string;
   /** file：.zcodeignore 已存在；template：尚未创建，content 是保存后将落盘的初始内容预览。 */
   source: "file" | "template";
@@ -90,9 +90,9 @@ const TEMPLATE_HEADER = [
  * 「恢复默认规则」只重写两个标记之间的默认排除段；
  * DEFAULTS 标记之下的自定义规则区，任何按钮都不会改动。
  */
-export const WORKSPACE_FILE_SEARCH_IGNORE_SYNC_MARKER =
+const WORKSPACE_FILE_SEARCH_IGNORE_SYNC_MARKER =
   "# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====";
-export const WORKSPACE_FILE_SEARCH_IGNORE_DEFAULTS_MARKER =
+const WORKSPACE_FILE_SEARCH_IGNORE_DEFAULTS_MARKER =
   "# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----";
 
 const CUSTOM_SECTION_HINT = "# 自定义规则写在下方（本行提示可删除）";
@@ -129,7 +129,7 @@ function buildBuiltinDefaultsSection(gitignoreContent: string | null): string {
  * 交给用户编辑，删除即放开，维持"单一真相源、无代码级并集"的承诺。
  * 默认段写入前先对 gitignore 区做规则去重（见 buildBuiltinDefaultsSection）。
  */
-export function buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent: string | null): string {
+function buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent: string | null): string {
   const gitignoreSection =
     gitignoreContent !== null && gitignoreContent.trim().length > 0
       ? gitignoreContent.endsWith("\n")
@@ -178,7 +178,7 @@ function splitWorkspaceFileSearchIgnoreSections(
  * 默认排除段与自定义区原样保留（用户对默认段的删改不受影响）。
  * 标记缺失时退化为整体初始内容重建（无法结构化定位分区）。
  */
-export function syncWorkspaceFileSearchIgnoreFromGitignore(
+function syncWorkspaceFileSearchIgnoreFromGitignore(
   currentContent: string,
   gitignoreContent: string | null,
 ): string {
@@ -207,7 +207,7 @@ export function syncWorkspaceFileSearchIgnoreFromGitignore(
  * 「恢复默认规则」：只重置默认排除段为内置清单，gitignore 区与自定义区原样保留。
  * 标记缺失时退化为整体初始内容重建。
  */
-export function resetWorkspaceFileSearchIgnoreDefaults(
+function resetWorkspaceFileSearchIgnoreDefaults(
   currentContent: string,
   gitignoreContent: string | null,
 ): string {
@@ -398,7 +398,7 @@ export async function readWorkspaceFileSearchIgnore(
   };
 }
 
-export type WorkspaceFileSearchIgnoreTransform = "sync-gitignore" | "reset-defaults";
+type WorkspaceFileSearchIgnoreTransform = "sync-gitignore" | "reset-defaults";
 
 /**
  * 设置页分区操作（返回新内容填充编辑框，保存才落盘）：

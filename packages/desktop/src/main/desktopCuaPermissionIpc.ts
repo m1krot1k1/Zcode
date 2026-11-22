@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 权限频道注册、拖拽浮窗与前台应用返回等待共享同一 main 进程会话状态 */
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";

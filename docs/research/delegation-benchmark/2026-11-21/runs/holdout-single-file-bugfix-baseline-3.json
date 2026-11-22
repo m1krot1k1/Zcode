@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-single-file-bugfix",
+  "family": "single-file-bugfix",
+  "arm": "baseline",
+  "repeat": 3,
+  "startedAt": "2026-11-21T07:54:37.088Z",
+  "durationMs": 21433,
+  "tokens": 173177,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "slugify acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "The fix is in place and verified.\n\n**What changed** — only `src/slugify.mjs`:\n\n```js\nexport function slugify(input) {\n  return String(input)\n    .toLowerCase()\n    .replace(/[^a-z0-9]+/g, \"-\")\n    .replace(/^-+|-+$/g, \"\");\n}\n```\n\nThe original only collapsed whitespace runs (`/\\s+/g`), so punctuation such as `,`, `!`, `++`, and `&` leaked through and leading/trailing spaces became hyphens. The new pattern replaces every run of non-alphanumeric characters with a single hyphen, then strips hyphens from both ends.\n\n**Verification** — I ran the module directly under Node and all cases passed:\n\n| Input | Output |\n|---|---|\n| `'Hello, World!'` | `hello-world` |\n| `'  A  B  '` | `a-b` |\n| `'C++ & Rust'` | `c-rust` |\n| `''` / `'---'` | `''` |\n| `'already-slug'` | `already-slug` |\n| `'Node.js v24.14.0'` | `node-js-v24-14-0` |\n\nNo tests existed in the workspace to run; the check above was a direct `node` invocation against the exported function. The workspace contains only `package.json` and `src",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

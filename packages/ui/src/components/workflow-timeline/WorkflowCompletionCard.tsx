@@ -63,8 +63,13 @@ const COUNT_UP_MS = 640;
  * tokens 的紧凑写法：`812` / `386.4k` / `1.30M`。千位一位小数、百万两位——固定位数让四格
  * 的等宽数字在 run 与 run 之间对得齐。全值进 title。
  */
-export function formatCompactCount(count: number): { value: string; unit: string } {
-  if (count < 1_000) return { value: count.toLocaleString(), unit: "" };
+export function formatCompactCount(
+  count: number,
+  locale = "en-US",
+): { value: string; unit: string } {
+  // Локаль передаём явно: иначе вывод зависит от локали хоста (C-локаль даёт
+  // пробел-разделитель вместо запятой) и тесты/скриншоты расходятся.
+  if (count < 1_000) return { value: count.toLocaleString(locale), unit: "" };
   if (count < 1_000_000) return { value: (count / 1_000).toFixed(1), unit: "k" };
   return { value: (count / 1_000_000).toFixed(2), unit: "M" };
 }
@@ -195,9 +200,9 @@ export function WorkflowCompletionCard({
           value: String(part.value),
           unit: `${separator}${part.unit}`,
         }));
-  const tokenParts = tokens === undefined ? undefined : [formatCompactCount(tokens)];
+  const tokenParts = tokens === undefined ? undefined : [formatCompactCount(tokens, locale)];
   const plain = (value: number | undefined) =>
-    value === undefined ? undefined : [{ value: value.toLocaleString(), unit: "" }];
+    value === undefined ? undefined : [{ value: value.toLocaleString(locale), unit: "" }];
 
   const figureDelay = PILL_STAGGER_MS * (completionArtifactCellCount(layout) + 1);
 
@@ -247,7 +252,7 @@ export function WorkflowCompletionCard({
             : {
                 title: format(
                   { id: "chat.toolCall.workflow.card.tokens" },
-                  { count: figures.tokens.toLocaleString() },
+                  { count: figures.tokens.toLocaleString(locale) },
                 ),
               })}
         />

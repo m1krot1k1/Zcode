@@ -253,6 +253,17 @@ describe("settingService", () => {
     });
   });
 
+  it("会跨设置服务重建保留 OpenCode CLI 的启用状态", async () => {
+    const home = makeTempHome();
+    const service = await createSettingServiceInHome(home);
+
+    await service.update({ openCodeCliEnabled: true });
+    await expect(service.get()).resolves.toMatchObject({ openCodeCliEnabled: true });
+
+    const recreatedService = await createSettingServiceInHome(home);
+    await expect(recreatedService.get()).resolves.toMatchObject({ openCodeCliEnabled: true });
+  });
+
   it("显式桌面 home 覆盖只写隔离实例设置，不污染普通 home", async () => {
     const ordinaryHome = makeTempHome();
     const desktopHome = makeTempHome();
@@ -1321,6 +1332,23 @@ describe("settingService", () => {
     const reloadedService = await createSettingServiceInHome(home);
     const settings = await reloadedService.get();
     expect(settings.httpProxy).toBeUndefined();
+  });
+
+  it("会按行规范化并持久化代理列表，清空后删除旧列表", async () => {
+    const home = makeTempHome();
+    const service = await createSettingServiceInHome(home);
+
+    await service.update({
+      httpProxyList: "  http://127.0.0.1:9091  \n\n socks5://127.0.0.1:1080 \n",
+    });
+
+    await expect(service.get()).resolves.toMatchObject({
+      httpProxyList: "http://127.0.0.1:9091\nsocks5://127.0.0.1:1080",
+    });
+
+    await service.update({ httpProxyList: "\n  \n" });
+    const reloadedService = await createSettingServiceInHome(home);
+    expect((await reloadedService.get()).httpProxyList).toBeUndefined();
   });
 
   it("会持久化 HTTP 代理绕过规则，并支持清空后删除旧字段", async () => {

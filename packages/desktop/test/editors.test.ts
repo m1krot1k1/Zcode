@@ -28,6 +28,7 @@ afterEach(() => {
   }
   vi.doUnmock("node:child_process");
   vi.doUnmock("node:fs");
+  vi.doUnmock("node:os");
   vi.doUnmock("../src/main/fileApplications.js");
   vi.restoreAllMocks();
   vi.resetModules();
@@ -69,6 +70,29 @@ async function importEditorsWithWindowsCommandMocks(
 }
 
 describe("editors", () => {
+  it("macOS resolves editor bundles from the current user's Applications directory", async () => {
+    setProcessPlatform("darwin");
+    const userAppPath = "/Users/Alice/Applications/Cursor.app";
+    vi.doMock("node:fs", async () => ({
+      ...(await vi.importActual<typeof import("node:fs")>("node:fs")),
+      existsSync: vi.fn((path: string) => path === userAppPath),
+    }));
+    vi.doMock("node:os", async () => ({
+      ...(await vi.importActual<typeof import("node:os")>("node:os")),
+      homedir: () => "/Users/Alice",
+    }));
+
+    const { resolveEditorDefAppPath } = await import("../src/main/editors.js");
+    expect(
+      resolveEditorDefAppPath({
+        id: "cursor",
+        name: "Cursor",
+        appPath: "/Applications/Cursor.app",
+        command: null,
+      }),
+    ).toBe(userAppPath);
+  });
+
   it("macOS 应把 VS Code Insiders 识别为可用编辑器", async () => {
     setProcessPlatform("darwin");
 
@@ -118,6 +142,32 @@ describe("editors", () => {
     expect(editorIds).toEqual(
       expect.arrayContaining(["explorer", "vscode", "trae", "idea", "pycharm"]),
     );
+  });
+
+  it("Windows 缺少 LOCALAPPDATA 时从当前用户目录查找 IDE", async () => {
+    setProcessPlatform("win32");
+    const originalLocalAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = "";
+    vi.doMock("node:os", async () => ({
+      ...(await vi.importActual<typeof import("node:os")>("node:os")),
+      homedir: () => "D:\\Users\\Alice",
+    }));
+
+    try {
+      const { getEditorDefsForCurrentPlatform } = await import("../src/main/editors.js");
+
+      expect(getEditorDefsForCurrentPlatform()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "vscode",
+            appPath: "D:\\Users\\Alice\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+          }),
+        ]),
+      );
+    } finally {
+      if (originalLocalAppData === undefined) delete process.env.LOCALAPPDATA;
+      else process.env.LOCALAPPDATA = originalLocalAppData;
+    }
   });
 
   it("Windows requires PATH shims to resolve to a real app exe before showing gui editors", async () => {

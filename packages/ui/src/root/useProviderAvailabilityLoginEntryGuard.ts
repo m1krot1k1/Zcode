@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UserInfo } from "@zcode/shared";
-import type { ModelSelectionView } from "@zcode/services";
+import type { ModelSelectionView } from "./contract.ts";
 import { resolveProviderAvailabilityState } from "@/lib/modelProviderAvailability.js";
 import { logger } from "@/logger.js";
 
-export interface ProviderAvailabilityLoginEntryGuardResult {
+interface ProviderAvailabilityLoginEntryGuardResult {
   hasUsableProvider: boolean;
   providerCount: number;
   shouldOpenLoginEntry: boolean;

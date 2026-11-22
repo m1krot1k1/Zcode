@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- SSH config alias 解析链路包含扫描、回退和受控执行，暂集中在同一文件。 */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { glob, readFile } from "node:fs/promises";

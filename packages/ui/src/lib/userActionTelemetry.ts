@@ -25,7 +25,7 @@ export interface UserActionTelemetryClock {
 export type UserActionTrigger = RendererActionTraceAttributes["trigger"];
 export type UserActionResultSource = NonNullable<RendererActionTraceAttributes["result_source"]>;
 
-export interface StartUserActionInput {
+interface StartUserActionInput {
   featureId: UserActionFeatureId;
   action: string;
   trigger: UserActionTrigger;
@@ -59,7 +59,7 @@ export interface UserActionHandle {
   noop(): void;
 }
 
-export interface UserActionTelemetry {
+interface UserActionTelemetry {
   start(input: StartUserActionInput): UserActionHandle;
 }
 

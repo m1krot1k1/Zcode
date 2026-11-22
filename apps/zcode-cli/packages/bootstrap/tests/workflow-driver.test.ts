@@ -20,7 +20,7 @@ import {
   type SessionId,
   type SessionStorePort,
 } from "@zcode/contracts";
-import { AgentRuntime } from "@zcode/core";
+
 import {
   inputHash,
   InMemoryJournalStore,

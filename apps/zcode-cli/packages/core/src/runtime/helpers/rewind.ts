@@ -127,7 +127,7 @@ export function selectCheckpointsForMessages(
     );
 }
 
-export function selectCheckpointForMessages(
+function selectCheckpointForMessages(
   events: readonly SessionEvent[],
   targetMessageIds: Iterable<MessageId>,
 ): CheckpointCreatedPayload | undefined {
@@ -206,7 +206,7 @@ export function buildRewindEvaluationItems(
   return items;
 }
 
-export function formatConversationRewindNoticeBody(options: {
+function _formatConversationRewindNoticeBody(options: {
   keptMessageCount: number;
   preview?: string;
   rewindId: string;

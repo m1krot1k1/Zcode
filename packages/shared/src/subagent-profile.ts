@@ -10,6 +10,8 @@ export interface AgentProfile {
   color?: "red" | "blue" | "green" | "yellow" | "purple" | "orange" | "pink" | "cyan";
   description: string;
   disallowedTools?: readonly string[];
+  /** Custom profiles are eligible for explicit Swarm planning only after user opt-in. */
+  includeInSwarm?: boolean;
   injectAgentsMd?: boolean;
   maxTurns?: number;
   mcpServers?: readonly string[];
@@ -18,6 +20,8 @@ export interface AgentProfile {
   name: string;
   path?: string;
   permissionMode?: AgentPermissionMode;
+  /** Skills shown in the role-scoped catalog; `skills` still controls what may load. */
+  preferredSkills?: readonly string[];
   skills?: readonly string[];
   source: AgentProfileSource;
   systemPrompt: string;
@@ -56,6 +60,8 @@ export const agentProfileSchema = z
     maxTurns: z.number().int().positive().optional(),
     tools: z.array(z.string()).readonly().optional(),
     disallowedTools: z.array(z.string()).readonly().optional(),
+    includeInSwarm: z.boolean().optional(),
+    preferredSkills: z.array(z.string()).readonly().optional(),
     skills: z.array(z.string()).readonly().optional(),
     mcpServers: z.array(z.string()).readonly().optional(),
   })

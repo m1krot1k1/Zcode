@@ -16,9 +16,9 @@ import { workflowRunQuestionWaitedLabel } from "@/app-shell/workflowRunQuestions
  * 路径、等了多久、run 链接。**永不 shimmer**：留白等的是主代理，不是工作。体不引用补全代码——那在相邻
  * 的 FillWorkflowHole 工具卡上。
  */
-export type WorkflowHoleNotification = Extract<WorkflowNotificationMeta, { kind: "hole" }>;
+type WorkflowHoleNotification = Extract<WorkflowNotificationMeta, { kind: "hole" }>;
 
-export type HoleRowState = "waiting" | "filled" | "left";
+type HoleRowState = "waiting" | "filled" | "left";
 
 export function holeRowState(
   holes: readonly WorkflowRunHole[] | undefined,

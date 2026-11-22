@@ -15,7 +15,7 @@ import { logger } from "../logger.js";
 
 const DEBOUNCE_MS = 300;
 
-export interface TabPersistenceRestoreLifecycle {
+interface TabPersistenceRestoreLifecycle {
   settingService?: ISettingService;
   restoreSession: boolean;
   completed: boolean;
@@ -45,7 +45,7 @@ function openWorkspacePersistenceGate(
   }
 }
 
-export interface TabPersistenceRestoreResult {
+interface TabPersistenceRestoreResult {
   /** 恢复期间识别出的 app-owned 路径，不得回填为最近项目。 */
   excludedRecentProjectPaths?: readonly string[];
   /** active workspace 已恢复后，在首帧后的 idle period 补齐 inactive workspace。 */

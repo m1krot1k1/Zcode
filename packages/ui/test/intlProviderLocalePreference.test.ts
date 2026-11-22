@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, type ReactNode } from "react";
 import {
   resolveLocalePreferenceFromSettings,
+  resolveSystemLocaleForLanguage,
   shouldApplyLocaleBroadcastMessage,
   useZCodeIntl,
   ZCodeIntlProvider,
 } from "@/i18n/IntlProvider.js";
+import englishMessages from "@/i18n/locales/en-US.js";
+import chineseMessages from "@/i18n/locales/zh-CN.js";
+import russianMessages from "@/i18n/locales/ru-RU.json" with { type: "json" };
 import type { Locale } from "@zcode/shared";
 import type { BroadcastMessage } from "@zcode/services";
 
@@ -18,6 +22,24 @@ function LocaleProbe() {
     null,
     createElement("span", { "data-testid": "locale" }, locale),
     createElement("span", { "data-testid": "localePreference" }, localePreference),
+  );
+}
+
+function LocalizedProbe() {
+  const { intl } = useZCodeIntl();
+  return createElement(
+    "div",
+    null,
+    createElement(
+      "span",
+      { "data-testid": "russian-label" },
+      intl.formatMessage({ id: "settings.locale.ru-RU" }),
+    ),
+    createElement(
+      "span",
+      { "data-testid": "unknown-label" },
+      intl.formatMessage({ id: "test.unknown.message" }),
+    ),
   );
 }
 
@@ -41,6 +63,14 @@ function LocaleControls() {
         onClick: () => setLocalePreference("en-US"),
       },
       "en-US",
+    ),
+    createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setLocalePreference("ru-RU"),
+      },
+      "ru-RU",
     ),
     createElement(LocaleProbe),
   );
@@ -128,6 +158,16 @@ function createBroadcastService() {
   };
 }
 
+function formatArguments(message: string): string[] {
+  return [
+    ...message.matchAll(
+      /\{\s*([\w.]+)\s*(?:,\s*(plural|selectordinal|select|number|date|time)\b)?/g,
+    ),
+  ]
+    .map((match) => `${match[1]}:${match[2] ?? "value"}`)
+    .sort();
+}
+
 beforeEach(() => {
   installMemoryLocalStorage();
 });
@@ -135,10 +175,259 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  document.documentElement.lang = "";
   vi.restoreAllMocks();
 });
 
 describe("IntlProvider locale preference sync", () => {
+  it("Russian and Simplified Chinese catalogs match English IDs and format arguments", () => {
+    const englishIds = Object.keys(englishMessages).sort();
+    for (const [locale, messages] of [
+      ["ru-RU", russianMessages],
+      ["zh-CN", chineseMessages],
+    ] as const) {
+      expect({ locale, missing: englishIds.filter((id) => !Object.hasOwn(messages, id)) }).toEqual({
+        locale,
+        missing: [],
+      });
+      expect({
+        locale,
+        extra: Object.keys(messages).filter((id) => !Object.hasOwn(englishMessages, id)),
+      }).toEqual({
+        locale,
+        extra: [],
+      });
+      const mismatchedArguments = englishIds.filter(
+        (id) =>
+          JSON.stringify(formatArguments(englishMessages[id]!)) !==
+          JSON.stringify(formatArguments(messages[id]!)),
+      );
+      expect({ locale, mismatchedArguments }).toEqual({ locale, mismatchedArguments: [] });
+    }
+  });
+
+  it("Russian settings and graph labels do not fall back to English", () => {
+    const messageIds = [
+      "settings.interfaceMode",
+      "settings.interfaceMode.office",
+      "settings.interfaceMode.coding",
+      "settings.interfaceMode.description",
+      "chat.officeSuggestions.setting",
+      "chat.officeSuggestions.settingDescription",
+      "settings.terminalProfile",
+      "settings.terminalProfileDescription",
+      "settings.terminalFontFamily",
+      "settings.terminalFontFamilyDescription",
+      "settings.terminalFontFamilyPlaceholder",
+      "settings.toolSearch",
+      "settings.toolSearchDescription",
+      "settings.toolSearchExperimentalNotice",
+      "settings.toolSearch.auto",
+      "settings.toolSearch.local",
+      "settings.toolSearch.off",
+      "settings.nativeSearchEnhancements",
+      "settings.nativeSearchEnhancementsDescription",
+      "codeGraph.kind.module",
+      "codeGraph.kind.file",
+      "codeGraph.kind.class",
+      "codeGraph.kind.function",
+      "codeGraph.kind.interface",
+      "codeGraph.kind.method",
+      "codeGraph.kind.property",
+    ];
+    const untranslated = messageIds.filter(
+      (messageId) =>
+        !Object.hasOwn(russianMessages, messageId) ||
+        russianMessages[messageId] === englishMessages[messageId],
+    );
+    expect(untranslated).toEqual([]);
+  });
+
+  it("language switch, warnings, and code graph labels are Russian", () => {
+    const messageIds = [
+      "locale.switchLanguage",
+      "settings.locale",
+      "settings.localeDescription",
+      "settings.locale.system",
+      "sidebar.settings.systemDefault",
+      "codeIndex.watchFailed",
+      "codeGraph.kind.module",
+      "codeGraph.kind.file",
+      "codeGraph.kind.class",
+      "codeGraph.kind.function",
+      "codeGraph.kind.interface",
+      "codeGraph.kind.method",
+      "codeGraph.kind.property",
+      "codeGraph.kind.variable",
+      "codeGraph.kind.type",
+      "codeGraph.kind.enum",
+      "codeGraph.noResolvedGraph",
+      "codeGraph.noResolvedGraphDescription",
+      "codeGraph.title",
+      "codeGraph.description",
+      "codeGraph.refresh",
+      "codeGraph.statusFailed",
+      "codeGraph.statusLoading",
+      "codeGraph.retryStatus",
+      "codeGraph.loadFailed",
+      "codeGraph.indexFailed",
+      "codeGraph.searchFailed",
+      "codeGraph.noMatches",
+      "codeGraph.workspaceRequired",
+      "codeGraph.unavailable",
+      "codeGraph.state.unindexed",
+      "codeGraph.state.indexing",
+      "codeGraph.state.ready",
+      "codeGraph.state.degraded",
+      "codeGraph.files",
+      "codeGraph.symbols",
+      "codeGraph.links",
+      "codeGraph.partial",
+      "codeGraph.boundedHint",
+      "codeGraph.searchPlaceholder",
+      "codeGraph.search",
+      "codeGraph.filters",
+      "codeGraph.calls",
+      "codeGraph.imports",
+      "codeGraph.contains",
+      "codeGraph.nodeTypes",
+      "codeGraph.noNodes",
+      "codeGraph.noVisibleNodesDescription",
+      "codeGraph.legendHint",
+      "codeGraph.loading",
+      "codeGraph.indexing",
+      "codeGraph.emptyTitle",
+      "codeGraph.emptyDescription",
+      "codeGraph.buildIndex",
+      "codeGraph.inspector",
+      "codeGraph.linkCount",
+      "codeGraph.focusNode",
+      "codeGraph.incoming",
+      "codeGraph.outgoing",
+      "codeGraph.noRelations",
+      "codeGraph.selectNode",
+      "settings.plugins.detail.warnings",
+      "settings.mcp.remoteSync.warningTitle",
+      "settings.mcp.remoteSync.warningDescription",
+      "settings.plugins.remoteSync.warningTitle",
+      "settings.plugins.remoteSync.warningDescription",
+      "settings.mcpServers.import.warning.secretsOmittedForProjectScope",
+      "settings.mcpServers.import.warning.clineOAuthReauthenticationRequired",
+      "settings.mcpServers.import.warning.clinePortablePresetApplied",
+      "settings.mcpServers.import.warning.clineCommandMayNotBePortable",
+      "settings.skills.remoteSync.warningTitle",
+      "settings.skills.remoteSync.warningDescription",
+      "settings.skills.diagnostics.summary",
+      "conversationShare.warning.summary",
+      "conversationShare.warning.artifactSkipped",
+      "conversationShare.warning.inputAttachmentSkipped",
+      "conversationShare.warning.inputAttachmentUnavailable",
+      "conversationShare.warning.artifactTypeSkipped",
+      "conversationShare.warning.artifactChangedSkipped",
+      "offPeak.edit.peakHoursWarning",
+      "offPeak.form.permissionWarning",
+      "browser.resizeDuringOperationWarning",
+      "wsl.rootWarning",
+      "settings.skills.remoteSync.filteredEmpty",
+      "settings.mcpServers.import.scope.project",
+      "settings.plugins.import.scope.project",
+    ];
+    const untranslated = messageIds.filter((messageId) => {
+      const value = russianMessages[messageId];
+      return !value || value === englishMessages[messageId] || !/[А-Яа-яЁё]/.test(value);
+    });
+    expect(untranslated).toEqual([]);
+  });
+
+  it("пустой фильтр навыков предлагает показать навыки, которые уже есть на удалённом хосте", () => {
+    const value = russianMessages["settings.skills.remoteSync.filteredEmpty"];
+    // Подпись переключателя в каталоге без ё: «удаленные».
+    const toggleTitle = russianMessages["settings.skills.remoteSync.showExisting"].replaceAll(
+      "удаленные",
+      "удалённые",
+    );
+    expect(value).toContain("уже есть на удалённом хосте");
+    expect(value).toContain(toggleTitle);
+  });
+
+  it.each([
+    ["ru-RU", "ru-RU"],
+    ["ru", "ru-RU"],
+    ["zh-Hans-CN", "zh-CN"],
+    ["en-GB", "en-US"],
+    ["fr-FR", "en-US"],
+    [undefined, "en-US"],
+  ] as const)("системный язык %s разрешается в %s", (language, expected) => {
+    expect(resolveSystemLocaleForLanguage(language)).toBe(expected);
+  });
+
+  it("русская локаль показывает перевод и не маскирует неизвестный ключ", () => {
+    render(
+      createElement(ZCodeIntlProvider, { initialLocale: "ru-RU" }, createElement(LocalizedProbe)),
+    );
+    expect(screen.getByTestId("russian-label").textContent).toBe("Русский");
+    expect(screen.getByTestId("unknown-label").textContent).toBe("test.unknown.message");
+  });
+
+  it("синхронизирует documentElement.lang с текущей локалью", async () => {
+    render(
+      createElement(ZCodeIntlProvider, { initialLocale: "ru-RU" }, createElement(LocaleControls)),
+    );
+    await waitFor(() => expect(document.documentElement.lang).toBe("ru-RU"));
+
+    fireEvent.click(screen.getByRole("button", { name: "en-US" }));
+    await waitFor(() => expect(document.documentElement.lang).toBe("en-US"));
+  });
+
+  it("documents the UI language on the document element before any locale switch", async () => {
+    render(
+      createElement(ZCodeIntlProvider, { initialLocale: "zh-CN" }, createElement(LocaleProbe)),
+    );
+    await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
+  });
+
+  it("дополняет отсутствовавшие ключи во всех каталогах", () => {
+    const requiredIds = [
+      "taskList.noArchivedTasks",
+      "workspaceSidebar.addProject",
+      "settings.plugins.store.cancelInstall",
+      "settings.plugins.store.cancelling",
+      "settings.plugins.store.cancelInstallFailed",
+    ];
+    for (const [locale, messages] of [
+      ["en-US", englishMessages],
+      ["ru-RU", russianMessages],
+      ["zh-CN", chineseMessages],
+    ] as const) {
+      const missing = requiredIds.filter(
+        (id) => !Object.hasOwn(messages, id) || messages[id]?.trim().length === 0,
+      );
+      expect({ locale, missing }).toEqual({ locale, missing: [] });
+    }
+  });
+
+  it("русский выбор языка сохраняется и отправляется в синхронизацию окон", async () => {
+    const broadcastService = createBroadcastService();
+    const settingService = renderIntlProvider({
+      settings: { locale: "zh-CN", localePreference: "zh-CN" },
+      broadcastService,
+      children: createElement(LocaleControls),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "ru-RU" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("locale").textContent).toBe("ru-RU");
+      expect(settingService.update).toHaveBeenCalledWith({
+        locale: "ru-RU",
+        localePreference: "ru-RU",
+      });
+      expect(broadcastService.send).toHaveBeenCalledWith({
+        channel: "state:locale",
+        payload: { preference: "ru-RU", resolvedLocale: "ru-RU" },
+      });
+    });
+  });
+
   it("手机远控以桌面 settingService locale 覆盖手机本地偏好", () => {
     expect(
       resolveLocalePreferenceFromSettings({
@@ -436,10 +725,7 @@ describe("IntlProvider locale preference sync", () => {
 
   it("首次 settingService update 永久 pending 后再次选择仍会尝试持久化", async () => {
     const pendingUpdate = createDeferred<void>();
-    const update = vi
-      .fn()
-      .mockReturnValueOnce(pendingUpdate.promise)
-      .mockResolvedValue(undefined);
+    const update = vi.fn().mockReturnValueOnce(pendingUpdate.promise).mockResolvedValue(undefined);
     renderIntlProvider({
       settings: {
         locale: "zh-CN",

@@ -26,9 +26,12 @@ function resolveAppRuntimeConfig(input: Parameters<typeof resolveProductionAppRu
   });
 }
 
-function createConfigResult() {
+function createConfigResult(permissionOverrides: { approvalTimeoutMs?: number } = {}) {
   return createConfig({
     cliOverrides: {
+      ...(permissionOverrides.approvalTimeoutMs !== undefined
+        ? { permission: { approvalTimeoutMs: permissionOverrides.approvalTimeoutMs } }
+        : {}),
       model: {
         main: {
           provider: "provider:test",
@@ -399,6 +402,106 @@ describe("resolveAppRuntimeConfig", () => {
     expect(resolved.runtimeConfig.toolDisallowlist).toBeUndefined();
   });
 
+  it("defaults the approval timeout so a dangling request cannot hang the turn", () => {
+    // 无显式值时也不能让 approval 无限等待：broker 只在有限正数上排 timer，
+    // 所以默认值必须是有界正数（research R05 建议 300000）。
+    const resolved = resolveAppRuntimeConfig({
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult(),
+      options: { runtimeConfig: { workingDirectory } },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents",
+      subagentProfiles: [],
+      workingDirectory,
+    });
+
+    expect(resolved.runtimeConfig.permissionTimeoutMs).toBe(300_000);
+  });
+
+  it("preserves an explicit session-level approval timeout override", () => {
+    // docs/specs/2026-11-11-permission-hard-deny-approval-timeout.md §4.2：
+    // 优先级是 显式会话值 > 配置文件 permission.approvalTimeoutMs > 300000 默认；
+    // 显式 runtimeConfig.permissionTimeoutMs 必须原样进入 AgentRuntimeConfig，
+    // 由 ToolExecutor → PermissionBroker 消费，不能被 resolver 的默认值覆盖。
+    const resolved = resolveAppRuntimeConfig({
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult(),
+      options: {
+        runtimeConfig: {
+          permissionTimeoutMs: 45_000,
+          workingDirectory,
+        },
+      },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents",
+      subagentProfiles: [],
+      workingDirectory,
+    });
+
+    expect(resolved.runtimeConfig.permissionTimeoutMs).toBe(45_000);
+  });
+
+  it("projects the configured approval timeout when the session does not override it", () => {
+    const resolved = resolveAppRuntimeConfig({
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult({ approvalTimeoutMs: 120_000 }),
+      options: { runtimeConfig: { workingDirectory } },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents",
+      subagentProfiles: [],
+      workingDirectory,
+    });
+
+    expect(resolved.runtimeConfig.permissionTimeoutMs).toBe(120_000);
+  });
+
+  it("lets the explicit session timeout win over the configured approval timeout", () => {
+    const resolved = resolveAppRuntimeConfig({
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult({ approvalTimeoutMs: 120_000 }),
+      options: {
+        runtimeConfig: {
+          permissionTimeoutMs: 45_000,
+          workingDirectory,
+        },
+      },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents",
+      subagentProfiles: [],
+      workingDirectory,
+    });
+
+    expect(resolved.runtimeConfig.permissionTimeoutMs).toBe(45_000);
+  });
+
+  it("keeps a configured approval timeout disable (0)", () => {
+    const resolved = resolveAppRuntimeConfig({
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult({ approvalTimeoutMs: 0 }),
+      options: { runtimeConfig: { workingDirectory } },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents",
+      subagentProfiles: [],
+      workingDirectory,
+    });
+
+    // 0 = 显式关闭审批超时；投影必须用 ?? 而不是真值判断。
+    expect(resolved.runtimeConfig.permissionTimeoutMs).toBe(0);
+  });
+
+  it("preserves an explicit approval timeout disable (0) override", () => {
+    const resolved = resolveAppRuntimeConfig({
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult(),
+      options: {
+        runtimeConfig: {
+          permissionTimeoutMs: 0,
+          workingDirectory,
+        },
+      },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents",
+      subagentProfiles: [],
+      workingDirectory,
+    });
+
+    expect(resolved.runtimeConfig.permissionTimeoutMs).toBe(0);
+  });
+
   it("preserves an explicit title generation model override", () => {
     const titleModelSelection = {
       providerId: "builtin:title-provider",
@@ -543,6 +646,44 @@ describe("resolveAppRuntimeConfig", () => {
       },
     });
     expect(resolved.runtimeConfig.mcp?.servers).toEqual(resolved.configuredMcpServers);
+  });
+
+  it("keeps document plugin MCP servers lazy unless the user explicitly configured them", () => {
+    const name = "plugin:documents:documents";
+    const lazyConfig = {
+      type: "stdio" as const,
+      command: "node",
+      args: ["documents.mjs"],
+      env: { [ZCODE_PLUGIN_ID_ENV_KEY]: "documents@zcode-plugins-official" },
+    };
+    const baseInput = {
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult(),
+      pluginMcpServers: { [name]: lazyConfig },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents-output",
+      subagentProfiles: [],
+      workingDirectory,
+    };
+
+    const lazy = resolveAppRuntimeConfig({
+      ...baseInput,
+      options: { runtimeConfig: { mcp: { enabled: true } }, workingDirectory },
+    });
+    expect(lazy.configuredMcpServers[name]).toEqual(lazyConfig);
+    expect(lazy.runtimeConfig.mcp?.servers?.[name]).toBeUndefined();
+    expect(lazy.runtimeConfig.mcp?.lazyServers?.[name]).toEqual(lazyConfig);
+
+    const explicit = resolveAppRuntimeConfig({
+      ...baseInput,
+      options: {
+        runtimeConfig: {
+          mcp: { enabled: true, servers: { [name]: lazyConfig } },
+          workingDirectory,
+        },
+      },
+    });
+    expect(explicit.runtimeConfig.mcp?.servers?.[name]).toEqual(lazyConfig);
+    expect(explicit.runtimeConfig.mcp?.lazyServers?.[name]).toBeUndefined();
   });
 
   it("keeps official CUA provenance only while the bundled plugin config is unmodified", () => {

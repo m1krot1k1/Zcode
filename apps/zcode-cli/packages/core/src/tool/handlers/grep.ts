@@ -17,7 +17,11 @@ import {
   type GrepOutput,
   type TraceContext,
 } from "@zcode/contracts";
-import { resolveToolWorkingDirectory, resolveWorkspacePath } from "../path-policy.js";
+import {
+  resolveToolWorkingDirectory,
+  resolveWorkspacePath,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 import type { ToolEntry, ToolHandler } from "../types.js";
 
 const MAX_GREP_MODEL_BYTES = 20_000;
@@ -53,11 +57,13 @@ export const grepHandler: ToolHandler = async (input, context) => {
         operation: "read",
         workingDirectory: context.workingDirectory,
         workspaceRoot: context.workspaceRoot,
+        ...workspaceBoundaryOptions(context),
       })
     : resolveToolWorkingDirectory(undefined, {
         operation: "read",
         workingDirectory: context.workingDirectory,
         workspaceRoot: context.workspaceRoot,
+        ...workspaceBoundaryOptions(context),
       });
 
   const contextLines = parsed.context ?? parsed["-C"];
@@ -150,6 +156,11 @@ export const grepToolEntry: ToolEntry = {
     sideEffectScope: "none",
     riskLevel: "low",
     needsApproval: false,
+  },
+  resolveWorkspaceBoundaryPaths: (input, context) => {
+    const parsed = GrepInputSchema.safeParse(input);
+    if (!parsed.success) return [];
+    return [{ path: parsed.data.path ?? context.workingDirectory ?? ".", operation: "read" }];
   },
   handler: grepHandler,
   inputSchema: GrepInputJsonSchema,

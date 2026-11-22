@@ -38,7 +38,7 @@ const INITIAL_STATE: TaskNativeSessionLogFileState = {
   error: null,
 };
 
-export function supportsTaskNativeSessionLogFile(
+function supportsTaskNativeSessionLogFile(
   _provider: ZCodeProvider | null | undefined,
 ): boolean {
   // 仅剩 glm provider，始终支持读取原生会话日志。

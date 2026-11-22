@@ -31,6 +31,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from libreoffice_discovery import find_soffice
+
 try:
     from openpyxl import load_workbook, Workbook
     from openpyxl.utils import get_column_letter, column_index_from_string
@@ -132,41 +134,7 @@ def _find_soffice() -> Optional[str]:
       2. Platform-specific well-known locations
     Returns the absolute path, or None if not found.
     """
-    # 1. Check PATH first (works on all platforms if user configured it)
-    found = shutil.which("soffice")
-    if found:
-        return found
-
-    # 2. Platform-specific search
-    system = platform.system()
-
-    if system == "Darwin":
-        candidates = [
-            "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-            os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-        ]
-    elif system == "Linux":
-        candidates = [
-            "/usr/bin/soffice",
-            "/usr/local/bin/soffice",
-            "/usr/lib/libreoffice/program/soffice",
-            "/opt/libreoffice/program/soffice",
-            "/snap/bin/libreoffice.soffice",        # Snap package
-            "/var/lib/flatpak/exports/bin/org.libreoffice.LibreOffice",  # Flatpak
-        ]
-    elif system == "Windows":
-        candidates = [
-            r"C:\Program Files\LibreOffice\program\soffice.exe",
-            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-        ]
-    else:
-        candidates = []
-
-    for path in candidates:
-        if os.path.isfile(path):
-            return path
-
-    return None
+    return find_soffice()
 
 
 def _setup_libreoffice_macro() -> bool:

@@ -7,7 +7,8 @@ import { WorkspaceHelpMenuButton } from "@/WorkspaceHelpMenuButton.js";
 import { ConversationShareMenu } from "@/ConversationShareMenu.js";
 import { DesktopWindowControls } from "@/DesktopWindowControls.js";
 
-export type { WorkspaceHeaderActionSectionProps } from "@/WorkspaceHeaderSections/shared.js";
+
+
 
 export function WorkspaceHeaderActionSection({
   variant = "task",

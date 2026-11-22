@@ -2,7 +2,7 @@
 
 ## Goal
 
-ZCode agent extensions must merge user-level and current-workspace definitions instead of choosing only one source. When the same extension identity appears in both places, the user-level definition wins.
+ZCode agent extensions must merge user-level and current-workspace definitions instead of choosing only one source. Skills resolve same-name collisions in favor of the project-level copy (project-local customization wins); custom slash commands and MCP configs keep user-level precedence. Plugin roots are always appended after local roots.
 
 This applies to local discovery for:
 
@@ -17,15 +17,16 @@ The rule is intentionally scoped to extension discovery. General runtime prefere
 Default skill roots are resolved in this order:
 
 1. explicitly configured `skills.roots`, in configured order
-2. user native root: `~/.zcode/skills`
-3. user agent-compatible root: `~/.agents/skills`
-4. project native roots from `workingDirectory` up to the git worktree root: `<dir>/.zcode/skills`
-5. project agent-compatible roots from `workingDirectory` up to the git worktree root: `<dir>/.agents/skills`
+2. project native roots from `workingDirectory` up to the git worktree root: `<dir>/.zcode/skills`
+3. project agent-compatible roots from `workingDirectory` up to the git worktree root: `<dir>/.agents/skills`
+4. user native root: `~/.zcode/skills`
+5. user agent-compatible root: `~/.agents/skills`
 6. enabled plugin-provided roots
+7. bundled/system roots
 
 Within the same directory level, `.zcode` has higher priority than `.agents`. `.zcode` and `.agents` are both scanned; `.agents` is no longer only a fallback when `.zcode` is empty.
 
-Same-name skills from different paths remain discoverable because path is the install identity. When loading by skill name, the first discovered skill wins, so user-level skills shadow project-level skills with the same name.
+Same-name skills from different paths remain discoverable because path is the install identity. When loading by skill name, the highest-precedence discovered skill wins: project skills shadow user skills with the same name (project-local customization must override a global install). A shadowed same-name skill from a different scope is reported as a `skill_duplicate_name` warning that names both the winning path and the ignored path; same-scope duplicates stay silent because both paths remain valid install identity.
 
 ## Custom Commands
 
@@ -57,6 +58,6 @@ Project-origin MCP servers remain untrusted by default and are visible in `/mcp 
 
 Coverage must include small fixture trees with the same skill, command, and MCP server name declared at both user and project levels:
 
-- skill discovery lists both paths, but `loadSkill(name)` loads the user copy
+- skill discovery lists both paths, but `loadSkill(name)` loads the project copy and reports the shadowed user path
 - command discovery keeps the user command and reports the project duplicate
 - MCP config resolves the user server, does not mark it untrusted, and still keeps project-only servers untrusted

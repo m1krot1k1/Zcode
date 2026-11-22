@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- telemetry state lock、deviceMid 编排和上报路径共享同一状态文件，拆分会增加锁语义漂移风险。 */
 import {
   createUuid,
   ZCODE_VERSION,
@@ -7,14 +6,15 @@ import {
   buildZCodeSourceHeadersFromContext,
   rewriteZCodeEndpointUrl,
   sanitizeTelemetryEventDetail,
+  sanitizeTelemetryEventText,
   type TelemetryEventPayload,
   type TelemetryRendererContext,
   type OAuthLoginAttribution,
 } from "@zcode/shared";
-import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, unlink, type FileHandle } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { version } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { getAppConfigDir } from "../paths.js";
 
@@ -40,6 +40,12 @@ const REPORT_RETRY_DELAY_MS = 300;
 const REPORT_RATE_LIMIT_RETRY_DELAY_MS = 1_000;
 const REPORT_MAX_ATTEMPTS = 2;
 
+function isTruthyEnvFlag(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 interface TelemetryCoreDependencies {
   fetchImpl?: typeof fetch;
   loadUserId?: () => Promise<string>;
@@ -54,6 +60,8 @@ interface TelemetryCoreDependencies {
   osVersion?: string;
   homeDir?: string;
   resolveZCodeEndpointOrigin?: () => Promise<string> | string;
+  /** 运行期开关：返回 false 时不发任何 /event/report。默认尊重 DO_NOT_TRACK。 */
+  isEnabled?: () => boolean | Promise<boolean>;
   requestTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   warn?: (message: string) => void;
@@ -159,10 +167,88 @@ async function readTelemetryState(homeDir?: string): Promise<TelemetryState> {
   }
 }
 
+const TELEMETRY_STATE_RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800] as const;
+
+function readFsErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/** 目标文件已存在时沿用其 POSIX mode；不存在时返回 undefined，走默认文件权限。 */
+async function readExistingTelemetryStateMode(stateFile: string): Promise<number | undefined> {
+  try {
+    const metadata = await stat(stateFile);
+    return metadata.isFile() ? metadata.mode & 0o777 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function renameTelemetryState(tempFile: string, stateFile: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(tempFile, stateFile);
+      return;
+    } catch (error) {
+      const delayMs = TELEMETRY_STATE_RENAME_RETRY_DELAYS_MS[attempt];
+      const code = readFsErrorCode(error);
+      // Windows Defender、索引服务或另一个进程会短暂占用目标 JSON，使原子替换 rename
+      // 抛 EPERM/EBUSY/EACCES。只对这三类瞬时占用做有界重试；真实权限错误原样抛出。
+      if (delayMs === undefined || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) {
+        throw error;
+      }
+      await sleep(delayMs);
+    }
+  }
+}
+
+/**
+ * 原子写入 telemetry-state.json：同目录临时文件写满并 sync 后 rename 替换。
+ *
+ * Bugfix（QW12）：此前直接 writeFile 覆盖目标文件，进程崩溃/断电会留下半截 JSON；
+ * readTelemetryState 解析失败返回 {}，随后会重新生成 deviceMid，导致设备身份漂移。
+ * rename 在同一文件系统上是原子的，读者只会看到旧的完整文件或新的完整文件。
+ * 调用方必须已持有 telemetry-state.lock（见 withTelemetryStateLock）。
+ */
 async function writeTelemetryState(state: TelemetryState, homeDir?: string): Promise<void> {
   const telemetryStateFile = resolveTelemetryStateFile(homeDir);
-  await mkdir(dirname(telemetryStateFile), { recursive: true });
-  await writeFile(telemetryStateFile, JSON.stringify(state, null, 2), "utf-8");
+  const directory = dirname(telemetryStateFile);
+  await mkdir(directory, { recursive: true });
+  const tempFile = join(
+    directory,
+    `.${basename(telemetryStateFile)}.${process.pid}.${Date.now()}.${Math.random()
+      .toString(16)
+      .slice(2)}.tmp`,
+  );
+  // rename 会用临时文件替换目标，mode 取自临时文件；不显式继承会丢失既有的 0600 等收紧权限。
+  const existingMode = await readExistingTelemetryStateMode(telemetryStateFile);
+  let handle: FileHandle | undefined;
+  let createdTempFile = false;
+  try {
+    handle = await open(tempFile, "wx", existingMode ?? 0o666);
+    // 只有本次真正创建了临时文件才允许清理失败路径；open 抛 EEXIST 时这里仍是 false，
+    // 不能删除另一个进程同名的活动临时文件。
+    createdTempFile = true;
+    if (existingMode !== undefined && process.platform !== "win32") {
+      // open 的 mode 会被 umask 再收窄；chmod 保证既有收紧权限（如 0600）原样保留。
+      await handle.chmod(existingMode);
+    }
+    await handle.writeFile(JSON.stringify(state, null, 2), "utf-8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await renameTelemetryState(tempFile, telemetryStateFile);
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    // 失败清理只删除本次临时文件，不扫描其他进程可能正在使用的 .tmp。
+    if (createdTempFile) {
+      await unlink(tempFile).catch(() => undefined);
+    }
+    throw error;
+  }
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -347,6 +433,11 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
   const osVersion = dependencies.osVersion ?? version();
   const requestTimeoutMs = dependencies.requestTimeoutMs ?? REPORT_REQUEST_TIMEOUT_MS;
   const retrySleep = dependencies.sleep ?? sleep;
+  const isEnabled = async (): Promise<boolean> => {
+    // DO_NOT_TRACK 是进程级硬关闭，优先于任何持久化设置。
+    if (isTruthyEnvFlag(process.env.DO_NOT_TRACK)) return false;
+    return dependencies.isEnabled ? await dependencies.isEnabled() : true;
+  };
   const pendingReports = new Set<Promise<void>>();
   const deviceMidOptions: EnsureTelemetryDeviceMidOptions = {
     homeDir: dependencies.homeDir,
@@ -415,6 +506,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     userId: string,
     deviceMid: string,
   ): Promise<void> {
+    // 用户/环境选择停用时连本地状态都不写，避免下一次启动把禁用态误记成活跃。
+    if (!(await isEnabled())) return;
     // 构建期未配置事件上报端点时不上报（见 docs/desktop/build-time-optional-capabilities.md）
     if (!REPORT_ENDPOINT) return;
     let marketingParams: OAuthLoginAttribution | null = null;
@@ -436,7 +529,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
       element_name: payload.elementName,
       event_region: payload.eventRegion,
       event_type: payload.eventType,
-      event_text: payload.eventText ?? "",
+      event_text: sanitizeTelemetryEventText(payload.eventText),
       // 修复原因：Host/Main 或旧 Renderer 可绕过 UI 清洗，最终出网统一禁止错误原文与登录 URL 秘密。
       event_extra_detail: sanitizeTelemetryEventDetail(
         payload.elementName,

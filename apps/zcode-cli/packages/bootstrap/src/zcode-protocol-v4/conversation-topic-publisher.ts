@@ -19,9 +19,7 @@ import type {
   ConversationTopicFrame,
   DeliveryProfile,
   DeliveryProfileName,
-  QueueItem,
   SubscribeAck,
-  ToolCallRow,
   TopicFrameDeliveryKind,
   V4ConversationPlansResult,
   V4ConversationRowsRangeResult,
@@ -33,10 +31,8 @@ import {
   clampWorkflowRunsForLegacy,
   coalesceConversationDeltas,
   filterConversationDeltasForProfile,
-  filterConversationRowsForProfile,
   utf8JsonByteLength,
 } from "@zcode/shared/zcode-protocol-v4";
-import { Buffer } from "node:buffer";
 import {
   encodeConversationDeltasForLegacy,
   workflowRunDeltaGrowthUpperBound,
@@ -52,200 +48,43 @@ import {
 } from "./product-projection.js";
 import type { TopicFrameReservation } from "./topic-frame-reservation.js";
 
-interface LogEntry {
-  seq: number;
-  deltas: ConversationDelta[];
-}
+import {
+  appendConversationSubscriberBuffer,
+  coldHydrationJsonByteLength,
+  buildAdmissionQueueItem,
+  buildMeasurementFrame,
+  collectTerminalPlans,
+  projectSnapshotForProfile,
+  sliceRowsRange,
+  hydrationSequenceNumberBytes,
+  nonNegativeHardBound,
+  HYDRATION_ACTION_BYTES_PER_WIRE_ROW,
+  HYDRATION_EVENT_WIRE_OVERHEAD_BYTES,
+  type ConversationResyncRequest,
+  type ConversationSubscriberBufferLimits,
+  type LogEntry,
+  ProjectionPayloadTooLargeError,
+  PROJECTION_TERMINAL_RESERVE_BYTES,
+  type ConversationSubscribeParams,
+  type ConversationSubscribeResult,
+  type ConversationTopicPublisherOptions,
+  type Subscription,
+} from "./conversation-topic-protocol.js";
 
-const TERMINAL_PLAN_STATUSES: ReadonlySet<ToolCallRow["status"]> = new Set([
-  "success",
-  "error",
-  "cancelled",
-]);
-
-/**
- * cold replay 会高频测量临时 delta；TextEncoder 会为每次测量再分配完整 Uint8Array。
- * CLI 已固定运行在 Node，这里对同一 JSON 文本直接计算精确 UTF-8 字节数，不做近似估算。
- */
-export function coldHydrationJsonByteLength(value: unknown): number {
-  const json = JSON.stringify(value);
-  return json === undefined ? 0 : Buffer.byteLength(json, "utf8");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasPlanMarkdown(row: ToolCallRow): boolean {
-  if (isRecord(row.input)) {
-    const plan = row.input.plan;
-    if (typeof plan === "string" && plan.trim().length > 0) return true;
-  }
-  if (!row.inputText.trim()) return false;
-  try {
-    const parsed: unknown = JSON.parse(row.inputText);
-    return isRecord(parsed) && typeof parsed.plan === "string" && parsed.plan.trim().length > 0;
-  } catch {
-    return false;
-  }
-}
-
-interface Subscription {
-  subscriptionId: string;
-  connectionId: string;
-  profile: DeliveryProfile;
-  /**
-   * 这条订阅认不认得 `workflowRun.*` 键级增量（握手能力位，由可信 host 注入）。
-   * false = 旧消费者：增量折成整键 patch、快照裁到旧界（conversation-workflow-run-deltas.ts）。
-   */
-  workflowRunDeltas: boolean;
-  /** flush buffer：push 时已过 profile 过滤与该订阅的编码，flush 时 coalesce 打帧。 */
-  buffer: ConversationDelta[];
-  bufferBytes: number;
-  /** buffer 超限后只保留恢复意图，不继续为慢订阅者积压 delta。 */
-  resyncRequired: boolean;
-  /** 帧区间记账水位：下一帧 fromSeq（(fromSeq, toSeq] 语义）。 */
-  sentSeq: number;
-  /** 编码/写入期间保留的稳定 logical frame。 */
-  inFlight: TopicFrameReservation<ConversationTopicFrame> | null;
-  nextLogicalFrameOrdinal: number;
-}
-
-export interface ConversationSubscribeParams {
-  connectionId: string;
-  base?: { logEpoch: string; seq: number };
-  /** 缺省 replayable（ws 默认；MessagePort 宿主显式传 continuous）。 */
-  deliveryProfile?: DeliveryProfileName;
-  /**
-   * 该连接的 clientHello 声明过认得 `workflowRun.*` 增量。与 deliveryProfile 同族：可信 host
-   * 注入，面向 UI 的 subscribe 选不了。缺省 false——能力位缺席一律按旧消费者办。
-   */
-  workflowRunDeltas?: boolean;
-}
-
-export interface ConversationSubscribeResult {
-  ack: SubscribeAck;
-  reservation: TopicFrameReservation<ConversationTopicFrame> | null;
-  /** initial encode 失败且 ACK 未 admission 时，原子恢复被替换的旧 subscription。 */
-  rollback(): boolean;
-  /** snapshot 帧或 resume 的续传帧；resume 且无新增时为 null（客户端水位已对齐）。 */
-  readonly frame: ConversationTopicFrame | null;
-}
-
-export interface ConversationResyncRequest {
-  base: { logEpoch: string; seq: number } | null;
-  forceSnapshot?: boolean;
-}
-
-export interface ConversationTopicPublisherOptions {
-  /** CLI 时钟（frame.sentAt / clockOffset 估计源）。 */
-  now?: () => number;
-  /** 事件保留窗（条），默认 PROTOCOL_V4_LIMITS.eventRetentionPerSession。 */
-  retention?: number;
-  /** 每订阅者 coalesce 后 op 上限；主要用于协议配置与边界测试。 */
-  subscriberBufferMaxOps?: number;
-  /** 每订阅者 logical deltas payload 的 UTF-8 byte 上限。 */
-  subscriberBufferMaxBytes?: number;
-}
-
-export interface ConversationSubscriberBufferLimits {
-  maxOps?: number;
-  /** 字节下限（默认 1MiB）；实际上限见 conversationSubscriberBufferByteLimit。 */
-  maxBytes?: number;
-  /** 当前 wire snapshot logical frame 的保守上界；缺省 0 = 只按下限裁决。 */
-  snapshotBytesUpperBound?: number;
-}
-
-export class ProjectionPayloadTooLargeError extends Error {
-  readonly reasonCode = "proto.payloadTooLarge";
-
-  constructor(readonly logicalBytes: number) {
-    super(
-      `conversation projection exceeds ${PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes} bytes`,
-    );
-    this.name = "ProjectionPayloadTooLargeError";
-  }
-}
-
-// 运行中正文必须给 TurnError/TurnComplete 的 bounded terminal patch 留出空间；否则正文
-// 恰好占满 16MiB 后，停止 turn 的终态本身也无法进入可传输 snapshot。
-export const PROJECTION_TERMINAL_RESERVE_BYTES = 64 * 1024;
-
-// row.actions 的 schema 只有 4 个 true 布尔值和一个短枚举；含 JSON key/父级包装不足
-// 128 bytes。批量 checkpoint 之间按 wire tail 的每行完整预留，保证延迟 materialize
-// 不会让 payload 上界低估。
-const HYDRATION_ACTION_BYTES_PER_WIRE_ROW = 128;
-const HYDRATION_EVENT_WIRE_OVERHEAD_BYTES = 64;
-// logical snapshot frame 中 sequence number 同时出现在 frame.toSeq 与 snapshot.seq。
-const HYDRATION_SEQUENCE_NUMBER_OCCURRENCES = 2;
-
-function hydrationSequenceNumberBytes(sequenceNumber: number): number {
-  return String(sequenceNumber).length * HYDRATION_SEQUENCE_NUMBER_OCCURRENCES;
-}
-
-export type ConversationSubscriberBufferResult =
-  | {
-      kind: "buffered";
-      deltas: ConversationDelta[];
-      encodedBytes: number;
-    }
-  | { kind: "overflow" };
-
-function nonNegativeHardBound(value: number | undefined, maximum: number, name: string): number {
-  const resolved = value ?? maximum;
-  if (!Number.isFinite(resolved) || resolved < 0) {
-    throw new RangeError(`${name} must be a non-negative finite number`);
-  }
-  return Math.min(Math.floor(resolved), maximum);
-}
-
-/**
- * subscriber buffer 的实际字节上限 = min(max(下限, snapshot 上界), 16MiB - 64KiB)（05 §3）。
- * 修复原因：overflow 的意义是用更小的 snapshot 换掉积压 delta；旧实现固定 1MiB，单条大
- * delta（如 3MiB bash 输出的 tool row upsert）就会降级为 snapshot，而 snapshot 因同一行仍在
- * 尾部窗口只会更大，还让客户端整份替换、丢掉已分页的历史行，turn navigator 随即全量重新
- * 分页——长 session 中每轮循环一次。外层钳位给帧外壳留出 assembly 余量，deltas 帧仍 <=16MiB。
- */
-export function conversationSubscriberBufferByteLimit(
-  floorBytes: number,
-  snapshotBytesUpperBound: number,
-): number {
-  return Math.min(
-    Math.max(floorBytes, snapshotBytesUpperBound),
-    PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes - PROJECTION_TERMINAL_RESERVE_BYTES,
-  );
-}
-
-/**
- * profile filter 后的 delta 进入此纯函数；先与现有 buffer 合并并 coalesce，
- * 再按 op/UTF-8 bytes 双限额裁决——限额必须真正执行，只存裸 delta[] 不裁决的话，
- * 慢订阅者会持续堆积并最终生成不可控的大帧。
- */
-export function appendConversationSubscriberBuffer(
-  current: readonly ConversationDelta[],
-  incoming: readonly ConversationDelta[],
-  limits: ConversationSubscriberBufferLimits = {},
-): ConversationSubscriberBufferResult {
-  const maxOps = nonNegativeHardBound(
-    limits.maxOps,
-    PROTOCOL_V4_LIMITS.subscriberBufferMaxOps,
-    "maxOps",
-  );
-  const maxBytes = nonNegativeHardBound(
-    limits.maxBytes,
-    PROTOCOL_V4_LIMITS.subscriberBufferMaxBytes,
-    "maxBytes",
-  );
-  const byteLimit = conversationSubscriberBufferByteLimit(
-    maxBytes,
-    limits.snapshotBytesUpperBound ?? 0,
-  );
-  const deltas = coalesceConversationDeltas([...current, ...incoming]);
-  if (deltas.length > maxOps) return { kind: "overflow" };
-  const encodedBytes = utf8JsonByteLength({ kind: "deltas", deltas });
-  if (encodedBytes > byteLimit) return { kind: "overflow" };
-  return { kind: "buffered", deltas, encodedBytes };
-}
+export {
+  coldHydrationJsonByteLength,
+  PROJECTION_TERMINAL_RESERVE_BYTES,
+  ProjectionPayloadTooLargeError,
+  appendConversationSubscriberBuffer,
+  conversationSubscriberBufferByteLimit,
+} from "./conversation-topic-protocol.js";
+export type {
+  ConversationSubscribeParams,
+  ConversationSubscribeResult,
+  ConversationSubscriberBufferLimits,
+  ConversationSubscriberBufferResult,
+  ConversationTopicPublisherOptions,
+} from "./conversation-topic-protocol.js";
 
 export class ConversationTopicPublisher {
   readonly topic: string;
@@ -295,8 +134,7 @@ export class ConversationTopicPublisher {
   setRuntimeInitialization(
     state: NonNullable<ConversationSnapshot["runtimeInitialization"]>,
   ): void {
-    this.projection.setRuntimeInitialization(state);
-    this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
+    this.applySeed(() => this.projection.setRuntimeInitialization(state));
     this.appendDeltas(this.currentSeq, [
       { op: "state.updated", patch: statePatchSchema.parse(this.getSnapshot()) },
     ]);
@@ -311,30 +149,32 @@ export class ConversationTopicPublisher {
     return this.projection.resolveStableForkCandidate(rowId);
   }
 
+  /** Общий шаг seed-инъекций: правка проекции + пересчёт верхней границы snapshot. */
+  private applySeed(apply: () => void): void {
+    apply();
+    this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
+  }
+
   /** config 种子注入：直改投影初值，不产 delta / 不进事件日志。语义见 ProductProjection.seedConfig。 */
   seedConfig(seed: SessionConfigSeed): void {
-    this.projection.seedConfig(seed);
-    this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
+    this.applySeed(() => this.projection.seedConfig(seed));
   }
 
   /** 分享导入提示是静态只读元数据，不进入 delta/revision；可在 hydration 后幂等补种。 */
   seedSharedContextImport(
     source: ConversationSnapshot["sharedContextImport"] | null | undefined,
   ): void {
-    this.projection.seedSharedContextImport(source);
-    this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
+    this.applySeed(() => this.projection.seedSharedContextImport(source));
   }
 
   /** usage 种子注入：冷恢复用持久化 token 水位覆盖 transcript 合成的 0 占位。 */
   seedUsage(seed: SessionUsageSeed): void {
-    this.projection.seedUsage(seed);
-    this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
+    this.applySeed(() => this.projection.seedUsage(seed));
   }
 
   /** cold hydration 的 store-verified subagent manifest，不产 delta。 */
   seedSubagents(seed: SessionSubagentsSeed): void {
-    this.projection.seedSubagents(seed);
-    this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
+    this.applySeed(() => this.projection.seedSubagents(seed));
   }
 
   /**
@@ -351,22 +191,7 @@ export class ConversationTopicPublisher {
     profile: DeliveryProfile,
     snapshot = this.projection.getSnapshot(),
   ): ConversationSnapshot {
-    const visibleRows = filterConversationRowsForProfile(snapshot.rows.window, profile);
-    const visibleSnapshot: ConversationSnapshot = {
-      ...snapshot,
-      rows: {
-        ...snapshot.rows,
-        window: visibleRows,
-        totalCount: visibleRows.length,
-        firstRowId: visibleRows[0]?.rowId ?? null,
-      },
-    };
-    const limit = PROTOCOL_V4_LIMITS.snapshotTailWindowRows;
-    if (visibleRows.length <= limit) return visibleSnapshot;
-    return {
-      ...visibleSnapshot,
-      rows: { ...visibleSnapshot.rows, window: visibleRows.slice(-limit) },
-    };
+    return projectSnapshotForProfile(snapshot, profile);
   }
 
   /**
@@ -406,49 +231,13 @@ export class ConversationTopicPublisher {
     envelope: CommandEnvelope,
     admission: { admissionSeq: number; admittedAt: number; queueItemId: string },
   ): number | null {
-    const raw = envelope.payload as {
-      text?: string;
-      displayText?: string;
-      attachments?: QueueItem["attachments"];
-      firstInput?: { text: string; attachments?: QueueItem["attachments"] };
-    };
-    const input = envelope.type === "createSession" ? raw.firstInput : raw;
-    if (
-      !input ||
-      (envelope.type !== "createSession" &&
-        envelope.type !== "sendText" &&
-        envelope.type !== "sendGoalCommand" &&
-        envelope.type !== "compact")
-    ) {
-      return null;
-    }
     const snapshot = this.projection.getSnapshot();
-    const queueItem: QueueItem = {
-      sourceCommandId: envelope.commandId,
-      queueItemId: admission.queueItemId,
-      clientId: envelope.clientId || "cli",
-      kind:
-        envelope.type === "compact"
-          ? "compact"
-          : envelope.type === "sendGoalCommand"
-            ? "sendGoalCommand"
-            : "sendText",
-      text:
-        envelope.type === "compact"
-          ? "/compact"
-          : envelope.type === "sendGoalCommand"
-            ? raw.displayText?.trim() || `/goal ${(input.text ?? "").trim()}`
-            : (input.text ?? ""),
-      attachments: input.attachments ?? [],
-      delivery: { requested: "queue", admitted: "queue" },
-      order: {
-        admissionSeq: admission.admissionSeq,
-        queuePosition: snapshot.queue.items.length,
-      },
-      steer: { state: "notRequested" },
-      dispatch: { state: "queued" },
-      admittedAt: admission.admittedAt,
-    };
+    const queueItem = buildAdmissionQueueItem({
+      admission,
+      envelope,
+      queueLength: snapshot.queue.items.length,
+    });
+    if (!queueItem) return null;
     const candidate: ConversationSnapshot = {
       ...snapshot,
       queue: { ...snapshot.queue, items: [...snapshot.queue.items, queueItem] },
@@ -457,16 +246,7 @@ export class ConversationTopicPublisher {
   }
 
   private measureWireSnapshotBytes(snapshot: ConversationSnapshot): number {
-    // subscriptionId/时间/seq 使用本 publisher 可产生的最长常规表示，确保测量不是只算 payload。
-    const frame: ConversationTopicFrame = {
-      topic: this.topic,
-      subscriptionId: `sub-${this.logEpoch}-${Number.MAX_SAFE_INTEGER}`,
-      fromSeq: 0,
-      toSeq: snapshot.seq,
-      sentAt: Number.MAX_SAFE_INTEGER,
-      payload: { kind: "snapshot", snapshot },
-    };
-    return utf8JsonByteLength(frame);
+    return utf8JsonByteLength(buildMeasurementFrame(this.topic, this.logEpoch, snapshot));
   }
 
   /**
@@ -480,22 +260,13 @@ export class ConversationTopicPublisher {
     deliveryProfile: DeliveryProfileName = "replayable",
   ): V4ConversationRowsRangeResult {
     const snapshot = this.projection.getSnapshot();
-    const limit = Math.max(1, Math.min(params.limit, PROTOCOL_V4_LIMITS.rowsRangeMaxLimit));
-    const visibleRows = filterConversationRowsForProfile(
-      snapshot.rows.window,
-      DELIVERY_PROFILES[deliveryProfile],
-    );
-    const eligible =
-      params.beforeRowId === undefined
-        ? visibleRows
-        : visibleRows.filter((row) => row.rowId < (params.beforeRowId as number));
-    const rows = eligible.slice(-limit);
+    const { rows, hasMore } = sliceRowsRange(snapshot.rows.window, params, deliveryProfile);
     return {
       rows,
       atSeq: snapshot.seq,
       atRevision: snapshot.revision,
       atLogEpoch: this.logEpoch,
-      hasMore: eligible.length > rows.length,
+      hasMore,
     };
   }
 
@@ -506,17 +277,8 @@ export class ConversationTopicPublisher {
    */
   getPlans(): V4ConversationPlansResult {
     const snapshot = this.projection.getSnapshot();
-    const plans = snapshot.rows.window
-      .filter(
-        (row): row is ToolCallRow =>
-          row.kind === "toolCall" &&
-          row.toolName === "ExitPlanMode" &&
-          TERMINAL_PLAN_STATUSES.has(row.status) &&
-          hasPlanMarkdown(row),
-      )
-      .toSorted((left, right) => right.rowId - left.rowId);
     return {
-      plans,
+      plans: collectTerminalPlans(snapshot.rows.window),
       atSeq: snapshot.seq,
       atLogEpoch: this.logEpoch,
     };

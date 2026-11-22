@@ -1,6 +1,7 @@
 import { HookEventName, TurnMachineImpl, createMessageId, createPartId } from "../deps.js";
 import type { MessageId, Model, TraceContext } from "../deps.js";
 import { emptyTokenUsageInfo, toTokenUsageInfo } from "../helpers/index.js";
+import { calculateRuntimeModelCost } from "../helpers/model-cost.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { drainInlineGuideForNextRequest } from "./turn-guide-drain.js";
@@ -10,9 +11,13 @@ import {
   commitAssistantToTurnRequest,
   commitTurnRequestEntries,
 } from "./turn-output-token-continuation.js";
-import { createRuntimeAssistantEntry } from "../../agent/message-history.js";
+import {
+  createRuntimeAssistantEntry,
+  systemReminderAttachmentEntry,
+} from "../../agent/message-history.js";
+import { runAgentAutoRepairGate } from "../auto-repair-loop/index.js";
 
-export interface AssistantPersistenceAnchor {
+interface AssistantPersistenceAnchor {
   latestAssistantMessageId: AgentRuntimeInternal["latestAssistantMessageId"];
   latestAssistantTurnId: AgentRuntimeInternal["latestAssistantTurnId"];
   latestConversationMessageId: AgentRuntimeInternal["latestConversationMessageId"];
@@ -76,6 +81,13 @@ export async function persistCompletedAssistantStep(
     return false;
   }
   const persistedTokens = toTokenUsageInfo(options.result.usage);
+  const cost = calculateRuntimeModelCost(model.modelId, persistedTokens);
+  const stepDiagnostics = state.lastStepDiagnostics
+    ? {
+        ...state.lastStepDiagnostics,
+        stateTransitions: [...(state.turnMachine.state.stateTransitions ?? [])],
+      }
+    : undefined;
   await runtime.persistPart(
     {
       id: createPartId(),
@@ -83,8 +95,10 @@ export async function persistCompletedAssistantStep(
       messageID: options.assistantMessageId,
       type: "step-finish",
       reason: options.result.finishReason,
-      cost: 0,
+      ...(stepDiagnostics?.rawFinishReason ? { rawReason: stepDiagnostics.rawFinishReason } : {}),
+      ...(cost !== undefined ? { cost } : {}),
       tokens: persistedTokens,
+      ...(stepDiagnostics ? { stepDiagnostics } : {}),
     },
     options.modelTraceContext,
   );
@@ -95,6 +109,11 @@ export async function persistCompletedAssistantStep(
     {
       completed: Date.now(),
       finish: options.result.finishReason,
+      finishReason: options.result.finishReason,
+      ...(stepDiagnostics?.rawFinishReason
+        ? { rawFinishReason: stepDiagnostics.rawFinishReason }
+        : {}),
+      ...(stepDiagnostics ? { stepDiagnostics } : {}),
       tokens: persistedTokens,
     },
     options.modelTraceContext,
@@ -116,6 +135,7 @@ export async function persistOutputTokenLimitErrorCarrier(
   const messageId = createMessageId();
   const createdAt = Date.now();
   const tokens = emptyTokenUsageInfo();
+  const cost = calculateRuntimeModelCost(options.model.modelId, tokens);
 
   // partial 与终态 error 共用 durable assistant 时，Compact 无法同时重放
   // provider partial 并排除 transcript-only error。两者拆成独立消息后沿用既有过滤边界即可。
@@ -134,7 +154,7 @@ export async function persistOutputTokenLimitErrorCarrier(
       messageID: messageId,
       type: "step-finish",
       reason: options.finishReason,
-      cost: 0,
+      ...(cost !== undefined ? { cost } : {}),
       tokens,
     },
     options.modelTraceContext,
@@ -191,6 +211,31 @@ export async function finishModelStepWithoutToolCalls(
       state.turnMachine.complete(state.modelResponse, "success"),
     );
     return "break";
+  }
+  // Этап 4.5b: `enableAutoRepairLoop` — единственная точка, где решение «ход
+  // завершён» ещё можно отменить. Проверки идут после персиста assistant, но до
+  // завершения автомата, поэтому блокирующий сигнал продолжает тот же turn.
+  // При выключенном флаге гейт выходит сразу и ничего не запускает.
+  const repairGate = await runAgentAutoRepairGate({
+    enabled: this.config.enableAutoRepairLoop === true,
+    executionPort: this.executionPort,
+    workingDirectory: this.config.workingDirectory,
+    maxIterations: this.config.autoRepairLoopLimits?.maxIterations,
+    runsSoFar: state.autoRepairGateRuns ?? 0,
+    logger: this.logger
+      ? {
+          info: (message, payload) => this.logger?.info(message, payload),
+          warn: (message, payload) => this.logger?.warn(message, payload),
+        }
+      : undefined,
+  });
+  state.autoRepairGateRuns = repairGate.runsUsed;
+  if (repairGate.kind === "repair") {
+    commitTurnRequestEntries(this, state.turnRequestState, [
+      systemReminderAttachmentEntry("diagnostics", repairGate.report),
+    ]);
+    state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
+    return "continue";
   }
   if (await drainInlineGuideForNextRequest(this, state)) {
     // 正常 text-only 是可续跑边界：assistant 已持久化，guide 以 user role 进入历史，

@@ -453,6 +453,11 @@ function fakeModelAdapter(createModel: (input?: unknown) => Model = fakeModel) {
   return {
     addStatusSink() {},
     createModel,
+    // 修复依据：b5974935 добавил ownedModelAdapter?.dispose() в create-app.close()
+    // (bootstrap/src/app/create-app.ts:1288), и реальный AiSdkModelAdapter.dispose()
+    // существует (adapters/src/model/runner.ts:138). Тестовый двойник должен повторять
+    // контракт адаптера, иначе close() падает TypeError.
+    async dispose() {},
     setModelIoFullRetentionEnabled() {},
   } as never;
 }

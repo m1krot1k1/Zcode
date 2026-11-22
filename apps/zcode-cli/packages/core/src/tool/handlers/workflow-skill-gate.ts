@@ -22,7 +22,7 @@ import type { ToolHandlerFailure, ToolInputResolutionContext } from "../types.js
 export const WORKFLOW_SKILL_NOT_LOADED_CODE = 428;
 
 /** 门在场时的判据；单独导出给探针实现与测试复用。 */
-export function isDynamicWorkflowSkillLoaded(context: ToolInputResolutionContext): boolean {
+function isDynamicWorkflowSkillLoaded(context: ToolInputResolutionContext): boolean {
   return context.hasLoadedSkill?.(DYNAMIC_WORKFLOW_SKILL_NAME) ?? true;
 }
 

@@ -42,7 +42,7 @@ export interface MediaBudgetProjection {
   totalMediaBytes: number;
 }
 
-export interface ModelMediaPolicyProjection {
+interface ModelMediaPolicyProjection {
   capabilityProjection: MediaCapabilityProjection;
   mediaBudgetProjection: MediaBudgetProjection;
   messages: ModelInputMessage[];

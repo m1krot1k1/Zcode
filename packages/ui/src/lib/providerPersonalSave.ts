@@ -1,5 +1,23 @@
 import type { IProviderSettingsService, ProviderSettingsView } from "@zcode/services";
-import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
+import {
+  getProviderFormApiKey,
+  type ProviderSettingsFormProvider,
+} from "@/lib/providerSettingsFormTypes.js";
+
+/**
+ * 一次保存是否改变了连接凭据或端点。
+ * 只有 Key/Base URL 变化才需要重新发现模型；改名、启停等保存不应触发网络请求。
+ */
+export function hasProviderConnectionChange(
+  previous: Pick<ProviderSettingsFormProvider, "config"> | undefined,
+  next: Pick<ProviderSettingsFormProvider, "config">,
+): boolean {
+  const previousApiKey = previous ? getProviderFormApiKey(previous) : "";
+  const nextApiKey = getProviderFormApiKey(next);
+  const previousBaseUrl = previous?.config.api?.baseUrl?.trim() ?? "";
+  const nextBaseUrl = next.config.api?.baseUrl?.trim() ?? "";
+  return previousApiKey !== nextApiKey || previousBaseUrl !== nextBaseUrl;
+}
 
 /**
  * 保存设置页明确维护的稀疏 Personal Overlay。

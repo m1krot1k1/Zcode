@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 远程连接向导的多个步骤暂集中在同一文件，避免拆分时扩大 SSH/Docker/WSL 回归面。 */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AppSettings,

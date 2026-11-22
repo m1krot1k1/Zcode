@@ -13,7 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { memo, useCallback, useMemo, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   TID_V4_QUEUE,
   TID_V4_QUEUE_ITEM,
@@ -24,15 +24,18 @@ import {
   TID_V4_QUEUE_RESUME,
   testId,
 } from "@zcode/shared/test-ids";
-import type { QueueState } from "@zcode/shared/zcode-protocol-v4";
+import type { AttachmentRef, QueueState } from "@zcode/shared/zcode-protocol-v4";
 import { ArrowUpFromLine, GripVertical, PencilIcon, Trash2Icon } from "lucide-react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
+import { Attachment, AttachmentPreview } from "@/components/ai-elements/attachments.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { logger } from "@/logger.js";
 import { runUserAction, runUserActionAsync } from "@/lib/userActionTelemetry.js";
+import type { ConversationAttachmentReadParams } from "@/v4/transport.js";
 
-export interface ConversationQueuePanelProps {
+interface ConversationQueuePanelProps {
   queue: QueueState;
   /** 删除队列项（deleteQueueItem command）。 */
   onDeleteItem?: (queueItemId: string) => void;
@@ -46,11 +49,92 @@ export interface ConversationQueuePanelProps {
   onMoveItem?: (queueItemId: string, beforeQueueItemId: string | null) => void;
   /** 暂停队列恢复：CLI setAutoDrain(true)，idle 立即消费、busy 仅武装。 */
   onResume?: () => Promise<void> | void;
+  /** 当前会话；image/video 缩略图用它向已有 attachment/read 证明归属。 */
+  sessionId?: string | null;
+  readAttachment?: (
+    params: ConversationAttachmentReadParams,
+  ) => Promise<{ bytes: Uint8Array; mediaType: string } | { url: string; mediaType: string }>;
+}
+
+function isQueueThumbnailMime(mime: string): boolean {
+  const normalized = mime.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return normalized.startsWith("image/") || normalized.startsWith("video/");
+}
+
+function QueueMediaThumb({
+  attachment,
+  readAttachment,
+  sessionId,
+}: {
+  attachment: AttachmentRef;
+  readAttachment: NonNullable<ConversationQueuePanelProps["readAttachment"]>;
+  sessionId: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const ref = attachment.previewRef ?? attachment.ref;
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    const controller = new AbortController();
+    void readAttachment({
+      sessionId,
+      ref,
+      signal: controller.signal,
+      ...(attachment.mime.toLowerCase().startsWith("video/") ? { mediaType: attachment.mime } : {}),
+    })
+      .then((result) => {
+        if (cancelled) return;
+        if ("url" in result) {
+          setUrl(result.url);
+          return;
+        }
+        objectUrl = URL.createObjectURL(
+          new Blob([Uint8Array.from(result.bytes)], { type: result.mediaType }),
+        );
+        setUrl(objectUrl);
+      })
+      .catch((error: unknown) => {
+        if (cancelled || controller.signal.aborted) return;
+        setFailed(true);
+        logger.warn("[v4-queue] 队列缩略图读取失败", error);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [attachment.mime, readAttachment, ref, sessionId]);
+
+  if (failed || !url) {
+    return (
+      <span className="max-w-24 truncate text-ui-sm text-foreground-subtle">{attachment.fileName}</span>
+    );
+  }
+
+  return (
+    <Attachment
+      variant="grid"
+      data-testid="v4-queue-attachment-preview"
+      data-queue-attachment-ref={ref}
+      className="relative size-12 shrink-0 overflow-hidden rounded-lg bg-surface"
+      data={{
+        id: ref,
+        type: "file",
+        filename: attachment.fileName,
+        mediaType: attachment.mime,
+        url,
+      }}
+    >
+      <AttachmentPreview className="size-full rounded-none" />
+    </Attachment>
+  );
 }
 
 type QueueItem = QueueState["items"][number];
 
-export interface V4QueueReorderAnchor {
+interface V4QueueReorderAnchor {
   beforeQueueItemId: string | null;
   queueItemId: string;
 }
@@ -122,6 +206,8 @@ interface QueueRowProps {
   onEditItem?: (queueItemId: string) => Promise<void> | void;
   editPending: boolean;
   onSendNow?: (queueItemId: string) => void;
+  sessionId?: string | null;
+  readAttachment?: ConversationQueuePanelProps["readAttachment"];
 }
 
 const QueueRow = memo(function QueueRow({
@@ -133,6 +219,8 @@ const QueueRow = memo(function QueueRow({
   onEditItem,
   onSendNow,
   editPending,
+  sessionId,
+  readAttachment,
 }: QueueRowProps) {
   const dispatchLocked = item.dispatch.state !== "queued";
   const rowLocked = dispatchLocked || editPending;
@@ -141,7 +229,14 @@ const QueueRow = memo(function QueueRow({
     ...parsePromptConversationSelections(item.text),
     ...(item.conversationQuotes ? { references: item.conversationQuotes } : {}),
   };
-  const attachmentNames = item.attachments.map((attachment) =>
+  const canPreviewMedia = Boolean(sessionId && readAttachment);
+  const namedAttachments = item.attachments.filter(
+    (attachment) => !canPreviewMedia || !isQueueThumbnailMime(attachment.mime),
+  );
+  const mediaAttachments = item.attachments.filter(
+    (attachment) => canPreviewMedia && isQueueThumbnailMime(attachment.mime),
+  );
+  const attachmentNames = namedAttachments.map((attachment) =>
     attachment.sourceKind === "topic-history"
       ? intl.formatMessage(
           { id: "chat.attachments.topicHistory" },
@@ -231,7 +326,7 @@ const QueueRow = memo(function QueueRow({
           {parsedInput.references.length ? (
             <ConversationSelectionReferenceChip references={parsedInput.references} />
           ) : null}
-          {item.attachments.length > 0 ? (
+          {attachmentNames.length > 0 ? (
             <span
               className="truncate text-ui-sm text-foreground-subtle"
               title={attachmentNames.join(", ")}
@@ -241,6 +336,18 @@ const QueueRow = memo(function QueueRow({
           ) : null}
         </span>
       </span>
+      {mediaAttachments.length > 0 && sessionId && readAttachment ? (
+        <span className="flex shrink-0 flex-wrap gap-1">
+          {mediaAttachments.map((attachment) => (
+            <QueueMediaThumb
+              key={attachment.previewRef ?? attachment.ref}
+              attachment={attachment}
+              readAttachment={readAttachment}
+              sessionId={sessionId}
+            />
+          ))}
+        </span>
+      ) : null}
       {onSendNow ? (
         <Button
           type="button"
@@ -315,6 +422,8 @@ function ConversationQueuePanelImpl({
   onSendNow,
   onMoveItem,
   onResume,
+  sessionId,
+  readAttachment,
 }: ConversationQueuePanelProps) {
   const { intl } = useZCodeIntl();
   const [resumePending, setResumePending] = useState(false);
@@ -415,6 +524,8 @@ function ConversationQueuePanelImpl({
                 onEditItem={onEditItem}
                 onSendNow={onSendNow}
                 editPending={pendingEditQueueItemId === item.queueItemId}
+                sessionId={sessionId}
+                readAttachment={readAttachment}
               />
             ))}
           </ul>

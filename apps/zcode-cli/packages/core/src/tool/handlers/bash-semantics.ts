@@ -9,54 +9,10 @@ import {
 import {
   evaluateBashReadonlyPolicy,
   hasKnownBashWriteOption,
-  isSedInPlaceOption,
 } from "./bash-readonly-policy.js";
-
-export interface BashCommandClassification {
-  isSearch: boolean;
-  isRead: boolean;
-  isList: boolean;
-}
 
 export type BashPermissionMatcher = (pattern: string) => boolean;
 
-const EMPTY_CLASSIFICATION: BashCommandClassification = {
-  isList: false,
-  isRead: false,
-  isSearch: false,
-};
-
-const BASH_SEARCH_COMMANDS = new Set([
-  "ag",
-  "ack",
-  "egrep",
-  "fgrep",
-  "grep",
-  "locate",
-  "rg",
-  "which",
-  "whereis",
-]);
-const BASH_READ_COMMANDS = new Set([
-  "awk",
-  "cat",
-  "cut",
-  "file",
-  "head",
-  "jq",
-  "less",
-  "more",
-  "sed",
-  "sort",
-  "stat",
-  "strings",
-  "tail",
-  "tr",
-  "uniq",
-  "wc",
-  "yq",
-]);
-const BASH_LIST_COMMANDS = new Set(["du", "find", "ls", "tree"]);
 const BASH_SEMANTIC_NEUTRAL_COMMANDS = new Set(["", ":", "echo", "false", "printf", "true"]);
 const BASH_SILENT_COMMANDS = new Set([
   "cd",
@@ -82,52 +38,6 @@ const SEMANTIC_NON_ERROR_MESSAGES = new Set([
 ]);
 const SEMANTIC_NO_MATCH_COMMANDS = new Set(["egrep", "fgrep", "grep", "rg"]);
 const CLAUDE_CODE_HINT_LINE_RE = /^[ \t]*<claude-code-hint\s+([^>]*?)\s*\/>[ \t]*$/gm;
-
-export function isSearchOrReadBashCommand(command: string): BashCommandClassification {
-  const analysis = analyzeBashCommand(command);
-  if (analysis.hasParseErrors || analysis.hasUnsupportedSyntax || analysis.hasDynamicWords) {
-    return { ...EMPTY_CLASSIFICATION };
-  }
-  if (analysis.commands.length === 0) return { ...EMPTY_CLASSIFICATION };
-
-  let hasList = false;
-  let hasNonNeutralCommand = false;
-  let hasRead = false;
-  let hasSearch = false;
-
-  for (const commandPart of analysis.commands) {
-    if (commandPart.hasAssignmentPrefix) return { ...EMPTY_CLASSIFICATION };
-    if (hasKnownBashWriteOption(commandPart)) return { ...EMPTY_CLASSIFICATION };
-
-    const commandName = commandPart.name;
-    if (BASH_SEMANTIC_NEUTRAL_COMMANDS.has(commandName)) continue;
-
-    hasNonNeutralCommand = true;
-    const isSearch = BASH_SEARCH_COMMANDS.has(commandName);
-    const isRead = BASH_READ_COMMANDS.has(commandName);
-    const isList = BASH_LIST_COMMANDS.has(commandName);
-    if (!isSearch && !isRead && !isList) return { ...EMPTY_CLASSIFICATION };
-
-    hasSearch ||= isSearch;
-    hasRead ||= isRead;
-    hasList ||= isList;
-  }
-
-  if (!hasNonNeutralCommand) return { ...EMPTY_CLASSIFICATION };
-  return { isList: hasList, isRead: hasRead, isSearch: hasSearch };
-}
-
-export function isBashReadOnlyCommand(command: string): boolean {
-  return isRuntimeReadOnlyBashCommand(command);
-}
-
-export function isSimpleReadOnlyBashCommand(command: string): boolean {
-  const analysis = analyzeBashCommand(command);
-  if (!isBashCommandPermissionSafe(analysis)) return false;
-  if (analysis.commands.length !== 1) return false;
-  const commandPart = analysis.commands[0]!;
-  return commandPart.argv.length > 0 && evaluateBashReadonlyPolicy(commandPart) === true;
-}
 
 export function isRuntimeReadOnlyBashCommand(
   command: string,
@@ -177,18 +87,10 @@ export function prepareBashPermissionMatcherForCommand(
   return (pattern) => matchesBashPermissionPattern(pattern, normalizedCommand);
 }
 
-export function hasBestEffortWritePattern(command: string): boolean {
+function _hasBestEffortWritePattern(command: string): boolean {
   const analysis = analyzeBashCommand(command);
   if (analysis.hasParseErrors) return false;
   return analysis.commands.some(hasKnownBashWriteOption);
-}
-
-export function isSedInPlaceBashCommand(command: string): boolean {
-  const analysis = analyzeBashCommand(command);
-  if (analysis.hasParseErrors) return false;
-  return analysis.commands.some(
-    (commandPart) => commandPart.name === "sed" && commandPart.argv.some(isSedInPlaceOption),
-  );
 }
 
 export function isSilentBashCommand(command: string): boolean {
@@ -213,13 +115,13 @@ export function isSilentBashCommand(command: string): boolean {
   return hasNonFallbackCommand;
 }
 
-export function extractBashSearchText(output: { stderr?: string; stdout?: string }): string {
+function _extractBashSearchText(output: { stderr?: string; stdout?: string }): string {
   const stdout = output.stdout ?? "";
   const stderr = output.stderr ?? "";
   return stderr ? `${stdout}\n${stderr}` : stdout;
 }
 
-export function isBashResultTruncated(output: { stderr?: string; stdout?: string }): boolean {
+function _isBashResultTruncated(output: { stderr?: string; stdout?: string }): boolean {
   return lineCount(output.stdout ?? "") > 4 || lineCount(output.stderr ?? "") > 4;
 }
 
@@ -248,7 +150,7 @@ export function interpretBashReturnCode(
   return undefined;
 }
 
-export function isSemanticNonErrorInterpretation(message: string | undefined): boolean {
+function isSemanticNonErrorInterpretation(message: string | undefined): boolean {
   return message !== undefined && SEMANTIC_NON_ERROR_MESSAGES.has(message);
 }
 

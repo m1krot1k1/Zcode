@@ -14,9 +14,7 @@
     "test": "node scripts/check-sdk.mjs",
     "typecheck": "node scripts/check-sdk.mjs"
   },
-  "dependencies": {
-    "@zcode/zcode-cua": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"

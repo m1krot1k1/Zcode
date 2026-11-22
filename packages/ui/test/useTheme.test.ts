@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyTheme } from "@/useTheme.js";
+import { applyTheme, useTheme } from "@/useTheme.js";
 
 beforeEach(() => {
   document.head.innerHTML = "";
@@ -16,6 +18,34 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("useTheme fallback", () => {
+  it("returns the default theme and applies changes outside StoreProvider", async () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    let result: ReturnType<typeof useTheme> | undefined;
+
+    function Probe() {
+      result = useTheme();
+      return null;
+    }
+
+    await act(async () => {
+      root.render(createElement(Probe));
+    });
+    expect(result?.theme).toBe("zai-dark");
+    expect(typeof result?.setTheme).toBe("function");
+
+    await act(async () => {
+      result?.setTheme("light");
+    });
+    expect(document.documentElement.classList.contains("theme-zai-light")).toBe(true);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
 });
 
 describe("applyTheme", () => {

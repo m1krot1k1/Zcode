@@ -1,10 +1,4 @@
-import type {
-  McpAppCspRelaxations,
-  McpAppsResourcePermission,
-  PluginSandboxHandle,
-  PluginSandboxPlatformPort,
-  PluginSandboxRegisterInput,
-} from "@zcode/shared/mcp-apps";
+import type { McpAppCspRelaxations, McpAppsResourcePermission, PluginSandboxHandle, PluginSandboxRegisterInput } from "@zcode/shared/mcp-apps";
 import { createHash } from "node:crypto";
 
 /** privileged scheme 与 URL / partition 派生规则。 */
@@ -67,12 +61,7 @@ export interface PluginSandboxRegistryPort {
   /** guest 有输入事件时由 guest 策略调用；token TTL 5 秒。 */
   markUserGesture(sandboxId: string): void;
   consumeUserGesture(sandboxId: string): boolean;
-}
-
-/** renderer 侧端口以 `IPlatformService.pluginSandbox` 挂载；类型定义在 shared，这里只保留别名。 */
-export type IPluginSandboxPlatform = PluginSandboxPlatformPort;
-
-/** 注册表容量已满且全部是活实例；renderer 收到后停在错误态并提示，不淘汰别的卡片。 */
+}/** 注册表容量已满且全部是活实例；renderer 收到后停在错误态并提示，不淘汰别的卡片。 */
 export class PluginSandboxQuotaError extends Error {
   readonly code = "sandbox_quota" as const;
   constructor(maxEntries: number) {

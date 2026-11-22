@@ -30,14 +30,16 @@ type Scope<T> = ReturnType<typeof createSubagentConfigScope<T>>;
 async function listDocuments(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true }).catch(
     (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return [];
+      // Root 可在目录迁移期间短暂成为普通文件；不保留旧快照，也不把它当作自定义 agent。
+      if (["ENOENT", "ENOTDIR"].includes(error.code ?? "")) return [];
       throw error;
     },
   );
   // 自定义 profile 的发现范围与 depth:0 监听一致，避免深层定义只在重扫时变化。
-  return entries
+  const paths = entries
     .filter((entry) => entry.isFile() && /\.(md|markdown)$/iu.test(entry.name))
     .map((entry) => join(root, entry.name));
+  return paths;
 }
 async function loadDocuments(
   root: string,
@@ -172,12 +174,12 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       // 新 workspace 复用共享缓存；既有 workspace 的显式重启才重建监听并全量读取。
       const reload = !workspace || workspaces.has(key(workspace));
       if (!user || user.path !== userPath || reload) {
-        user?.scope.dispose();
+        await user?.scope.dispose();
         user = { path: userPath, scope: documentScope(userPath, "user") };
         initializing.push(user.scope);
       }
       if (!state || state.path !== statePath || reload) {
-        state?.scope.dispose();
+        await state?.scope.dispose();
         state = {
           path: statePath,
           scope: createSubagentConfigScope({
@@ -196,7 +198,7 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       }
       if (workspace) {
         const workspaceKey = key(workspace);
-        workspaces.get(workspaceKey)?.dispose();
+        await workspaces.get(workspaceKey)?.dispose();
         const project = documentScope(join(workspace.workspacePath, ".zcode", "agents"), "project");
         workspaces.set(workspaceKey, project);
         initializing.push(project);
@@ -218,11 +220,15 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       if (!snapshot) throw new Error("Subagent runtime configuration is not prepared");
       return structuredClone(snapshot);
     },
-    dispose() {
+    async dispose() {
       disposed = true;
-      user?.scope.dispose();
-      state?.scope.dispose();
-      for (const scope of workspaces.values()) scope.dispose();
+      await Promise.all([
+        user?.scope.dispose(),
+        state?.scope.dispose(),
+        ...[...workspaces.values()].map((scope) => scope.dispose()),
+      ]);
+      user = undefined;
+      state = undefined;
       workspaces.clear();
       snapshots.clear();
     },

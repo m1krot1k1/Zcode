@@ -1,5 +1,6 @@
 import {
   CompactPhase,
+  DEFAULT_MICROCOMPACT_GROUP_QUANTUM,
   SessionEventType,
   buildDefaultMicrocompactThreshold,
   getAutoCompactThreshold,
@@ -106,11 +107,16 @@ function resolveLocalMicrocompactConfig(
   config: AutoCompactPolicyConfig,
 ): LocalMicrocompactPolicyConfig {
   const fullCompactThreshold = getAutoCompactThreshold(config);
+  const softCap =
+    config.microcompact?.workingContextSoftCapTokens ?? config.workingContextCeilingTokens;
   return {
     ...config.microcompact,
-    enabled: config.microcompact?.enabled === true,
+    // Observation masking — базовая гигиена контекста, а не опциональная роскошь:
+    // по умолчанию включена, но explicit false остаётся выключателем.
+    enabled: config.microcompact?.enabled !== false,
+    groupQuantum: config.microcompact?.groupQuantum ?? DEFAULT_MICROCOMPACT_GROUP_QUANTUM,
     thresholdTokens:
       config.microcompact?.thresholdTokens ??
-      buildDefaultMicrocompactThreshold(fullCompactThreshold),
+      buildDefaultMicrocompactThreshold(fullCompactThreshold, softCap),
   };
 }

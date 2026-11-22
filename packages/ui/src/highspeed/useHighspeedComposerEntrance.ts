@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 /** Highspeed 输入框入场方式：activation 播放激活动效，restore 直接呈现稳定态。 */
-export type HighspeedComposerEntrance = "activation" | "restore";
+type HighspeedComposerEntrance = "activation" | "restore";
 
 function resolveEntrance(
   cardId: string | null,

@@ -43,6 +43,7 @@ import {
   cells,
   type CellCoordinate,
 } from "./helpers/fault-matrix-cells.js";
+import { FAULT_HANG_STREAM_IDLE_TIMEOUT_MS } from "./helpers/fault-provider-model.js";
 import { FAULT_MATRIX_SHAPES } from "./helpers/fault-matrix-scripts.js";
 
 /** 并发闸门行的服务器并发上限 C（< 天花板 8，让 AIMD 有东西可收敛）。 */
@@ -54,13 +55,16 @@ const EVERY_K = 3;
 async function runCell(
   server: FakeProviderServer,
   cell: CellCoordinate,
-  extra: { turns?: number } = {},
+  extra: { streamIdleTimeoutMs?: number; turns?: number } = {},
 ): Promise<FaultCellObservation> {
   const observation = await runFaultCell({
     server,
     shape: cell.shape,
     apiFormat: cell.apiFormat ?? "anthropic-messages",
     ...(extra.turns === undefined ? {} : { turns: extra.turns }),
+    ...(extra.streamIdleTimeoutMs === undefined
+      ? {}
+      : { streamIdleTimeoutMs: extra.streamIdleTimeoutMs }),
   });
   await pause(POST_SETTLE_GRACE_MS);
   return observation;
@@ -276,6 +280,8 @@ interface EveryKthRow {
   verdict: Verdict;
   /** 缺省 everyKth(EVERY_K, verdict)；行可以给自己的程序。 */
   program?: (cell: CellCoordinate) => FaultProgram;
+  /** 该行的流空闲看门狗（真实毫秒）；只有 hang 行需要，缺省关闭（见 fault-provider-model.ts）。 */
+  streamIdleTimeoutMs?: number;
   quick: CellCoordinate[];
   fullOnly: CellCoordinate[];
 }
@@ -298,6 +304,8 @@ const EVERY_KTH_ROWS: EveryKthRow[] = [
       const parallelism = FAULT_MATRIX_SHAPES[cell.shape].parallelism;
       return (request) => (request.ordinal <= parallelism ? { kind: "hang" } : SERVE);
     },
+    // 本行的故障判决就是「客户端流空闲超时」，所以只有这里打开看门狗。
+    streamIdleTimeoutMs: FAULT_HANG_STREAM_IDLE_TIMEOUT_MS,
     quick: [],
     fullOnly: [{ shape: "W4" }],
   },
@@ -321,7 +329,11 @@ for (const row of EVERY_KTH_ROWS) {
           program: row.program?.(cell) ?? everyKth(EVERY_K, row.verdict),
         });
         try {
-          const obs = await runCell(server, cell);
+          const obs = await runCell(server, cell, {
+            ...(row.streamIdleTimeoutMs === undefined
+              ? {}
+              : { streamIdleTimeoutMs: row.streamIdleTimeoutMs }),
+          });
           assertCommonInvariants(obs, { status: "completed", server });
           const faulted = verdictCount(server, (verdict) => verdict.kind === row.verdict.kind);
           expect(faulted).toBeGreaterThan(0);

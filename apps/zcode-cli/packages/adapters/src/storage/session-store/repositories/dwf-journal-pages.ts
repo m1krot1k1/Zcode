@@ -26,7 +26,7 @@ export interface DwfEventPageQuery {
 }
 
 /** 进页的一行（载荷原文，解码归调用方）。 */
-export interface DwfEventPageRow {
+interface DwfEventPageRow {
   payload_json: string;
   sequence: number;
   time_created: number;
@@ -37,7 +37,7 @@ export interface DwfEventPageRow {
  * 在 `run_id = ?` 之外再加的筛选（如看板的 `type = 'report' and json_extract(...) = ?`）。
  * `sql` 以 ` and ` 开头；参数按出现顺序绑定。
  */
-export interface DwfEventPageFilter {
+interface DwfEventPageFilter {
   params: readonly (string | number)[];
   sql: string;
 }

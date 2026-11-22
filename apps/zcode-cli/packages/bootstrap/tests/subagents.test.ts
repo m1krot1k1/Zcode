@@ -152,6 +152,42 @@ description: 项目级中文审查 agent
     }
   });
 
+  it("ignores .cursor agents and loads only native .zcode profiles", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-cursor-agents-"));
+    const storageRoot = join(root, "home");
+    const workingDirectory = join(root, "workspace");
+    try {
+      await mkdir(join(workingDirectory, ".zcode", "agents"), { recursive: true });
+      await mkdir(join(workingDirectory, ".cursor", "agents"), { recursive: true });
+      await writeFile(
+        join(workingDirectory, ".zcode", "agents", "reviewer.md"),
+        "---\nname: reviewer\ndescription: Native review\n---\nUse native policy.",
+      );
+      await writeFile(
+        join(workingDirectory, ".cursor", "agents", "reviewer.md"),
+        "---\nname: reviewer\ndescription: Cursor review\n---\nCursor instructions.",
+      );
+      await writeFile(
+        join(workingDirectory, ".cursor", "agents", "researcher.md"),
+        "---\nname: researcher\ndescription: Cursor research\n---\nResearch carefully.",
+      );
+      await writeFile(
+        join(workingDirectory, ".cursor", "agents", "malformed.md"),
+        "---\nname: malformed\n---\nThis profile has no description.",
+      );
+
+      const result = await loadZCodeAgentProfiles({ storageRoot, workingDirectory });
+
+      expect(result.profiles.map(({ name, description }) => [name, description])).toEqual([
+        ["reviewer", "Native review"],
+      ]);
+      expect(result.profiles.every((profile) => profile.source === "project")).toBe(true);
+      expect(result.diagnostics).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("ignores project Markdown permissionMode because project profiles are untrusted", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-subagents-project-permission-"));
     const storageRoot = join(root, "home");
@@ -276,6 +312,16 @@ description: 用户级运行 agent
               modelId: "gpt-5.4",
               options: { reasoningLevel: "high" },
             },
+            // Router-роли: override допустим и применяется к start/orchestrator.
+            start: {
+              providerId: "custom-openai",
+              modelId: "glm-5.2",
+            },
+            orchestrator: {
+              providerId: "custom-openai",
+              modelId: "glm-5.2",
+              options: { reasoningLevel: "low" },
+            },
             ignored: {
               providerId: "custom-openai",
               modelId: "ignored",
@@ -300,6 +346,12 @@ description: 用户级运行 agent
           providerId: "custom-openai",
           modelId: "gpt-5.4",
           options: { reasoningLevel: "high" },
+        },
+        start: { providerId: "custom-openai", modelId: "glm-5.2" },
+        orchestrator: {
+          providerId: "custom-openai",
+          modelId: "glm-5.2",
+          options: { reasoningLevel: "low" },
         },
       });
     } finally {
@@ -548,6 +600,41 @@ architect prompt`,
       await rm(root, { force: true, recursive: true });
     }
   });
+});
+
+it("видит профиль, созданный subagent-factory после предыдущего чтения каталога", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zcode-factory-profile-"));
+  try {
+    const storageRoot = join(root, "state");
+    const initial = await loadZCodeAgentProfiles({ storageRoot, workingDirectory: root });
+    expect(initial.profiles).toEqual([]);
+
+    await mkdir(join(root, ".zcode", "agents"), { recursive: true });
+    await writeFile(
+      join(root, ".zcode", "agents", "conventional-commit-reviewer.md"),
+      [
+        "---",
+        "name: conventional-commit-reviewer",
+        "description: Проверяет сообщения коммитов по Conventional Commits",
+        "tools: Read, Grep, Skill",
+        "skills: conventional-commit",
+        "---",
+        "Проверяй сообщения коммитов по правилам загруженного навыка.",
+      ].join("\n"),
+    );
+
+    const reloaded = await loadZCodeAgentProfiles({ storageRoot, workingDirectory: root });
+    expect(reloaded.diagnostics).toEqual([]);
+    expect(reloaded.profiles).toEqual([
+      expect.objectContaining({
+        name: "conventional-commit-reviewer",
+        skills: ["conventional-commit"],
+        source: "project",
+      }),
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 it("附加目录 subagent 用限定名并存，权限仍按项目级规则过滤", async () => {

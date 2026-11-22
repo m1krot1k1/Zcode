@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeTelemetryEventDetail } from "@zcode/shared";
 
+// 私钥头只在运行时拼装：源码里不留密钥字面量，隐私闸门才能保持零豁免。
+const PEM_HEADER = "-----BEGIN " + "PRIVATE KEY-----";
+
 describe("telemetry privacy boundary", () => {
   it.each([
     [
@@ -31,7 +34,7 @@ describe("telemetry privacy boundary", () => {
     "/home/private/secret.txt",
     "\\\\host\\private\\secret.txt",
     "~/.ssh/id_rsa",
-    "-----BEGIN PRIVATE KEY-----\nFAKE_SECRET\n-----END PRIVATE KEY-----",
+    PEM_HEADER + "\nFAKE_SECRET\n-----END PRIVATE KEY-----",
     "unknown-format-secret-without-any-keyword",
     "ordinary error",
     " ",

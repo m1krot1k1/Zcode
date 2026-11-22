@@ -32,7 +32,7 @@ const ANONYMOUS_ACTOR_NAME = "subagent";
  * 发起会话的模式 → run 要记下的子代理权限模式。`getMode()` 给的是基础模式（plan 是独立开关，
  * 不在其中）；遗留的 `plan` 枚举值记为 build，与普通子代理拆分 plan 后的回退一致。
  */
-export function workflowSubagentPermissionModeOf(
+function workflowSubagentPermissionModeOf(
   sessionMode: CollaborationMode | undefined,
 ): WorkflowSubagentPermissionMode | undefined {
   if (sessionMode === undefined) return undefined;

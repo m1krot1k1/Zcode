@@ -105,7 +105,7 @@ export async function persistBackgroundTaskNotificationCommand(
   return persisted.messageId;
 }
 
-export interface PersistedBackgroundTaskNotificationBatch {
+interface PersistedBackgroundTaskNotificationBatch {
   /** 仅整批来源一致时存在；混合/缺失来源不能从代表任务推断。 */
   backgroundSource?: BackgroundResultOriginMeta["backgroundSource"];
   messageId: MessageId;

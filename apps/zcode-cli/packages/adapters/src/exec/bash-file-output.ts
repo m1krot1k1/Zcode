@@ -7,6 +7,7 @@ import { decodeExecutionOutputBuffer } from "./outputEncoding.js";
 import type { ExecutionStreamResult, ExecutionOutputPreview } from "@zcode/contracts";
 
 const OUTPUT_WATCH_INTERVAL_MS = 5_000;
+const OUTPUT_DIRECTORY_MODE = 0o700;
 const OUTPUT_FILE_MODE = 0o600;
 const PROGRESS_TAIL_MAX_BYTES = 4096;
 
@@ -30,7 +31,7 @@ export class BashFileOutput {
   }
 
   async prepare(): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
+    await mkdir(dirname(this.path), { recursive: true, mode: OUTPUT_DIRECTORY_MODE });
     const existing = await lstat(this.path).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
       return undefined;

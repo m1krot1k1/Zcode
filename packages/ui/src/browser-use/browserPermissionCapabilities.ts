@@ -3,7 +3,7 @@
  * 与 embeddedBrowserPermissionPolicy 的 PROMPT_PERMISSIONS 对齐）。
  * label 走 i18n；iconKey 复用 BrowserPermissionIcon 的能力字形。
  */
-export interface BrowserPermissionCapability {
+interface BrowserPermissionCapability {
   key: string;
   labelId: string;
   iconKey: string;

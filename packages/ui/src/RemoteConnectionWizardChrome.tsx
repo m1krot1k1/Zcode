@@ -10,7 +10,7 @@ import { RemoteConnectionKindTag } from "@/remote-connection/RemoteConnectionTag
 export type RemoteWizardStep = "device" | "settings" | "connecting" | "directory";
 
 /** 表单屏头部的实时预览：target 为空时显示该类型的占位。 */
-export interface RemoteSettingsPreview {
+interface RemoteSettingsPreview {
   kind: RemoteTarget["kind"];
   target: string | null;
 }
@@ -19,7 +19,7 @@ export interface RemoteSettingsPreview {
  * 表单是选择屏的子视图，不把尚未选择设备的首屏画成已完成。
  * 设置入口（设备管理）不显示步骤条：只有表单与进度两屏，进度页自带标题（RDUX-27）。
  */
-export function RemoteConnectionWizardSidebar({
+function RemoteConnectionWizardSidebar({
   currentStep,
   deviceManagement,
 }: {

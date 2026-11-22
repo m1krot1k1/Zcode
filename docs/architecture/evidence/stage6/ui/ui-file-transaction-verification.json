@@ -1,0 +1,27 @@
+{
+  "port": "9229",
+  "transactionResult": {
+    "promptSubmitted": true,
+    "promptLength": 174,
+    "panelAppeared": true,
+    "status": "committed",
+    "compact": "false",
+    "text": "Изменено файлов: 2+2 -0",
+    "backgroundTasks": 0,
+    "survivedReload": false
+  },
+  "results": [
+    {
+      "id": "file-transaction-panel-appears",
+      "status": "VERIFIED",
+      "detail": "панель=true, status=committed, compact=false, transactions=1; текст: Изменено файлов: 2+2 -0",
+      "evidence": "<home>/Desktop/git/Zcode/docs/architecture/evidence/stage6/ui/16-file-transaction-panel.png"
+    },
+    {
+      "id": "file-transaction-panel-live-only",
+      "status": "VERIFIED",
+      "detail": "после полного reload панели нет (live-поток не персистируется): подтверждает контракт desktop-continuous",
+      "evidence": "<home>/Desktop/git/Zcode/docs/architecture/evidence/stage6/ui/18-file-transaction-after-reload.png"
+    }
+  ]
+}

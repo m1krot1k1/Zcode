@@ -363,7 +363,7 @@ describe("v4 queue edit extraction", () => {
     expect(updateText).toHaveBeenCalledWith("排队原文");
     expect(requestFocus).toHaveBeenCalledTimes(1);
     expect(scheduleDraftPersist).toHaveBeenCalledTimes(1);
-    expect(restoreSessionOwnedAttachments).toHaveBeenCalledWith(request.attachments);
+    expect(restoreSessionOwnedAttachments).toHaveBeenCalledWith(request.attachments, undefined);
 
     expect(
       applyComposerRestoreRequestToComposer({

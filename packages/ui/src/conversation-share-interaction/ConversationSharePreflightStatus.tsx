@@ -3,9 +3,7 @@ import type {
   ConversationSharePreflightStatusProps,
 } from "@/conversation-share-interaction/contract.js";
 export type {
-  ConversationSharePreflightState,
-  ConversationSharePreflightStatusProps,
-} from "@/conversation-share-interaction/contract.js";
+  ConversationSharePreflightState} from "@/conversation-share-interaction/contract.js";
 import { memo } from "react";
 import { AlertCircle, AlertTriangle, Info } from "lucide-react";
 import type { ConversationShareFailureIssue } from "@/conversation-share-interaction/contract.js";

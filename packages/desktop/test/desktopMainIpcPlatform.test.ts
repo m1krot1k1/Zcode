@@ -43,10 +43,42 @@ vi.mock("electron", () => ({
     themeSource: "system",
   },
   nativeImage: {},
+  session: {
+    defaultSession: {
+      setPermissionRequestHandler: vi.fn(),
+    },
+  },
+  app: {
+    once: vi.fn(),
+  },
   shell: {
     openExternal: vi.fn(),
     showItemInFolder: vi.fn(),
   },
+}));
+
+vi.mock("../src/main/voice/registerVoiceDictationIpc.js", () => ({
+  registerVoiceDictationIpc: vi.fn(),
+}));
+
+// CUA onboarding opens a native drag panel and starts a window-bounds watcher. This suite only
+// covers IPC forwarding, so keep both side effects out of the test process.
+vi.mock("../src/main/cuaPermissionDragPanel.js", () => ({
+  createCuaPermissionDragPanel: vi.fn(() => ({
+    show: vi.fn(),
+    hide: vi.fn(),
+    freezePosition: vi.fn(),
+    destroy: vi.fn(),
+  })),
+  createRealCuaPermissionPanelWindow: vi.fn(),
+}));
+
+vi.mock("../src/main/cuaSystemSettingsWindowWatcher.js", () => ({
+  createSystemSettingsWindowWatcher: vi.fn(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    latest: vi.fn(() => null),
+  })),
 }));
 
 vi.mock("../src/main/editors.js", () => ({

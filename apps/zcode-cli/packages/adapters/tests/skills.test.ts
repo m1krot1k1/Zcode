@@ -3,8 +3,64 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createNodeSkillAdapter } from "../src/skills/index.js";
+import { resolveDefaultSkillRoots } from "../src/skills/roots.js";
 
 describe("NodeSkillAdapter", () => {
+  it("orders project skill roots before user roots", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-skill-roots-order-"));
+
+    try {
+      const roots = await resolveDefaultSkillRoots(dir, { homeDirectory: join(dir, "home") });
+      const firstProject = roots.findIndex((root) => root.scope === "project");
+      const firstUser = roots.findIndex((root) => root.scope === "user");
+
+      expect(firstProject).toBeGreaterThanOrEqual(0);
+      expect(firstUser).toBeGreaterThanOrEqual(0);
+      // roots 按 priority 升序消费；用户根不能再排到项目根之前，否则同名 load 会被用户副本抢走。
+      expect(roots[firstProject]!.priority).toBeLessThan(roots[firstUser]!.priority);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("discovers skills from dynamic plugin roots without recreating the adapter", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-skills-live-plugin-"));
+    const pluginSkillDir = join(dir, "plugin-skills", "plugin-demo");
+    let dynamicRoots: Array<{
+      path: string;
+      scope: "project";
+      source: "zcode";
+      priority: number;
+    }> = [];
+
+    try {
+      await mkdir(pluginSkillDir, { recursive: true });
+      await writeSkill(pluginSkillDir, "plugin-demo", "Installed with a plugin");
+      const adapter = createNodeSkillAdapter({
+        homeDirectory: join(dir, "home"),
+        getExtraResolvedRoots: () => dynamicRoots,
+      });
+
+      await expect(adapter.discoverSkills({ workingDirectory: dir })).resolves.toMatchObject({
+        skills: [],
+      });
+
+      dynamicRoots = [
+        {
+          path: join(dir, "plugin-skills"),
+          scope: "project",
+          source: "zcode",
+          priority: 999,
+        },
+      ];
+
+      const outcome = await adapter.discoverSkills({ workingDirectory: dir });
+      expect(outcome.skills.map((skill) => skill.name)).toEqual(["plugin-demo"]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("discovers project skills from SKILL.md metadata", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-skills-"));
     const skillDir = join(dir, ".zcode", "skills", "demo-skill");
@@ -169,7 +225,7 @@ describe("NodeSkillAdapter", () => {
     }
   });
 
-  it("keeps same-name skills from different paths", async () => {
+  it("keeps same-name skills from different paths and loads the project copy", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-skills-"));
     const projectSkill = join(dir, ".zcode", "skills", "same-skill");
     const userSkill = join(dir, "home", ".zcode", "skills", "same-skill");
@@ -184,14 +240,26 @@ describe("NodeSkillAdapter", () => {
       const outcome = await adapter.discoverSkills({ workingDirectory: dir });
       const loaded = await adapter.loadSkill({ name: "same-skill", workingDirectory: dir });
 
+      // 路径仍是安装身份：两个副本都保留在 discover 结果里。
       expect(outcome.skills.map((skill) => skill.description).toSorted()).toEqual([
         "Project description",
         "User description",
       ]);
-      expect(loaded.metadata.description).toBe("User description");
-      expect(outcome.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
-        "skill_duplicate_name",
+      // 项目局部定制压过用户全局技能；被遮蔽的用户副本必须出现在诊断里，不能静默失效。
+      expect(loaded.metadata.description).toBe("Project description");
+      expect(loaded.baseDirectory).toBe(projectSkill);
+      expect(outcome.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "skill_duplicate_name",
+          path: join(userSkill, "SKILL.md"),
+          severity: "warning",
+          skillName: "same-skill",
+        }),
       );
+      expect(
+        outcome.diagnostics.find((diagnostic) => diagnostic.code === "skill_duplicate_name")
+          ?.message,
+      ).toContain(join(projectSkill, "SKILL.md"));
     } finally {
       await rm(dir, { force: true, recursive: true });
     }
@@ -260,6 +328,59 @@ describe("NodeSkillAdapter", () => {
 
       expect(outcome.skills.map((skill) => skill.name)).toEqual(["agents-dir-skill"]);
       expect(outcome.skills[0]?.source).toBe("agents");
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores .cursor skills and discovers only native .zcode skills", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-cursor-skills-"));
+    const nativeSkill = join(dir, ".zcode", "skills", "shared-skill");
+    const cursorSkill = join(dir, ".cursor", "skills", "shared-skill");
+    const cursorOnlySkill = join(dir, ".cursor", "skills", "cursor-only");
+    try {
+      await mkdir(nativeSkill, { recursive: true });
+      await mkdir(cursorSkill, { recursive: true });
+      await mkdir(cursorOnlySkill, { recursive: true });
+      await writeSkill(nativeSkill, "shared-skill", "Native ZCode version");
+      await writeSkill(cursorSkill, "shared-skill", "Cursor-compatible version");
+      await writeSkill(cursorOnlySkill, "cursor-only", "No Cursor app required");
+
+      const adapter = createNodeSkillAdapter({ homeDirectory: join(dir, "home") });
+      const outcome = await adapter.discoverSkills({ workingDirectory: dir });
+      const loaded = await adapter.loadSkill({ name: "shared-skill", workingDirectory: dir });
+
+      expect(outcome.skills.map((skill) => skill.name)).toEqual(["shared-skill"]);
+      expect(loaded.metadata.description).toBe("Native ZCode version");
+      expect(outcome.diagnostics).toEqual([]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores .cursor skills in both workspace and user roots", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-cursor-user-scope-"));
+    const homeDirectory = join(dir, "home");
+    const workspaceDirectory = join(dir, "workspace");
+    const homeCursorSkill = join(homeDirectory, ".cursor", "skills", "home-cursor-skill");
+    const workspaceCursorSkill = join(
+      workspaceDirectory,
+      ".cursor",
+      "skills",
+      "workspace-cursor-skill",
+    );
+
+    try {
+      await mkdir(homeCursorSkill, { recursive: true });
+      await mkdir(workspaceCursorSkill, { recursive: true });
+      await writeSkill(homeCursorSkill, "home-cursor-skill", "Not part of project imports");
+      await writeSkill(workspaceCursorSkill, "workspace-cursor-skill", "Workspace import");
+
+      const adapter = createNodeSkillAdapter({ homeDirectory });
+      const outcome = await adapter.discoverSkills({ workingDirectory: workspaceDirectory });
+
+      expect(outcome.skills.map((skill) => skill.name)).not.toContain("workspace-cursor-skill");
+      expect(outcome.skills.map((skill) => skill.name)).not.toContain("home-cursor-skill");
     } finally {
       await rm(dir, { force: true, recursive: true });
     }

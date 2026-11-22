@@ -5,9 +5,9 @@ import {
   findUnclosedAssistantDirectiveStart,
 } from "@/lib/assistantDirectiveParser.js";
 
-export type ZCodeFileCitationPreviewKind = "docx" | "xlsx" | "pptx" | "pdf" | "video" | "audio";
+type ZCodeFileCitationPreviewKind = "docx" | "xlsx" | "pptx" | "pdf" | "video" | "audio";
 
-export interface ZCodeFileCitation {
+interface ZCodeFileCitation {
   artifactKind?: string;
   end: number;
   path: string;
@@ -16,7 +16,7 @@ export interface ZCodeFileCitation {
   start: number;
 }
 
-export interface ZCodeFileCitationDirective {
+interface ZCodeFileCitationDirective {
   artifactKind?: string;
   end: number;
   path?: string;
@@ -25,7 +25,7 @@ export interface ZCodeFileCitationDirective {
   start: number;
 }
 
-export interface ZCodeFileCitationProjection {
+interface ZCodeFileCitationProjection {
   visibleText: string;
 }
 

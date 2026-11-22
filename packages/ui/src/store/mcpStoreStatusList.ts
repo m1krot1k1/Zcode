@@ -35,7 +35,9 @@ function mapRuntimeStatusToUi(snapshot: ZCodeMcpServerStatusSnapshot): MappedMcp
       return { status: "unknown", error: snapshot.error };
     case "untrusted":
       return {
-        status: "unknown",
+        // project-scope 的未授权与真实故障语义不同：保留 requires_approval，
+        // 让设置页提供“连接/批准”入口，而不是降级成无法行动的 unknown。
+        status: "requires_approval",
         error: snapshot.error ?? "Project MCP server requires explicit connection before use.",
         failureKind: snapshot.failureKind ?? "status_unavailable",
         serverRequestId: snapshot.serverRequestId,

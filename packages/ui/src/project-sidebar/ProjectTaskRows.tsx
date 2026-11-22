@@ -11,7 +11,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { timelineDateHeadings } from "@/project-sidebar/timelineDates.js";
 
 const EMPTY: ProjectTask[] = [];
-export const ProjectTaskRow = memo(function Row({
+const ProjectTaskRow = memo(function Row({
   task,
   onSelect,
   refresh,

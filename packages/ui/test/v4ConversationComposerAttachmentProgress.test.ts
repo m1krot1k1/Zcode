@@ -134,6 +134,7 @@ function renderComposer(overrides: Record<string, unknown> = {}) {
       { initialLocale: "zh-CN" },
       createElement(AnyConversationComposer, {
         draftMode: true,
+        composerDraft: { text: "", updatedAt: 0 },
         onSelectModel: vi.fn(),
         onSelectThought: vi.fn(),
         onSendText: vi.fn(async () => {}),

@@ -4,13 +4,13 @@ import { stablePathId, type ServerLayout } from "../runtime/paths.js";
 
 export type ServicePlatform = "darwin" | "linux" | "win32";
 
-export interface ServiceDescriptor {
+interface ServiceDescriptor {
   kind: "launchd" | "systemd" | "task-scheduler";
   name: string;
   content: string;
 }
 
-export interface ServiceCommandExecutor {
+interface ServiceCommandExecutor {
   run(command: string, args: readonly string[]): Promise<void>;
   runResult?: (
     command: string,
@@ -19,7 +19,7 @@ export interface ServiceCommandExecutor {
   ) => Promise<ServiceCommandResult>;
 }
 
-export interface ServiceCommandResult {
+interface ServiceCommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;

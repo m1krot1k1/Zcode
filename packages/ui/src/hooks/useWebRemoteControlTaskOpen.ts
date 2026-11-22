@@ -6,7 +6,7 @@ import { resolveWebRemoteControlWorkspaceKey } from "@zcode/shared";
 import { logger } from "@/logger.js";
 import type { WebRemoteControlWorkspaceSwitcherApi } from "@/root/types.js";
 
-export function buildWebRemoteControlTaskRowKey(task: WebRemoteControlTaskTarget): string {
+function buildWebRemoteControlTaskRowKey(task: WebRemoteControlTaskTarget): string {
   return `${resolveWebRemoteControlWorkspaceKey(task)}:${task.taskId}`;
 }
 

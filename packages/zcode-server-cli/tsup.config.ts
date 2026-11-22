@@ -48,6 +48,9 @@ export default defineConfig({
     // 保留外置依赖，由 staging 收集生产依赖闭包，再交给 Node 按 CJS 加载。
     "yazl",
     "node-forge",
+    // The local code index uses the TypeScript AST at runtime; keeping the compiler external avoids
+    // bundling its CommonJS dynamic requires into this ESM CLI bundle.
+    "typescript",
     "undici",
     "axios",
     "form-data",

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 最终出口捕获、按 case 增量切片与 artifact 写入必须共享同一 offset，集中实现避免两套捕获口径漂移。 */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 

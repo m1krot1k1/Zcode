@@ -1,5 +1,6 @@
 export type SettingsSyncAgent =
   | "zcode"
+  | "cline"
   | "claudeCode"
   | "codexCli"
   | "openCode"
@@ -93,6 +94,14 @@ export interface SettingsSyncSourceRootSummary {
   mcpServers?: SettingsSyncSourceMcpServerSummary[];
 }
 
+export type SettingsSyncSourceDiagnosticCode = "invalidConfig" | "invalidEntries" | "unreadable";
+
+export interface SettingsSyncSourceDiagnostic {
+  path: string;
+  code: SettingsSyncSourceDiagnosticCode;
+  count?: number;
+}
+
 export interface SettingsSyncCategorySummary {
   category: SettingsSyncCategory;
   discoveredCount: number;
@@ -100,6 +109,7 @@ export interface SettingsSyncCategorySummary {
   skippedCount?: number;
   sourcePaths?: string[];
   sourceRoots?: SettingsSyncSourceRootSummary[];
+  diagnostics?: SettingsSyncSourceDiagnostic[];
   selectedByDefault: boolean;
 }
 
@@ -136,6 +146,11 @@ export interface SettingsSyncPluginImportResult {
 }
 
 export type SettingsSyncMcpServerImportStatus = "imported" | "skipped" | "failed";
+export type SettingsSyncMcpServerImportWarning =
+  | "secretsOmittedForProjectScope"
+  | "clineOAuthReauthenticationRequired"
+  | "clinePortablePresetApplied"
+  | "clineCommandMayNotBePortable";
 
 export interface SettingsSyncMcpServerImportResult {
   name: string;
@@ -143,6 +158,7 @@ export interface SettingsSyncMcpServerImportResult {
   sourceScope: SettingsSyncSourceScope;
   status: SettingsSyncMcpServerImportStatus;
   skipReason?: SettingsSyncMcpServerSkipReason;
+  warnings?: SettingsSyncMcpServerImportWarning[];
 }
 
 export interface SettingsSyncAgentSummary {

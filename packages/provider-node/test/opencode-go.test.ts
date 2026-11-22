@@ -1,11 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
 import { compileModelOptionMaps } from "@zcode/model-option-map";
-import { ModelConfig, ModelConfigRules, parseZCodeBuiltinModelConfigRules } from "@zcode/provider";
+import {
+  ApiKeyAccessConfig,
+  ModelConfig,
+  ModelConfigRules,
+  ProviderConfig,
+  ProviderConfigMap,
+  ProviderConfigResolver,
+  parseZCodeBuiltinModelConfigRules,
+  parseZCodeBuiltinProviderConfigRules,
+} from "@zcode/provider";
 
 const url = "https://opencode.ai/zen/go/v1";
 const members = {
-  "opencode-go-chat": [
+  "openai-chat-completions": [
     "glm-5.3-flash",
     "glm-5.3",
     "glm-5.2",
@@ -14,6 +23,7 @@ const members = {
     "kimi-k2.7-code",
     "kimi-k2.6",
     "deepseek-v4.1-flash",
+    "deepseek-v4.1-flash-free",
     "deepseek-v4-pro",
     "deepseek-v4-flash",
     "deepseek-v4-flash-vision-exp",
@@ -22,7 +32,7 @@ const members = {
     "hy4-preview",
     "hy3",
   ],
-  "opencode-go-messages": [
+  "anthropic-messages": [
     "minimax-m3",
     "minimax-m2.7",
     "minimax-m2.5",
@@ -32,23 +42,8 @@ const members = {
     "qwen3.7-plus",
     "qwen3.6-plus",
   ],
-  "opencode-go-responses": ["gpt-5.6-luna", "grok-4.6"],
+  "openai-responses": ["gpt-5.6-luna", "grok-4.6"],
 };
-const enabled = new Set([
-  "glm-5.3-flash",
-  "glm-5.3",
-  "kimi-k3",
-  "kimi-k2.7-code",
-  "deepseek-v4.1-flash",
-  "deepseek-v4-pro",
-  "mimo-v2.5",
-  "mimo-v2.5-pro",
-  "minimax-m3",
-  "qwen3.8-max",
-  "qwen3.8-flash",
-  "gpt-5.6-luna",
-  "grok-4.6",
-]);
 let rules: ModelConfigRules;
 let templates: {
   templateId: string;
@@ -59,12 +54,16 @@ let templates: {
     builtinModelIds: string[];
   };
 }[];
+let providerTemplates: ReturnType<typeof parseZCodeBuiltinProviderConfigRules>["providerTemplates"];
 beforeAll(async () => {
   const release = JSON.parse(
     await readFile(new URL("../../../config/provider/zcode-builtin.json", import.meta.url), "utf8"),
   );
   rules = parseZCodeBuiltinModelConfigRules(release.config.modelConfigRules);
   templates = release.config.providerConfigRules.templateRules;
+  providerTemplates = parseZCodeBuiltinProviderConfigRules(
+    release.config.providerConfigRules,
+  ).providerTemplates;
 });
 const input = (modelId: string, apiType = "openai-chat-completions", baseUrl = url) => ({
   providerId: "personal-go",
@@ -78,38 +77,76 @@ const patch = (config: ModelConfig, level: string) =>
     maxOutputTokens: { map: config.optionSpecs!.maxOutputTokens!.map! },
   }).apply({}, { reasoningLevel: level, maxOutputTokens: 4096 });
 
-describe("Todo149 Go 模板与自建供应商共用站点规则", () => {
-  it.each(Object.entries(members))("%s 按官方协议列成员，模板只决定默认启停", (templateId, ids) => {
-    const t = templates.find((t) => t.templateId === templateId)!;
+describe("OpenCode unified API-key Provider", () => {
+  it("统一模板包含 Go 模型，并把每个模型的 wire protocol 固定到对应 route", () => {
+    const t = templates.find((t) => t.templateId === "opencode-api")!;
     expect(t).toBeDefined();
-    expect(t.config.builtinModelIds).toEqual(
-      [...ids].sort((a, b) => Number(enabled.has(b)) - Number(enabled.has(a))),
-    );
-    expect(t.config.api).toEqual({
-      type: templateId.endsWith("chat")
-        ? "openai-chat-completions"
-        : templateId.endsWith("messages")
-          ? "anthropic-messages"
-          : "openai-responses",
-      baseUrl: url,
-    });
+    const ids = Object.values(members).flat();
+    expect(t.config.builtinModelIds).toEqual(expect.arrayContaining(ids));
+    expect(new Set(t.config.builtinModelIds).size).toBe(t.config.builtinModelIds.length);
+    expect(t.config.api).toEqual({ type: "openai-chat-completions", baseUrl: url });
     expect(t.config.access).toEqual({
       type: "api-key",
       apiKeyManagementUrl: "https://opencode.ai/auth",
     });
     expect(t.config.logo).toEqual({ type: "builtin", key: "opencode" });
-    for (const modelId of ids) {
-      const i = input(modelId, t.config.api.type);
-      const fromTemplate = rules.resolve({ ...i, templateId });
-      const manual = rules.resolve(i);
-      expect(fromTemplate.validateComplete(), modelId).toEqual([]);
-      expect(fromTemplate.enabled, modelId).toBe(enabled.has(modelId));
-      expect(fromTemplate.properties?.toJSON()).toEqual(manual.properties?.toJSON());
-      expect(fromTemplate.optionSpecs?.toJSON()).toEqual(manual.optionSpecs?.toJSON());
-      expect(manual.properties?.supportsNativeWebSearch, modelId).toBe(false);
-      for (const level of fromTemplate.optionSpecs!.reasoningLevel!.values!)
-        expect(() => patch(fromTemplate, level), `${modelId}/${level}`).not.toThrow();
+    for (const [apiType, modelIds] of Object.entries(members)) {
+      for (const modelId of modelIds) {
+        const i = input(modelId, apiType);
+        const fromTemplate = rules.resolve({ ...i, templateId: "opencode-api" });
+        const manual = rules.resolve(i);
+        expect(fromTemplate.validateComplete(), modelId).toEqual([]);
+        const modelRule = rules
+          .rules()
+          .find(
+            (rule) =>
+              rule.type === "template-model" &&
+              rule.templateId === "opencode-api" &&
+              rule.modelId === modelId,
+          );
+        expect(modelRule?.config.enabled, modelId).toBeTypeOf("boolean");
+        expect(fromTemplate.enabled, modelId).toBe(modelRule?.config.enabled);
+        expect(fromTemplate.api, modelId).toEqual(modelRule?.config.api);
+        expect(fromTemplate.properties?.toJSON()).toEqual(manual.properties?.toJSON());
+        expect(fromTemplate.optionSpecs?.toJSON()).toEqual(manual.optionSpecs?.toJSON());
+        expect(manual.properties?.supportsNativeWebSearch, modelId).toBe(false);
+        for (const level of fromTemplate.optionSpecs!.reasoningLevel!.values!)
+          expect(() => patch(fromTemplate, level), `${modelId}/${level}`).not.toThrow();
+      }
     }
+  });
+
+  it("Provider resolver 会把 Go 模型 route 带入最终 Registry", () => {
+    const result = new ProviderConfigResolver().resolve({
+      zcodeBuiltinProviders: ProviderConfigMap.empty(),
+      zcodeBuiltinProviderTemplates: providerTemplates,
+      personalProviders: new ProviderConfigMap([
+        {
+          providerId: "personal-go",
+          templateId: "opencode-api",
+          config: new ProviderConfig({
+            group: "standard-personal",
+            access: new ApiKeyAccessConfig({ apiKey: "test-key" }),
+          }),
+        },
+      ]),
+      accountProviders: ProviderConfigMap.empty(),
+      zcodeBuiltinModelRules: rules,
+      personalModels: ModelConfigRules.empty(),
+    });
+    const go = result.registryProviders.find((provider) => provider.providerId === "personal-go");
+    expect(go).toBeDefined();
+    expect(
+      go?.models.find(({ modelId }) => modelId === "deepseek-v4.1-flash-free")?.config.api,
+    ).toEqual({ type: "openai-chat-completions", baseUrl: url });
+    expect(go?.models.find(({ modelId }) => modelId === "minimax-m3")?.config.api).toEqual({
+      type: "anthropic-messages",
+      baseUrl: url,
+    });
+    expect(go?.models.find(({ modelId }) => modelId === "gpt-5.6-luna")?.config.api).toEqual({
+      type: "openai-responses",
+      baseUrl: url,
+    });
   });
 
   // 原因：GLM 落入通用四组参数兜底，Go 上游严格校验并拒绝 enable_thinking/reasoning。
@@ -149,6 +186,7 @@ describe("Todo149 Go 模板与自建供应商共用站点规则", () => {
     ["kimi-k3", ["max"], 1048576, 131072],
     ["kimi-k2.7-code", ["enabled"], 262144, 262144],
     ["deepseek-v4-pro", ["high", "max"], 1000000, 384000],
+    ["deepseek-v4.1-flash-free", ["low", "high", "max"], 200000, 32000],
     ["hy3", ["none", "low", "high"], 256000, 128000],
     ["hy4-preview", ["none", "high"], 1024000, 64000],
   ] as const)("%s 使用 Go 能力而不是同名原厂默认", (id, levels, context, max) => {

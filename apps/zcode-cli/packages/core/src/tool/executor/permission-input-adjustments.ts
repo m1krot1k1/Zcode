@@ -21,7 +21,7 @@ import {
 } from "./errors.js";
 import type { ToolExecutorDeps } from "./types.js";
 
-export type PermissionInputAdjustmentOutcome =
+type PermissionInputAdjustmentOutcome =
   | { ok: true; executionInput: unknown; applied?: Readonly<Record<string, unknown>> }
   | { ok: false; result: ToolExecutionResult };
 

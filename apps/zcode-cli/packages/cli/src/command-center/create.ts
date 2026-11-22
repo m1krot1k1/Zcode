@@ -15,6 +15,7 @@ import { handleModelCommand } from "./handlers/model.js";
 import { handlePluginsCommand } from "./handlers/plugins.js";
 import { handleSkillListCommand } from "./handlers/skill.js";
 import { handleTargetCommand } from "./handlers/goal.js";
+import { handleEnhanceCommand } from "./handlers/enhance.js";
 import { recordSlashCommandInHistory } from "./history.js";
 import { attachCurrentSessionMetadata, normalizeTuiPromptInput } from "./metadata.js";
 import { buildCheckpointSelection, buildSessionSelection } from "./selections.js";
@@ -204,6 +205,11 @@ export function createCommandCenter(deps: CommandCenterDeps): TuiSubmitPrompt {
         const app = await deps.getApp();
         const prompt = command.args ? `/compact ${command.args}` : "/compact";
         return attachCurrentSessionMetadata(await app.submitPrompt(prompt, options), deps, app);
+      }
+
+      if (command.name === "enhance") {
+        // /enhance 只返回改进后的文本，不提交 turn：否则被改写的意图会直接发给 agent。
+        return handleEnhanceCommand(command.args, deps, options);
       }
 
       if (command.name === "init") {

@@ -32,9 +32,40 @@ describe("desktop renderer Vite dependency aliases", () => {
   // Windows 跳过：环境配置差异导致断言失败，需要 CI 环境统一配置
   const isWindows = process.platform === "win32";
 
-  (isWindows ? it.skip : it)("injects the selected ZCode endpoint origin into renderer env", async () => {
+  (isWindows ? it.skip : it)(
+    "injects the selected ZCode endpoint origin into renderer env",
+    async () => {
+      vi.stubEnv("ZCODE_ENV", "test");
+      vi.stubEnv("ZCODE_BASE_URL", "");
+      const desktopRoot = resolve(import.meta.dirname, "..");
+      const configFile = resolve(desktopRoot, "vite.config.ts");
+      const result = await loadConfigFromFile(
+        {
+          command: "build",
+          mode: "production",
+          isPreview: false,
+          isSsrBuild: false,
+        },
+        configFile,
+        desktopRoot,
+        "silent",
+      );
+
+      expect(result?.config.define).toMatchObject({
+        __ZCODE_DEFAULT_ENDPOINT_ORIGIN__: JSON.stringify("https://zcode.z.ai"),
+        "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify("https://zcode.z.ai"),
+        "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN": JSON.stringify("https://zcode.z.ai"),
+        __ZCODE_LOCAL_DEVELOPMENT_RUNTIME__: JSON.stringify(false),
+      });
+    },
+  );
+
+  it("offline Preview overrides public shell endpoints in the compiled renderer", async () => {
     vi.stubEnv("ZCODE_ENV", "test");
-    vi.stubEnv("ZCODE_BASE_URL", "");
+    vi.stubEnv("ZCODE_OFFLINE_PREVIEW", "1");
+    vi.stubEnv("ZCODE_BASE_URL", "http://127.0.0.1:0");
+    vi.stubEnv("ZCODE_TEST_BASE_URL", "https://zcode.z.ai");
+    vi.stubEnv("ZCODE_PRODUCTION_BASE_URL", "https://zcode.z.ai");
     const desktopRoot = resolve(import.meta.dirname, "..");
     const configFile = resolve(desktopRoot, "vite.config.ts");
     const result = await loadConfigFromFile(
@@ -50,11 +81,10 @@ describe("desktop renderer Vite dependency aliases", () => {
     );
 
     expect(result?.config.define).toMatchObject({
-      "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify("https://zcode.z.ai"),
-      "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN": JSON.stringify(
-        "https://zcode.z.ai",
-      ),
-      __ZCODE_LOCAL_DEVELOPMENT_RUNTIME__: JSON.stringify(false),
+      __ZCODE_DEFAULT_ENDPOINT_ORIGIN__: JSON.stringify("http://127.0.0.1:0"),
+      __ZCODE_OFFLINE_PREVIEW__: JSON.stringify(true),
+      "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify("http://127.0.0.1:0"),
+      "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN": JSON.stringify("http://127.0.0.1:0"),
     });
   });
 

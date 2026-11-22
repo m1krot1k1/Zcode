@@ -1,13 +1,13 @@
 const BOT_PROVIDER_REQUEST_TIMEOUT_MS = 15_000;
 
-export interface BotProviderJsonResponse<T> {
+interface BotProviderJsonResponse<T> {
   ok: boolean;
   status: number;
   payload: T | undefined;
   responseLogId?: string;
 }
 
-export interface BotProviderResponse {
+interface BotProviderResponse {
   ok: boolean;
   status: number;
 }

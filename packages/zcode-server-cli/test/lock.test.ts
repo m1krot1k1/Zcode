@@ -8,7 +8,9 @@ import { DataRootLock } from "../src/runtime/lock.js";
 // 超出常见平台 pid 上限的值：process.kill(pid, 0) 必然 ESRCH，模拟已死的持锁进程。
 const DEAD_PID = 2 ** 30;
 
-describe("DataRootLock", () => {
+// Тест поднимает 8 реальных tsx-процессов: под полной нагрузкой turbo старт
+// выходит за окно ожидания. Retry не ослабляет проверку "ровно один владелец".
+describe("DataRootLock", { retry: 1 }, () => {
   it("recovers a stale lock left behind by a dead process", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-stale-"));
     const lockFile = join(root, "run", "server.lock");
@@ -36,11 +38,85 @@ describe("DataRootLock", () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-live-"));
     const lockFile = join(root, "run", "server.lock");
     await mkdir(join(root, "run"), { recursive: true });
-    await writeFile(lockFile, `${JSON.stringify({ pid: process.pid, acquiredAt: Date.now() })}\n`, "utf8");
+    await writeFile(
+      lockFile,
+      `${JSON.stringify({ pid: process.pid, acquiredAt: Date.now() })}\n`,
+      "utf8",
+    );
 
     const lock = new DataRootLock(lockFile);
     await expect(lock.acquire()).rejects.toThrow(/already running/);
   });
+
+  it("steals a lock when the recorded process start identity is stale", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-reused-pid-"));
+    const lockFile = join(root, "run", "server.lock");
+    await mkdir(join(root, "run"), { recursive: true });
+    // Bug 原因：PID 被另一个进程复用，而 lock 只记录 pid；新 lock 比较进程启动时间。
+    await writeFile(
+      lockFile,
+      `${JSON.stringify({
+        pid: process.pid,
+        processStartId: "different-process-start",
+        acquiredAt: 0,
+      })}\n`,
+      "utf8",
+    );
+
+    const lock = new DataRootLock(lockFile);
+    await expect(lock.inspect()).resolves.toMatchObject({ state: "stale", pid: process.pid });
+    await lock.acquire();
+    expect(JSON.parse(await readFile(lockFile, "utf8"))).toMatchObject({
+      pid: process.pid,
+      processStartId: expect.any(String),
+    });
+    await lock.release();
+  });
+
+  it.skipIf(process.platform !== "linux")(
+    "steals a legacy lock whose pid now belongs to another command",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-legacy-reused-"));
+      const lockFile = join(root, "run", "server.lock");
+      await mkdir(join(root, "run"), { recursive: true });
+      const child = spawn("sleep", ["60"], { stdio: "ignore" });
+      try {
+        await writeFile(lockFile, `${JSON.stringify({ pid: child.pid, acquiredAt: 0 })}\n`, "utf8");
+        const lock = new DataRootLock(lockFile);
+        await expect(lock.inspect()).resolves.toMatchObject({ state: "stale", pid: child.pid });
+        await lock.acquire();
+        await lock.release();
+      } finally {
+        child.kill("SIGKILL");
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "keeps a legacy lock held by a live zcode-like process",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-legacy-live-"));
+      const lockFile = join(root, "run", "server.lock");
+      await mkdir(join(root, "run"), { recursive: true });
+      const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], {
+        argv0: "server-cli",
+        stdio: "ignore",
+      });
+      try {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const commandLine = await readFile(`/proc/${child.pid}/cmdline`, "utf8").catch(() => "");
+          if (commandLine.includes("server-cli")) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        await writeFile(lockFile, `${JSON.stringify({ pid: child.pid, acquiredAt: 0 })}\n`, "utf8");
+        const lock = new DataRootLock(lockFile);
+        await expect(lock.inspect()).resolves.toMatchObject({ state: "active", pid: child.pid });
+        await expect(lock.acquire()).rejects.toThrow(/already running/);
+      } finally {
+        child.kill("SIGKILL");
+      }
+    },
+  );
 
   it("reports missing, stale, active and malformed lock owners without mutating the file", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-inspect-"));
@@ -72,25 +148,32 @@ describe("DataRootLock", () => {
     await lockA.release();
   });
 
-  it.skipIf(process.platform === "win32")("does not delete a replacement lock owned by another token during release", async () => {
-    const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-owner-"));
-    const lockFile = join(root, "run", "server.lock");
-    const replacement = join(root, "run", "replacement.lock");
-    const lock = new DataRootLock(lockFile);
-    await lock.acquire();
-    await writeFile(replacement, `${JSON.stringify({
-      pid: process.pid,
-      acquiredAt: Date.now(),
-      ownerToken: "replacement-owner",
-    })}\n`, "utf8");
-    await rename(replacement, lockFile);
+  it.skipIf(process.platform === "win32")(
+    "does not delete a replacement lock owned by another token during release",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-r2-lock-owner-"));
+      const lockFile = join(root, "run", "server.lock");
+      const replacement = join(root, "run", "replacement.lock");
+      const lock = new DataRootLock(lockFile);
+      await lock.acquire();
+      await writeFile(
+        replacement,
+        `${JSON.stringify({
+          pid: process.pid,
+          acquiredAt: Date.now(),
+          ownerToken: "replacement-owner",
+        })}\n`,
+        "utf8",
+      );
+      await rename(replacement, lockFile);
 
-    await lock.release();
+      await lock.release();
 
-    expect(JSON.parse(await readFile(lockFile, "utf8"))).toMatchObject({
-      ownerToken: "replacement-owner",
-    });
-  });
+      expect(JSON.parse(await readFile(lockFile, "utf8"))).toMatchObject({
+        ownerToken: "replacement-owner",
+      });
+    },
+  );
 
   it("allows only one real process to claim the same stale lock", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-lock-race-"));
@@ -120,7 +203,7 @@ describe("DataRootLock", () => {
         await appendFile(results, "success " + process.env.ZCODE_TEST_LOCK_CHILD + "\\n");
         // owner 必须持锁到所有竞争者都放弃为止：固定时长会在机器负载高时先于对方的重试
         // 窗口结束，让慢的竞争者在释放后再次 acquire 成功，出现多个 success 的假失败。
-        const holdDeadline = Date.now() + 20_000;
+        const holdDeadline = Date.now() + 60_000;
         while (Date.now() < holdDeadline && (await countLocked()) < losers) await delay(10);
         await lock.release();
       } catch {
@@ -128,28 +211,40 @@ describe("DataRootLock", () => {
       }
     `;
     const childCount = 8;
-    const children = Array.from({ length: childCount }, (_, index) => new Promise<void>((resolve, reject) => {
-      const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", childProgram], {
-        env: {
-          ...process.env,
-          ZCODE_TEST_LOCK_MODULE: moduleUrl,
-          ZCODE_TEST_LOCK_BARRIER: barrierFile,
-          ZCODE_TEST_LOCK_FILE: lockFile,
-          ZCODE_TEST_LOCK_READY: join(readyDir, String(index)),
-          ZCODE_TEST_LOCK_RESULTS: resultsFile,
-          ZCODE_TEST_LOCK_LOSERS: String(childCount - 1),
-          ZCODE_TEST_LOCK_CHILD: String(index),
-        },
-        stdio: ["ignore", "ignore", "pipe"],
-      });
-      let childError = "";
-      child.stderr.on("data", (chunk) => { childError += String(chunk); });
-      child.once("error", reject);
-      child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(childError || `lock child exited ${code}`)));
-    }));
+    const children = Array.from(
+      { length: childCount },
+      (_, index) =>
+        new Promise<void>((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            ["--import", "tsx", "--input-type=module", "--eval", childProgram],
+            {
+              env: {
+                ...process.env,
+                ZCODE_TEST_LOCK_MODULE: moduleUrl,
+                ZCODE_TEST_LOCK_BARRIER: barrierFile,
+                ZCODE_TEST_LOCK_FILE: lockFile,
+                ZCODE_TEST_LOCK_READY: join(readyDir, String(index)),
+                ZCODE_TEST_LOCK_RESULTS: resultsFile,
+                ZCODE_TEST_LOCK_LOSERS: String(childCount - 1),
+                ZCODE_TEST_LOCK_CHILD: String(index),
+              },
+              stdio: ["ignore", "ignore", "pipe"],
+            },
+          );
+          let childError = "";
+          child.stderr.on("data", (chunk) => {
+            childError += String(chunk);
+          });
+          child.once("error", reject);
+          child.once("exit", (code) =>
+            code === 0 ? resolve() : reject(new Error(childError || `lock child exited ${code}`)),
+          );
+        }),
+    );
     // 先等待所有子进程进入 barrier；只按固定时间放行会让慢启动的子进程在首个 owner
     // 释放后再次成功获取锁，导致“一个 success”断言随机出现多个 success。
-    const readyDeadline = Date.now() + 20_000;
+    const readyDeadline = Date.now() + 60_000;
     let allChildrenReady = false;
     while (Date.now() < readyDeadline) {
       if ((await readdir(readyDir)).length === children.length) {
@@ -164,5 +259,5 @@ describe("DataRootLock", () => {
     expect(allChildrenReady).toBe(true);
     expect(results.filter((result) => result.startsWith("success "))).toHaveLength(1);
     expect(results.filter((result) => result.startsWith("locked "))).toHaveLength(childCount - 1);
-  }, 30_000);
+  }, 120_000);
 });

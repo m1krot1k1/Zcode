@@ -2,7 +2,7 @@ import { DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS } from "@zcode/contracts";
 
 export { DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS } from "@zcode/contracts";
 
-export const MODEL_STREAM_IDLE_TIMEOUT_RETRY_INCREMENT_MS = 30_000;
+const MODEL_STREAM_IDLE_TIMEOUT_RETRY_INCREMENT_MS = 30_000;
 
 export function resolveModelStreamIdleTimeoutMs(options: {
   baseTimeoutMs?: number;

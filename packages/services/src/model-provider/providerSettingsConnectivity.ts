@@ -1,4 +1,4 @@
-import type { ModelConnectivityResult } from "@zcode/shared";
+
 import type { ProviderSettingsConnectivityTester } from "./providerFacadeServices.js";
 
 interface FormalModelConnectivityInput {
@@ -41,4 +41,4 @@ export function createProviderSettingsConnectivityTester(dependencies: {
   };
 }
 
-export type { ModelConnectivityResult };
+

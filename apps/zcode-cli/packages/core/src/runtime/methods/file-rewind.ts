@@ -212,7 +212,7 @@ export async function applyWorkspaceFileRewind(
     };
   }
 
-  const firstOperation = plan.operations[0];
+  const _firstOperation = plan.operations[0];
   const lastOperation = plan.operations.at(-1);
   const targetMessageId = options.targetMessageId ?? options.targetMessageIds?.[0];
   const rewindId = `rewind_${crypto.randomUUID()}`;

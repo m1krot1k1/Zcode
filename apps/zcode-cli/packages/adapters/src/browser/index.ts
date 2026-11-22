@@ -24,6 +24,14 @@ import { ManagedCdpSession } from "./session.js";
 export interface ManagedCdpBrowserRuntimeOptions extends BrowserExecutableResolutionOptions {
   closeTimeoutMs?: number;
   loadPlaywright?: () => Promise<PlaywrightChromiumModule>;
+  /**
+   * Корень workspace. Нужен файловым действиям (upload/download): и загрузка, и
+   * скачивание обязаны оставаться внутри него. Без значения файловые действия
+   * отклоняются с явной ошибкой, а не пишут куда попало.
+   */
+  workspacePath?: string;
+  /** Идентичность workspace для изоляции кэшей/оценок; fallback — workspacePath. */
+  workspaceIdentity?: string;
 }
 
 export interface ManagedCdpBrowserRuntime {
@@ -191,12 +199,27 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
       try {
         playwright = await this.#loadPlaywright();
       } catch (error) {
-        throw new Error(
+        throw new BrowserRuntimeUnavailableError(
+          "browser_not_installed",
           "Managed headless Chromium is unavailable: failed to load the pinned Playwright runtime.",
+          "Проверьте, что пакет playwright-core установлен в рабочем окружении агента.",
           { cause: error },
         );
       }
-      const executablePath = resolveInstalledBrowserExecutable(playwright, this.#options);
+      let executablePath: string;
+      try {
+        executablePath = resolveInstalledBrowserExecutable(playwright, this.#options);
+      } catch (error) {
+        // Честная деградация вместо падения: без браузера инструмент сообщает код
+        // и точную команду установки, а не «execution_error» без контекста.
+        throw new BrowserRuntimeUnavailableError(
+          "browser_not_installed",
+          error instanceof Error ? error.message : String(error),
+          "Установите Chromium: `pnpm exec playwright install chromium --with-deps` " +
+            "или передайте абсолютный путь через --browser-executable.",
+          { cause: error },
+        );
+      }
       let browser: Browser;
       try {
         browser = await playwright.chromium.launch({
@@ -350,7 +373,16 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
         };
       default: {
         const tab = await session.ensureTab("tabId" in command ? command.tabId : undefined);
-        return await executeManagedPageCommand(tab.page, command);
+        // Наблюдение снимается вокруг самого действия: буфер страницы сбрасывается до
+        // команды, поэтому модель видит только эффекты этого шага, а не накопленный шум.
+        session.telemetry.beginAction(tab.page);
+        const result = await executeManagedPageCommand(tab.page, command, {
+          ...(this.#options.workspacePath ? { workspacePath: this.#options.workspacePath } : {}),
+        });
+        const observation = await session.telemetry
+          .observe(tab.page, { includeScreenshot: command.method === "screenshot" })
+          .catch(() => undefined);
+        return observation ? { ...result, observation } : result;
       }
     }
   }
@@ -401,6 +433,29 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
     // WebSocket/SSE 页面可能让 Playwright 的 context/browser close 永不 settle。
     // adapter 只能有限等待；外层 session cleanup 和 CLI watchdog 会继续回收其它资源。
     await waitForPromise(browser.close(), this.#closeTimeoutMs);
+  }
+}
+
+/**
+ * Структурированная ошибка недоступного браузера.
+ *
+ * `code` попадает в `BrowserErrorCode` через `classifyError`, а `hint` даёт
+ * точную инструкцию установки — модель не должна угадывать причину.
+ */
+export class BrowserRuntimeUnavailableError extends Error {
+  readonly code: "browser_not_installed" | "backend_unavailable";
+  readonly hint: string;
+
+  constructor(
+    code: "browser_not_installed" | "backend_unavailable",
+    message: string,
+    hint: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "BrowserRuntimeUnavailableError";
+    this.code = code;
+    this.hint = hint;
   }
 }
 

@@ -30,17 +30,21 @@ const botsService = {
     >(),
 };
 
-vi.mock("@/hooks/useServices.js", () => ({
-  useServices: () => ({
+// `useSettings` теперь читает контекст через `useOptionalServices`, чтобы работать
+// вне `ServiceProvider` (композер Этапа 4). Мок обязан отдавать оба экспорта.
+vi.mock("@/hooks/useServices.js", () => {
+  const services = () => ({
     broadcastService,
     settingService,
     zcodeAgentService,
     botsService,
-  }),
-}));
+  });
+  return { useServices: services, useOptionalServices: services };
+});
 
 vi.mock("@/hooks/usePlatform.js", () => ({
   usePlatform: () => ({}),
+  useOptionalPlatform: () => ({}),
 }));
 
 describe("useSettings AskUserQuestion runtime preference", () => {

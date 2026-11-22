@@ -1,13 +1,14 @@
-/* eslint-disable max-lines -- zcode-cli 配置 schema 需要集中维护文件解析和 provider 继承，拆散会让配置语义更难对齐。 */
 import { z } from "zod";
-import type { RuntimeConfigPatch } from "@zcode/contracts";
+import type { McpServerConfig, RuntimeConfigPatch } from "@zcode/contracts";
 
 const stringRecordSchema = z.record(z.string(), z.string());
-const unknownRecordSchema = z.record(z.string(), z.unknown());
+const _unknownRecordSchema = z.record(z.string(), z.unknown());
 const positiveNumberSchema = z.number().finite().positive();
 const positiveIntegerSchema = z.number().int().positive();
 const modelStreamSchema = z.object({
   idleTimeoutMs: positiveNumberSchema.optional(),
+  // <=0 关闭首 token 看门狗；负数没有意义但保留给“显式关闭”的用例。
+  firstTokenTimeoutMs: z.number().optional(),
 });
 
 const permissionSchema = z.object({
@@ -16,6 +17,8 @@ const permissionSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
   autoApproveHighRisk: z.boolean().optional(),
   allowMediumRiskInAuto: z.boolean().optional(),
+  // 审批等待上限：0 = 显式关闭超时；负数/非有限值由配置层拒绝。
+  approvalTimeoutMs: z.number().finite().nonnegative().optional(),
 });
 
 const storageSchema = z.object({
@@ -108,6 +111,19 @@ const mcpServerSchema = z.preprocess(
   normalizeMcpServerConfigInput,
   z.discriminatedUnion("type", [mcpStdioServerSchema, mcpHttpServerSchema, mcpSseServerSchema]),
 );
+
+/**
+ * Единая проверка MCP-конфига для install/write path. Без неё агентский
+ * InstallCapability мог сохранить `args` объектом, подключить сервер, получить
+ * timeout и всё равно отчитаться `installed`.
+ */
+export function parseMcpServerConfig(value: unknown): McpServerConfig {
+  const parsed = mcpServerSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(`Invalid MCP server config: ${formatMcpServerError(parsed.error)}`);
+  }
+  return parsed.data as McpServerConfig;
+}
 
 const mcpSchema = z.object({
   servers: z.record(z.string(), mcpServerSchema).optional(),
@@ -219,6 +235,10 @@ const toolConcurrencySchema = z.object({
   maxConcurrency: positiveNumberSchema.optional(),
 });
 
+// Workspace 边界模式（docs/specs/2026-11-11-workspace-boundary.md）。
+// 枚举外的值在配置装载阶段直接拒绝，不会退化成 allow。
+const workspaceBoundarySchema = z.enum(["strict", "ask", "allow"]);
+
 const modelAnomalyGuardSchema = z.object({
   toolCallWarningThreshold: positiveIntegerSchema.optional(),
   repeatedToolCallWarningThreshold: positiveIntegerSchema.optional(),
@@ -301,6 +321,7 @@ export const ZCodeConfigFileSchema = z
     logging: loggingSchema.optional(),
     ui: uiSchema.optional(),
     toolConcurrency: toolConcurrencySchema.optional(),
+    workspaceBoundary: workspaceBoundarySchema.optional(),
     modelAnomalyGuard: modelAnomalyGuardSchema.optional(),
     hooks: hooksSchema.optional(),
   })
@@ -324,7 +345,7 @@ export interface ConfigDiagnostic {
   severity: ConfigDiagnosticSeverity;
 }
 
-export interface ParseConfigFileResult {
+interface ParseConfigFileResult {
   config: RuntimeConfigPatch;
   diagnostics: ConfigDiagnostic[];
 }
@@ -418,6 +439,7 @@ function parsedConfigFileToRuntimePatch(parsed: ZCodeConfigFile): RuntimeConfigP
   if (parsed.logging) config.logging = parsed.logging;
   if (parsed.ui) config.ui = parsed.ui;
   if (parsed.toolConcurrency) config.toolConcurrency = parsed.toolConcurrency;
+  if (parsed.workspaceBoundary) config.workspaceBoundary = parsed.workspaceBoundary;
   if (parsed.modelAnomalyGuard) config.modelAnomalyGuard = parsed.modelAnomalyGuard;
   if (parsed.hooks) config.hooks = parsed.hooks;
 
@@ -521,7 +543,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readPositiveNumber(value: unknown): number | undefined {
+function _readPositiveNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 

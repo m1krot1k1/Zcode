@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Explore 聚合渲染同时维护分类、父级摘要和可复用子工具摘要，拆开会让父子展示规则更难对齐 */
 import { SearchIcon } from "lucide-react";
 import { extractPlanStepsFromToolInput, extractPlanStepsFromToolOutput } from "@zcode/shared";
 import { ToolSnapshotFieldNotice } from "@/ToolCallBlocks/ToolSnapshotFieldNotice.js";
@@ -21,7 +20,7 @@ type IntlLike = {
   formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string;
 };
 
-export type ExploreChildSummary = {
+type ExploreChildSummary = {
   animationKey: string;
   primaryText: ReactNode;
   secondaryText?: ReactNode;

@@ -16,7 +16,7 @@ const ANNOTATION_KEY_PREFIXES = [
 const MAX_ANNOTATION_KEY_LENGTH = 64;
 const MAX_ANNOTATION_VALUE_LENGTH = 64 * 1024;
 /** 超过这个大小的 dump 不在主进程同步读取解析。 */
-export const CRASH_DUMP_ANNOTATION_MAX_BYTES = 64 * 1024 * 1024;
+const CRASH_DUMP_ANNOTATION_MAX_BYTES = 64 * 1024 * 1024;
 
 const CODE_CAGE_EXHAUSTED_THRESHOLD_BYTES = 4 * 1024 * 1024;
 const JS_HEAP_EXHAUSTED_THRESHOLD_BYTES = 1024 * 1024 * 1024;
@@ -30,7 +30,7 @@ const SIZE_UNITS: Record<string, number> = {
   GB: 1024 * 1024 * 1024,
 };
 
-export type CrashDumpAnnotations = Record<string, string>;
+type CrashDumpAnnotations = Record<string, string>;
 
 export type CrashDumpOomKind = "code_space_exhausted" | "js_heap_exhausted" | "unknown";
 

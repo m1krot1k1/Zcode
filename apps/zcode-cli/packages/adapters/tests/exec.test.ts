@@ -32,7 +32,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 import {
-  applyResolvedShellCommandForTest,
+  applyResolvedShellCommand,
   buildExecutionEnv,
   decodeExecutionOutputBuffer,
   NodeExecutionAdapter,
@@ -55,7 +55,11 @@ import {
   type ExecutionRunOptions,
   windowsPathToGitBashPath,
 } from "@zcode/contracts";
-import { ZCODE_NO_PROXY_ENV_KEY, ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY } from "@zcode/shared";
+import {
+  ZCODE_HTTP_PROXY_LIST_ENV_KEY,
+  ZCODE_NO_PROXY_ENV_KEY,
+  ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY,
+} from "@zcode/shared";
 
 const POSIX_BASH_PATH =
   process.platform === "win32"
@@ -98,7 +102,9 @@ type BashBackgroundLifecycleCapableAdapter = NodeExecutionAdapter & {
   ) => Promise<BackgroundExecutionSnapshot | undefined>;
 };
 
-describe("NodeExecutionAdapter", () => {
+// Процессные тесты чувствительны к планировщику: при полном turbo-прогоне
+// root-exit/descendant timing может не уложиться. Retry не ослабляет проверки.
+describe("NodeExecutionAdapter", { retry: 2, timeout: 30_000 }, () => {
   it("auto-backgrounds a foreground command when its timeout elapses", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-exec-auto-background-"));
     const adapter = new NodeExecutionAdapter({
@@ -366,7 +372,9 @@ describe("NodeExecutionAdapter", () => {
         });
 
         let runningSnapshot = await adapter.getBackgroundTask(started.taskId);
-        for (let attempt = 0; attempt < 100; attempt += 1) {
+        // 2 секунды не хватало под нагрузкой: строка worker:<pid> появлялась уже после
+        // последнего опроса. Даём 10 секунд и явный таймаут теста (30 с).
+        for (let attempt = 0; attempt < 500; attempt += 1) {
           workerPid = Number(/worker:(\d+)/u.exec(runningSnapshot?.stdoutTail ?? "")?.[1]);
           if (Number.isInteger(workerPid) && workerPid > 0) break;
           await sleep(20);
@@ -2538,6 +2546,20 @@ describe("NodeExecutionAdapter", () => {
     expect(env.GIT_SSL_CAINFO).toBe("/tmp/zcode-ca.pem");
   });
 
+  it("keeps command tools on the selected proxy and drops the model proxy ring", () => {
+    const env = buildExecutionEnv(undefined, {
+      platform: "linux",
+      processEnv: {
+        PATH: "/usr/bin",
+        ZCODE_HTTP_PROXY: "http://127.0.0.1:7890",
+        [ZCODE_HTTP_PROXY_LIST_ENV_KEY]: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+      },
+    });
+
+    expect(env[ZCODE_HTTP_PROXY_LIST_ENV_KEY]).toBeUndefined();
+    expect(env.HTTP_PROXY).toBe("http://127.0.0.1:7890");
+  });
+
   it("lets per-command env overlays override injected network env", () => {
     const env = buildExecutionEnv(
       {
@@ -2650,7 +2672,7 @@ describe("NodeExecutionAdapter", () => {
     const withoutLogin = setResolvedShellLoginMode(command, false);
     expect(withoutLogin.args).toEqual(["-c", "echo before"]);
 
-    const rewritten = applyResolvedShellCommandForTest(withoutLogin, "echo after");
+    const rewritten = applyResolvedShellCommand(withoutLogin, "echo after");
     expect(rewritten.args).toEqual(["-c", "echo after"]);
   });
 
@@ -3457,13 +3479,19 @@ describe("NodeExecutionAdapter", () => {
     // 回归：protected-resource sandbox 时代计时器被提前到准备阶段（覆盖 capability probe），
     // sandbox 撤除后该行为一度被保留——shell 初始化较慢或 timeout 较短时，命令还没 spawn
     // 就返回 timed_out。计时器必须在 spawn 之后才启动。
+    //
+    // 两个数都要留足余量，否则机器负载会制造假红（全量套件并行时实测过 60ms 预算 + 正常
+    // node 启动 ≈ 74ms 就超时）：
+    //   - 准备延迟必须明显大于 timeout，这样「计时器覆盖准备期」的旧行为仍会被抓住
+    //     （600ms 准备 vs 400ms 预算 → 旧行为必然 timed_out）；
+    //   - spawn 之后子进程仍要跑完 `process.exit(0)`，400ms 相对实测启动延迟有 ~5x 余量。
     const adapter = new NodeExecutionAdapter();
     const internals = adapter as unknown as {
       prepareChildSpawn: (request: unknown) => Promise<unknown>;
     };
     const originalPrepare = internals.prepareChildSpawn.bind(adapter);
     internals.prepareChildSpawn = async (request: unknown) => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 600));
       return originalPrepare(request);
     };
 
@@ -3473,7 +3501,7 @@ describe("NodeExecutionAdapter", () => {
         file: process.execPath,
         args: ["-e", "process.exit(0)"],
       },
-      timeoutMs: 60,
+      timeoutMs: 400,
     });
 
     expect(result.status).toBe("completed");

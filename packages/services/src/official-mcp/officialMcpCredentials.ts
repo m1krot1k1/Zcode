@@ -417,14 +417,14 @@ export function buildOfficialMcpAuthHeaders(
 }
 
 /** host handler 透传的请求上下文；不参与凭证选择。 */
-export interface OfficialMcpAuthHeadersRequestContext {
+interface OfficialMcpAuthHeadersRequestContext {
   mcpKey: string;
   pluginId: string;
   targetOrigin: string;
   workspace: { workspaceIdentity?: string; workspaceKey: string; workspacePath: string };
 }
 
-export type OfficialMcpAuthHeadersOutcome =
+type OfficialMcpAuthHeadersOutcome =
   | { ok: true; headers: Record<string, string> }
   | { ok: false; reason: OfficialMcpAuthFailureReason };
 

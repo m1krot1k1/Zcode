@@ -15,6 +15,7 @@ import { createRecordingMessageStore } from "./runtime-output-token-continuation
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ToolEntry } from "../src/tool/types.js";
 import { collectAgentListingAttachment } from "../src/subagent/listing.js";
+import { WORKER_SUBAGENT_TOOL_NAMES } from "../src/subagent/profile.js";
 import type { AgentDefinitionsSnapshot } from "../src/subagent/definitions.js";
 import { MessageHistoryImpl } from "../src/agent/message-history.js";
 import { hydrateMessageHistoryFromSession } from "../src/agent/session-history-hydrator.js";
@@ -38,7 +39,9 @@ const listingMessages = (request: ModelRequest) =>
   request.messages.filter(
     (m) =>
       typeof m.content === "string" &&
-      /(?:Available agent types|New agent types|The following agent types)/u.test(m.content),
+      /(?:Available named agent types|New named agent types|Available agent types|New agent types|The following agent types)/u.test(
+        m.content,
+      ),
   );
 const result = {
   finishReason: "stop" as const,
@@ -126,6 +129,12 @@ describe("runtime agent listing", () => {
     expect(listingMessages(requests[0]!)).toHaveLength(1);
     const description = requests[0]!.tools?.find((tool) => tool.name === "Agent")?.description;
     expect(description).toContain("Available agent types are listed in <system-reminder>");
+    expect(description).toContain("use CodeIndex when it materially helps trace a cross-file relationship");
+    expect(description).toContain("If the user explicitly requests the named `start` profile");
+    expect(description).toContain("the first tool action must invoke the exact `start` profile");
+    expect(description).toContain("Use Agent only when a separate owner materially helps");
+    expect(description).toContain("do not apply a fixed 1–2 agent ceiling");
+    expect(description).toContain("When you are the start profile, route one bounded deliverable directly to its exact matching worker");
     expect(description).not.toContain("Description A");
     const notices = listingMessages(requests[1]!);
     expect(notices).toHaveLength(2);
@@ -135,6 +144,183 @@ describe("runtime agent listing", () => {
       requests[1]!.messages.findIndex((m) => m.role === "tool"),
     );
     expect(listingMessages(requests[2]!)).toEqual(notices);
+  });
+
+  // Router-ребёнок (start/orchestrator) сам read-only, но грант на worker-набор уже выдан
+  // родителем. Каталог обязан показывать его, иначе orchestrator считает запись недоступной.
+  it("shows the bounded worker grant in an orchestrator router catalog", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "coder",
+          description: "Coder",
+          source: "user",
+          systemPrompt: "private",
+          tools: ["Read", "Write", "Edit", "Bash"],
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      {
+        // Router child: its own allowlist is the profile-derived read-only surface.
+        taskType: "subagent_child",
+        agentType: "orchestrator",
+        toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
+        delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
+      },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- coder: Coder (Tools:");
+    expect(notice?.content).toContain("Write");
+    expect(notice?.content).toContain("Bash");
+  });
+
+  it("shows start the workers and orchestrator it may route to", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "start",
+          description: "Gateway",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "orchestrator",
+          description: "Orchestrates work",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "coder",
+          description: "Coder",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "researcher",
+          description: "Researcher",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      {
+        taskType: "subagent_child",
+        agentType: "start",
+        toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
+      },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- orchestrator: Orchestrates work");
+    expect(notice?.content).toContain("- coder: Coder");
+    expect(notice?.content).toContain("- researcher: Researcher");
+    expect(notice?.content).not.toContain("- start:");
+  });
+
+  it("shows orchestrator worker roles but not the router roles", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "start",
+          description: "Gateway",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "orchestrator",
+          description: "Orchestrates work",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "coder",
+          description: "Coder",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+        {
+          name: "researcher",
+          description: "Researcher",
+          source: "built-in",
+          systemPrompt: "private",
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      {
+        taskType: "subagent_child",
+        agentType: "orchestrator",
+        toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"],
+      },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- coder: Coder");
+    expect(notice?.content).toContain("- researcher: Researcher");
+    expect(notice?.content).not.toContain("- start:");
+    expect(notice?.content).not.toContain("- orchestrator:");
+  });
+
+  // Root сессии: грант ограничен session toolAllowlist. Каталог не должен рекламировать
+  // инструменты, которые spawn всё равно срежет на пересечении с поверхностью root.
+  it("does not advertise worker write tools from a restricted root", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "coder",
+          description: "Coder",
+          source: "user",
+          systemPrompt: "private",
+          tools: ["Read", "Write", "Edit", "Bash"],
+        },
+      ],
+    });
+    runtime = createRuntime(
+      {},
+      { toolAllowlist: ["Read", "Glob", "Grep", "Task", "Skill"] },
+    );
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("- coder: Coder (Tools: Read)");
+    expect(notice?.content).not.toContain("Write");
+    expect(notice?.content).not.toContain("Edit");
+    expect(notice?.content).not.toContain("Bash");
+  });
+
+  it("does not advertise a worker tool removed by the session disallowlist", async () => {
+    definitions.mockReturnValue({
+      activeAgents: [
+        {
+          name: "coder",
+          description: "Coder",
+          source: "user",
+          systemPrompt: "private",
+          tools: ["Read", "Write", "Edit", "Bash"],
+        },
+      ],
+    });
+    runtime = createRuntime({}, { toolDisallowlist: ["Bash"] });
+
+    await runtime.executeTurn("hello");
+
+    const notice = listingMessages(requests[0]!)[0];
+    expect(notice?.content).toContain("Write");
+    expect(notice?.content).toContain("Edit");
+    expect(notice?.content).not.toContain("Bash");
   });
 
   it.each(["disabled", "denied"])("does not read definitions when Agent is %s", async (reason) => {
@@ -282,7 +468,9 @@ describe("runtime agent listing", () => {
     );
     expect(
       ordinary.every(
-        (r) => listingMessages(r).length === 0 && !r.tools?.some((t) => t.name === "Agent"),
+        (r) =>
+          listingMessages(r).length === 0 &&
+          !r.tools?.some((t) => t.name === "Agent" || t.name === "Task"),
       ),
     ).toBe(true);
   });

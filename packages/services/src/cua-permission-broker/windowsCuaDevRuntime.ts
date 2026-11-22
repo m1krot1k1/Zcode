@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- source/product 两种解析模式共享同一稳定错误契约与路径校验，拆开会引入循环依赖 */
 import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";
@@ -18,14 +17,14 @@ export interface WindowsCuaRuntime {
   commandEnv: Record<string, string>;
 }
 
-export interface WindowsCuaRuntimeFileSystem {
+interface WindowsCuaRuntimeFileSystem {
   stat(path: string): Promise<Pick<Stats, "isDirectory" | "isFile">>;
   lstat?(path: string): Promise<Pick<Stats, "isDirectory" | "isFile" | "isSymbolicLink">>;
   realpath?(path: string): Promise<string>;
   readFile(path: string, encoding?: "utf8"): Promise<string | Uint8Array>;
 }
 
-export interface WindowsCuaRuntimeResolveOptions {
+interface WindowsCuaRuntimeResolveOptions {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   resourcesPath?: string;
@@ -35,7 +34,7 @@ export interface WindowsCuaRuntimeResolveOptions {
   hashBytes?: (bytes: string | Uint8Array) => Promise<string>;
 }
 
-export type WindowsCuaDevRuntimeResolutionReason =
+type WindowsCuaDevRuntimeResolutionReason =
   | "unsupported-platform"
   | "development-root-not-absolute"
   | "development-root-not-found"

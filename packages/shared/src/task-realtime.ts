@@ -1,8 +1,9 @@
-/* oxlint-disable eslint(max-lines) -- task realtime 共享合约集中维护，类型和 schema 需要保持就近。 */
 // ── 旧协议兼容面（过渡期）──────────────────────────────
 // 剩余 18 个导出：realtime 事件/lease/owner-command 接口类型。
-// 消费者：desktop taskRealtimeBus/taskRealtimeBridge、services sessionRealtimePort、
-// shared channels.ts（旧 host 通道表）。
+// 消费者：desktop taskRealtimeBus（仅 session route 分支仍在用）、shared channels.ts
+// （旧 host 通道表）。Host 侧 taskRealtimeBridge/sessionRealtimePort 已删除
+// （docs/specs/2026-11-11-owner-lease-mirror-decision.md），这些 lease/stream 类型目前
+// 没有生产消费者；重新接线前必须验证 stale run、跨端去重和手机 relay 恢复语义。
 // 运行时 zod schema 与 resolveWorkspaceKey 已迁 task-realtime-core.ts（幸存面）；
 // 基础传输类型（TaskRealtimeReason/TaskStreamMirrorOp/TaskStreamWatermark 等）已迁
 // zcode-task-types-core.ts。本文件与旧 realtime 总线组同生命周期。

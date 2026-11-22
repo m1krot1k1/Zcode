@@ -6,10 +6,12 @@ import {
   RESPOND_TO_COORDINATOR_TOOL_NAME,
   RESUME_WORKFLOW_RUN_TOOL_NAME,
   SAVE_WORKFLOW_TOOL_NAME,
+  type SessionTaskType,
 } from "@zcode/contracts";
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "../../subagent/explore-tools.js";
 import type { AgentRuntimeConfig } from "../types.js";
-import { normalizeToolNameAlias } from "../../tool/tool-visibility.js";
+import { AGENT_TOOL_NAME, TASK_TOOL_NAME } from "../../tool/compat.js";
+import { getToolRuleName, normalizeToolNameAlias } from "../../tool/tool-visibility.js";
 
 const EXPLORE_AGENT_ALLOWED_TOOL_SET = new Set<string>(EXPLORE_AGENT_ALLOWED_TOOLS);
 
@@ -49,6 +51,64 @@ const WORKFLOW_CHILD_DISALLOWED_TOOLS = [
   // （留白是脚本向**主代理**要代码，子代理不得替它写）：一并进列。
   FILL_WORKFLOW_HOLE_TOOL_NAME,
 ] as const;
+
+/**
+ * Разворачивает disallow-правило `Agent`/`Task` в оба provider-facing имени.
+ *
+ * `Agent` и `Task` — две записи одной возможности делегирования. Сравнение по точному имени
+ * оставляет вторую запись видимой/исполняемой, поэтому запрет любого из имён обязан закрывать
+ * пару. Разбор идёт через `getToolRuleName`, чтобы rule syntax (`Agent(*)`, пробелы) вёл себя
+ * так же, как в остальных местах.
+ *
+ * Единственный владелец правила (docs/specs/task-alias-visibility.md「Alias-развёртывание
+ * disallowlist на границах регистрации и permission」): вызывается на границе регистрации
+ * (`registerBuiltInTools`) и в `PermissionService`. Turn-уровень и child-фильтр применяют ту же
+ * семантику `Agent`↔`Task`; списки имён здесь не дублируются за пределами пары.
+ *
+ * Возвращает исходный массив, если правила про делегирование нет: остальные инструменты и
+ * порядок правил не меняются. Идемпотентно — повторное применение не добавит новых имён.
+ */
+export function expandSubagentDispatchDisallowRules(
+  rules: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (!rules || rules.length === 0) return rules;
+  const closesDispatch = rules.some((rule) => {
+    const name = getToolRuleName(rule);
+    return name === AGENT_TOOL_NAME || name === TASK_TOOL_NAME;
+  });
+  if (!closesDispatch) return rules;
+
+  const expanded = new Set(rules);
+  expanded.add(AGENT_TOOL_NAME);
+  expanded.add(TASK_TOOL_NAME);
+  return [...expanded];
+}
+
+/**
+ * `Task`（`Agent` 的 Claude Code 兼容别名）是否进入 provider schema。
+ *
+ * `Task` 只是 `Agent` 的兼容别名，不是独立的委派能力：它本身不放大权限，
+ * entry 是否注册仍由 `includeAgent`/allowlist 决定，本 helper 只按会话的产品角色
+ * 决定 alias 的可见性（docs/specs/task-alias-visibility.md）。
+ *
+ * 规则放在这里的原因：built-in 工具注册有**两个**入口——首次装配
+ * （`helpers/runtime-tools.ts`）与 refresh（`methods/embedded-search-branch.ts`，
+ * 由 `applySessionShellEnvironment` 和动态工作流激活触发）。此前 allow 列表只写在
+ * 第一个入口，refresh 注册 `Task` 时漏传 alias 标志，把已可见的记录覆盖成
+ * `providerVisible: false`。列表不得在两个入口重复：规则变更只改这里。
+ *
+ * `workflow_parent` 不新增单独规则：与任何不在显式 allow 列表中的 taskType 一样，
+ * alias 保持隐藏。
+ */
+export function shouldIncludeTaskAlias(taskType: SessionTaskType | undefined): boolean {
+  return (
+    taskType === undefined ||
+    taskType === "interactive" ||
+    taskType === "fork" ||
+    taskType === "selection_side_chat" ||
+    taskType === "subagent_child"
+  );
+}
 
 /**
  * 运行时最终的工具禁用名单：turn 级 `toolDisallowlist` 叠加按 taskType 推导出的结构性禁用。

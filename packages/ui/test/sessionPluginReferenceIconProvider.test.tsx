@@ -4,12 +4,16 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionPluginReferenceIconBoundary } from "@/v4/SessionPluginReferenceIconProvider.js";
 
-const usePluginReferenceCatalog = vi.fn(() => ({
-  authority: "session" as const,
-  entries: [],
-  error: null,
-  loading: false,
-}));
+// vi.mock 会被提升到文件顶部；直接引用顶层 const 会触发 TDZ（该文件此前未进入默认入口，
+// 所以错误一直被掩盖）。用 vi.hoisted 让 mock 工厂与被测模块的导入共享同一个已初始化替身。
+const usePluginReferenceCatalog = vi.hoisted(() =>
+  vi.fn(() => ({
+    authority: "session" as const,
+    entries: [],
+    error: null,
+    loading: false,
+  })),
+);
 
 vi.mock("@/hooks/usePluginReferenceCatalog.js", () => ({
   usePluginReferenceCatalog,

@@ -1,0 +1,8 @@
+{
+  "source": "google/agents-cli",
+  "skillId": "google-agents-cli-observability",
+  "name": "google-agents-cli-observability",
+  "hash": "e58665a62c51e1e4e71669fc8d51a828d05cdc63e696aababce14b903724efbb",
+  "installedAt": "2026-11-07T12:13:02.980Z",
+  "manager": "skills.sh"
+}

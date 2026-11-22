@@ -111,6 +111,14 @@ export interface ConversationRowRenderContext {
    * 转写行，故新增此可选字段。宿主（SessionPane）在只读会话下不注入即整卡无取消。
    */
   onCancelBackgroundWork?: (workId: string) => void;
+  /** One explicit ACP option choice routed through CLI to the exact owning OpenCode run. */
+  onRespondOpenCodePermission?: (params: {
+    commandId: string;
+    runId: string;
+    opencodeSessionId: string;
+    requestId: string;
+    optionId: string;
+  }) => Promise<void>;
   /**
    * 工具卡页脚的 Resume：与详情页同一条
    * v4 `resumeWorkflowRun {workId ≡ runId}`。只读会话下宿主不注入。

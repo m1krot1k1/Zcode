@@ -22,7 +22,7 @@ import { refToString } from "./types.js";
  * 重放时一定会兑现一个 promise 的节点 kind：除 `report`（void）与 `artifact`（要看成员族，
  * 见 {@link claimsOnReplay}）之外的全部。从 {@link NODE_KINDS} 派生：新增的 kind 默认算进来。
  */
-export const REPLAY_WORK_KINDS: readonly NodeKind[] = NODE_KINDS.filter(
+const REPLAY_WORK_KINDS: readonly NodeKind[] = NODE_KINDS.filter(
   (kind) => kind !== "report" && kind !== "artifact",
 );
 

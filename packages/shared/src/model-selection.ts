@@ -8,6 +8,9 @@ export const modelSelectionSchema = z
     options: z
       .object({
         reasoningLevel: z.string().trim().min(1).optional(),
+        // 用户显式选择「只用这个 Provider」时关闭配额耗尽自动切换；
+        // 新增字段保持可选，旧 Desktop 不发送也不会改变既有行为。
+        providerFallback: z.literal("disabled").optional(),
       })
       .strict()
       .optional(),

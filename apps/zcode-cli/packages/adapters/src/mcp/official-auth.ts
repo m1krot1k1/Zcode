@@ -5,7 +5,6 @@
  * 自定义 CA、No Proxy 策略全部保留——本 wrapper 只包裹它，不绕过。
  */
 import {
-  findOfficialMcpReservedHeaders,
   isOfficialMcpReservedHeaderName,
   summarizeOfficialMcpIdentityHeaders,
   type McpServerFailureKind,
@@ -41,7 +40,7 @@ export class OfficialMcpAuthError extends Error {
 const REQUEST_ID_HEADER = "x-request-id";
 const TRACE_ID_HEADER = "x-trace-id";
 
-export interface CreateOfficialMcpAuthFetchInput {
+interface CreateOfficialMcpAuthFetchInput {
   authHeadersPort?: OfficialMcpAuthHeadersPort;
   baseFetch: typeof globalThis.fetch;
   logger?: Logger;
@@ -433,7 +432,7 @@ export function mergeOfficialAuthHeaders(
 }
 
 /** 供 adapter 在解析配置时复用，保证黑名单在 parse 与合并两处同源。 */
-export { findOfficialMcpReservedHeaders };
+
 
 function resolveRequestUrl(resource: Parameters<typeof globalThis.fetch>[0]): string {
   if (typeof resource === "string") return resource;

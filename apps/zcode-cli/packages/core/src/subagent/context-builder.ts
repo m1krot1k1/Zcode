@@ -23,6 +23,8 @@ export interface SubagentContextBuilderConfig {
   skillMetadataBudget?: number;
   skills?: ContextBuilderConfig["skills"];
   userInstructions?: ContextBuilderConfig["userInstructions"];
+  workspaceRules?: ContextBuilderConfig["workspaceRules"];
+  bundledHarnessRules?: ContextBuilderConfig["bundledHarnessRules"];
 }
 
 const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
@@ -146,6 +148,8 @@ function buildSubagentContextSections(config: SubagentContextBuilderConfig): Con
 
   const requestUserContextSection = buildRequestUserContextSection({
     userInstructions: config.userInstructions,
+    bundledHarnessRules: config.bundledHarnessRules,
+    workspaceRules: config.workspaceRules,
   });
   if (requestUserContextSection) {
     sections.push(requestUserContextSection);
@@ -197,5 +201,6 @@ function toBaseContextBuilderConfig(config: SubagentContextBuilderConfig): Conte
     currentDate: config.currentDate,
     skillMetadataBudget: config.skillMetadataBudget,
     skills: config.skills,
+    workspaceRules: config.workspaceRules,
   };
 }

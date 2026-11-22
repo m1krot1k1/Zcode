@@ -16,7 +16,7 @@ import {
   type WorkspaceHooksConfig,
 } from "@zcode/shared/workspace-hook-discovery";
 
-export interface LegacyHookDefinition {
+interface LegacyHookDefinition {
   type?: "command" | "process" | string;
   command?: string;
   args?: string[];

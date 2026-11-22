@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getTurnTools } from "../src/runtime/methods/turn-tool-visibility.js";
+import { getTurnTools } from "../src/runtime/methods/turn-loop-state.js";
 import type { AgentRuntimeInternal } from "../src/runtime/internal.js";
 import { createToolRegistry, registerBuiltInTools } from "../src/tool/index.js";
 import {
@@ -247,7 +247,7 @@ describe("isOffPeakCreateRestrictedTurn", () => {
     const state = stateOf({ offPeakTaskId: "offpeak-1" });
     expect(isOffPeakCreateRestrictedTurn(state)).toBe(true);
     const tools = ["OffPeakCreate", "OffPeakList", "Agent"].map((name) => ({ name }));
-    const runtime = { getTools: () => tools } as unknown as AgentRuntimeInternal;
+    const runtime = { config: {}, getTools: () => tools } as unknown as AgentRuntimeInternal;
     expect(getTurnTools(runtime, state).map((tool) => tool.name)).toEqual(["OffPeakList", "Agent"]);
   });
 

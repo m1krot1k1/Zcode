@@ -20,7 +20,7 @@ export interface WorkflowHoleTarget {
 }
 
 /** display 的 `fill` 块（与 shared 的 toolCallCreateWorkflowDisplaySchema.fill 同形），未解析的原样。 */
-export interface WorkflowDisplayFill {
+interface WorkflowDisplayFill {
   siteId: string;
   name: string;
   draftPath?: string;
@@ -47,14 +47,7 @@ export function readWorkflowHoleTarget(
     draftPath: trimmed(fill?.draftPath) ?? trimmed(hole?.draft_path),
     line: typeof line === "number" && Number.isInteger(line) && line > 0 ? line : undefined,
   };
-}
-
-/** 补全的体（`script`）：与 CreateWorkflow 的脚本同一通道，流式草稿的笔从它里扫阶段。 */
-export function readWorkflowHoleBody(input: unknown): string | undefined {
-  return isPlainRecord(input) && typeof input.script === "string" ? input.script : undefined;
-}
-
-/**
+}/**
  * 一次补全写下了几个阶段、几个子代理（「留白已补全 · {name} · {k} 个阶段 · {m} 个子代理」）：
  * 有效脚本的图上带 `fill === holeId` 的阶段与站点。留白自己的阶段（无阶段的补全）不算阶段。
  */

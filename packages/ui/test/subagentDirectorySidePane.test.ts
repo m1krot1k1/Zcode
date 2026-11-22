@@ -25,6 +25,11 @@ vi.mock("@/hooks/useSessionSubagents.js", () => ({
           title: "Run verification",
           summary: "Provider request failed",
           status: "failed",
+          hostAcceptance: {
+            status: "unknown",
+            passedCriteria: 1,
+            totalCriteria: 2,
+          },
           endedAt: Date.now() - 60_000,
         },
       ],
@@ -96,6 +101,7 @@ describe("SubagentDirectorySidePane", () => {
     expect(html).toContain("subagentDirectory.status.blocked");
     expect(html).toContain("Provider request failed");
     expect(html).toContain("subagentDirectory.status.failed");
+    expect(html).toContain("subagentDirectory.hostAcceptance.unknown:1/2");
     expect(html).toContain("subagentDirectory.showMore");
   });
 

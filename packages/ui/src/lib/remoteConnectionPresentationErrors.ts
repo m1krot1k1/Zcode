@@ -1,4 +1,5 @@
 import {
+  detectRemoteHostUnreachableTransportCause,
   isPublicZCodeErrorCode,
   REMOTE_BIND_CANCELED_ERROR_CODE,
   REMOTE_RECOVERY_BUDGET_EXHAUSTED_ERROR_CODE,
@@ -144,6 +145,16 @@ export function classifyRemoteConnectionError(input: {
   ];
   if ((kind === "wsl" || kind === "docker") && variantTitles.includes(titleId))
     titleId += `.${kind}`;
+  // 同一个公开码覆盖“端口拒绝”和“无路由”两类不同传输事实；只在 SSH 通用标题上按
+  // 已脱敏消息细分原因文案，公开码、分类与操作保持不变。
+  const hostUnreachableCause =
+    code === "remote-host-unreachable" && titleId === "remote.error.hostUnreachable"
+      ? detectRemoteHostUnreachableTransportCause(input.error ?? "")
+      : undefined;
+  const reasonId =
+    hostUnreachableCause === "connection-refused"
+      ? "remote.error.hostUnreachable.refused.reason"
+      : `${titleId}.reason`;
   const deployment = [
     "remote-download-failed",
     "remote-upload-failed",
@@ -156,7 +167,7 @@ export function classifyRemoteConnectionError(input: {
       ? { values: { attempt: input.recoveryAttempt ?? "?", limit: input.recoveryLimit ?? "?" } }
       : {}),
     titleId,
-    reasonId: `${titleId}.reason`,
+    reasonId,
     primaryAction,
     actionMessageId: `remote.action.${primaryAction}`,
     allowRemoteDownload:

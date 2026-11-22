@@ -1,6 +1,6 @@
 import { restorePermissionGrantMarker } from "../helpers/permission-grant-resume.js";
 import { executionStateSchema, resolveExecutionState } from "@zcode/shared";
-import { SESSION_ENTRY_EXECUTION_STATE } from "@zcode/contracts";
+import { SESSION_ENTRY_EXECUTION_STATE, type SwarmRunUpdatedPayload } from "@zcode/contracts";
 import {
   CoreErrorType,
   HookEventName,
@@ -42,6 +42,17 @@ import {
   restoreWorkspaceFileRewindEntries,
 } from "./workspace-checkpoint-persistence.js";
 import { mainTurnCacheHitAggregateFromMessages } from "./turn-model-step-usage.js";
+import { restoreReasoningLevelExplicitOnResume } from "./turn-model.js";
+import { restorePrismProjectionEvents } from "./events.js";
+import {
+  childAssistantResultText,
+  classifySwarmRestartNodes,
+  SWARM_RECONCILED_COMPLETION_RESULT,
+} from "../helpers/turn-errors.js";
+
+type SwarmJournalRecoveryMode = "resume_open" | "before_swarm_admission";
+
+const SWARM_RECOVERY_ACTIVE_RUN_LIMIT = 500;
 
 export function toScheduleState(
   this: AgentRuntimeInternal,
@@ -75,22 +86,34 @@ export async function resumeFromStore(
   // 删除 = CLI 软删除（time_deleted）。归档已归 Host 组织态，CLI 不再有归档列；
   // 旧的 time.archived 判断永远为 false，这里改为拒绝恢复已软删除的会话。
   if (!persistedSession || persistedSession.time.deleted !== undefined) {
-    throw createCoreError(CoreErrorType.SessionNotFound, `Session not found: ${this.sessionId}`, {
-      context: { sessionId: this.sessionId },
-      recoverable: true,
-    });
+    throw createCoreError(
+      CoreErrorType.SessionNotFound,
+      `Session not found: ${this.sessionId}`,
+      {
+        context: { sessionId: this.sessionId },
+        recoverable: true,
+      },
+    );
   }
-  const session = await repairPersistedRemoteSessionPaths(this.sessionStore, persistedSession, {
-    onPersistenceFailure: (error) => {
-      this.logger?.warn("Session path repair persistence failed; using in-memory repair", {
-        ...traceContextToLogContext(traceContext),
-        errorMessage: error instanceof Error ? error.message : String(error),
-        event: "session.path_repair.persist_failed",
-        module: "core.runtime",
-        sessionId: this.sessionId,
-      });
+  const session = await repairPersistedRemoteSessionPaths(
+    this.sessionStore,
+    persistedSession,
+    {
+      onPersistenceFailure: (error) => {
+        this.logger?.warn(
+          "Session path repair persistence failed; using in-memory repair",
+          {
+            ...traceContextToLogContext(traceContext),
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+            event: "session.path_repair.persist_failed",
+            module: "core.runtime",
+            sessionId: this.sessionId,
+          },
+        );
+      },
     },
-  });
+  );
 
   const messages =
     options?.persistedMessages ??
@@ -102,7 +125,19 @@ export async function resumeFromStore(
   const rewindKeptMessageIds = session.revert?.keptMessageIDs;
   const branchCutAfterMessageId = session.revert?.branchCutAfterMessageID;
   this.branchGeneration = session.revert?.branchGeneration ?? 0;
-  this.runtimeTaskRegistry.setActiveBranchGeneration?.(this.branchGeneration);
+  this.runtimeTaskRegistry.setBranchGenerationForSession(
+    this.sessionId,
+    this.branchGeneration,
+  );
+  // PRISM SessionEntry — durable authority; recover its event projection before resuming.
+  await restorePrismProjectionEvents.call(this, traceContext, this.branchGeneration);
+  // 原因：SwarmRunUpdated 只在 process-local event store。重启后打开聊天时没有新的 Swarm input，
+  // 旧行会从时间线消失。修复依据：从 CLI SQLite journal fail-closed 中断活跃 run，并投影终端行；
+  // 不自动重派 pending 节点。
+  await recoverAndHydrateSwarmJournal.call(this, {
+    mode: "resume_open",
+    traceContext,
+  });
   if (messages.length === 0) {
     this.logger?.warn("Session resume loaded zero persisted messages", {
       ...traceContextToLogContext(traceContext),
@@ -119,10 +154,13 @@ export async function resumeFromStore(
   if (persistedEnvInfo) {
     this.config.envInfo = persistedEnvInfo;
   }
-  const shellRestore = await restoreSessionShellEnvironmentSelectionForResume(this, {
-    currentSelection: getSessionShellSelection(this),
-    traceContext,
-  });
+  const shellRestore = await restoreSessionShellEnvironmentSelectionForResume(
+    this,
+    {
+      currentSelection: getSessionShellSelection(this),
+      traceContext,
+    },
+  );
 
   this.workingDirectory = session.directory;
   this.config.taskType = session.taskType;
@@ -150,10 +188,8 @@ export async function resumeFromStore(
     workspaceRoot: this.workspaceRoot,
   });
   await this.ensureContextInitialized(traceContext);
-  const recoveredCompactTimelineCount = await this.recoverInterruptedCompactTimelines(
-    messages,
-    traceContext,
-  );
+  const recoveredCompactTimelineCount =
+    await this.recoverInterruptedCompactTimelines(messages, traceContext);
   const hydration = await hydrateMessageHistoryFromSession({
     logger: this.logger,
     artifactStore: this.artifactStore,
@@ -186,9 +222,13 @@ export async function resumeFromStore(
   const latestAssistant = [...timelineActiveMessages]
     .reverse()
     .find((message) => message.info.role === "assistant");
-  this.latestConversationMessageId = getLatestActiveSessionMessageId(timelineActiveMessages);
+  this.latestConversationMessageId = getLatestActiveSessionMessageId(
+    timelineActiveMessages,
+  );
   this.latestAssistantMessageId = latestAssistant?.info.id;
-  this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as TurnId | undefined;
+  this.latestAssistantTurnId = latestAssistant?.info.anchor?.turnId as
+    | TurnId
+    | undefined;
   this.lastAssistantCompletedAtMs =
     latestAssistant && "completed" in latestAssistant.info.time
       ? latestAssistant.info.time.completed
@@ -203,8 +243,11 @@ export async function resumeFromStore(
       event.type === SessionEventType.SessionModeChanged,
   );
   const restoredMode =
-    restoredModeEvents.length > 0 ? this.eventReducer.reduce(restoredModeEvents).mode : undefined;
-  const resolvedMode = options?.modeOverride ?? restoredMode ?? session.permission?.mode;
+    restoredModeEvents.length > 0
+      ? this.eventReducer.reduce(restoredModeEvents).mode
+      : undefined;
+  const resolvedMode =
+    options?.modeOverride ?? restoredMode ?? session.permission?.mode;
   if (resolvedMode !== undefined) {
     // cold resume 会先把 checkpoint/rewind 等局部事件恢复到新的内存 eventStore。
     // 这些事件不携带 mode，若仅按“存在任意事件”reduce，会用默认 build 覆盖 headless yolo。
@@ -216,7 +259,9 @@ export async function resumeFromStore(
     sessionID: this.sessionId,
     type: SESSION_ENTRY_EXECUTION_STATE,
   });
-  const savedExecution = executionStateSchema.safeParse(executionEntries?.at(-1)?.data);
+  const savedExecution = executionStateSchema.safeParse(
+    executionEntries?.at(-1)?.data,
+  );
   if (savedExecution.success && options?.modeOverride === undefined) {
     Object.assign(this.config, savedExecution.data);
   }
@@ -234,6 +279,11 @@ export async function resumeFromStore(
     (message) => message.info.role === "user" && !message.info.summary,
   ).length;
   this.sessionPersisted = true;
+  // Строка session уже существует у resume-сессии, поэтому session_entry-записи разрешены.
+  this.sessionRowCreated = true;
+  // Явность уровня — session-local факт: читаем core-owned sidecar; старые сессии без него
+  // сохраняют прежнее поведение (level в selection считается явным).
+  await restoreReasoningLevelExplicitOnResume(this);
   await syncPersistedSessionTitleForResume.call(this, {
     restoredEvents,
     session,
@@ -314,8 +364,10 @@ export async function resumeFromStore(
     module: "core.runtime",
     partCount: hydration.partCount,
     readFileStateRestoredCount: readFileStateHydration.restoredCount,
-    readFileStateSkippedRangeReadCount: readFileStateHydration.skippedRangeReadCount,
-    readFileStateSkippedUnreadableEditCount: readFileStateHydration.skippedUnreadableEditCount,
+    readFileStateSkippedRangeReadCount:
+      readFileStateHydration.skippedRangeReadCount,
+    readFileStateSkippedUnreadableEditCount:
+      readFileStateHydration.skippedUnreadableEditCount,
     recoveredCompactTimelineCount,
     resumedTodoCount: resumedTodos.length,
     resumedTargetStatus: resumedTarget?.status,
@@ -330,8 +382,10 @@ export async function resumeFromStore(
     // messages 交给 V4，否则首帧会短暂复活 started/retrying 状态。
     persistedMessagesReloadRequired: recoveredCompactTimelineCount > 0,
     readFileStateRestoredCount: readFileStateHydration.restoredCount,
-    readFileStateSkippedRangeReadCount: readFileStateHydration.skippedRangeReadCount,
-    readFileStateSkippedUnreadableEditCount: readFileStateHydration.skippedUnreadableEditCount,
+    readFileStateSkippedRangeReadCount:
+      readFileStateHydration.skippedRangeReadCount,
+    readFileStateSkippedUnreadableEditCount:
+      readFileStateHydration.skippedUnreadableEditCount,
     traceId: traceContext.traceId,
   };
 }
@@ -377,7 +431,9 @@ function hasRestoredTitleEvent(
   });
 }
 
-function extractPersistedEnvInfo(messages: MessageWithParts[]): EnvInfo | undefined {
+function extractPersistedEnvInfo(
+  messages: MessageWithParts[],
+): EnvInfo | undefined {
   for (const message of messages) {
     if (message.info.role !== "user") {
       continue;
@@ -460,3 +516,351 @@ export function injectTargetStateIntoMessageHistory(
     ].join("\n"),
   );
 }
+
+/**
+ * Fail-closed takeover of durable Swarm journal rows for the current root session,
+ * then project missing `SwarmRunUpdated` rows into the process-local event store.
+ *
+ * - `before_swarm_admission`: throws on owner conflicts / active-run limit (blocks a new swarm).
+ * - `resume_open`: same reconcile + hydrate path when opening a chat without a new swarm input;
+ *   conflicts and the active-run limit are logged and skipped so resume still succeeds.
+ *   Proven-pending nodes are not dispatched here.
+ * - In-flight attempts are completed only when the child session `lastOutcome` is `completed`.
+ *   Otherwise they become `interrupted` and must not be redispatched.
+ * - A run stays non-terminal only when a never-started node has completed dependencies and this
+ *   pass is a chat open or a replay of that run's `sourceCommandId`.
+ */
+export async function recoverAndHydrateSwarmJournal(
+  this: AgentRuntimeInternal,
+  options: {
+    mode: SwarmJournalRecoveryMode;
+    traceContext: TraceContext;
+    collectEvents?: SessionEvent[];
+    sourceCommandID?: string;
+  },
+): Promise<void> {
+  const journal = this.sessionStore;
+  if (!journal) return;
+  const rootSessionID = this.runtimeTaskRegistry.getRootSessionIdForSession(this.sessionId);
+  if (rootSessionID !== this.sessionId) return;
+  if (
+    !journal.listSwarmRuns ||
+    !journal.claimSwarmRunOwner ||
+    !journal.listSwarmNodeAttempts ||
+    !journal.transitionSwarmNodeAttempt ||
+    !journal.transitionSwarmRun
+  ) {
+    return;
+  }
+
+  const failClosed = options.mode === "before_swarm_admission";
+  const [activeRuns, terminalRuns] = await Promise.all([
+    journal.listSwarmRuns({
+      rootSessionID,
+      statuses: ["planning", "running"],
+      limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+    }),
+    journal.listSwarmRuns({
+      rootSessionID,
+      statuses: ["completed", "failed", "cancelled", "interrupted"],
+      limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+    }),
+  ]);
+
+  if (activeRuns.length === SWARM_RECOVERY_ACTIVE_RUN_LIMIT) {
+    if (failClosed) {
+      throw createCoreError(
+        CoreErrorType.ToolExecutionFailed,
+        "В этой сессии слишком много незавершённых записей роя для безопасного восстановления; новый запуск остановлен.",
+        {
+          context: {
+            code: "SWARM_RECOVERY_ACTIVE_RUN_LIMIT",
+            limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+          },
+          recoverable: true,
+        },
+      );
+    }
+    this.logger?.warn(
+      "Swarm journal active-run recovery limit reached during chat open; projecting only the returned rows",
+      {
+        ...traceContextToLogContext(options.traceContext),
+        event: "swarm.recovery.active_run_limit",
+        module: "core.runtime",
+        limit: SWARM_RECOVERY_ACTIVE_RUN_LIMIT,
+        sessionId: this.sessionId,
+      },
+    );
+  }
+
+  const runs = [...activeRuns, ...terminalRuns];
+  const eventRows = await this.eventStore.getEvents(rootSessionID);
+  const projected = new Map<string, SwarmRunUpdatedPayload["status"]>();
+  for (const event of eventRows) {
+    if (event.type !== SessionEventType.SwarmRunUpdated) continue;
+    const payload = event.payload as SwarmRunUpdatedPayload;
+    projected.set(payload.swarmRunId, payload.status);
+  }
+
+  for (const candidate of runs) {
+    let run = candidate;
+    if (run.status === "planning" || run.status === "running") {
+      const nextOwnerEpoch = run.ownerEpoch + 1;
+      const claimed = await journal.claimSwarmRunOwner({
+        rootSessionID,
+        runID: run.runID,
+        expectedRevision: run.revision,
+        expectedOwnerEpoch: run.ownerEpoch,
+        ownerEpoch: nextOwnerEpoch,
+      });
+      if (!claimed) {
+        const latest = await journal.getSwarmRun?.({ rootSessionID, runID: run.runID });
+        if (!latest || latest.status === "planning" || latest.status === "running") {
+          if (failClosed) {
+            throw createCoreError(
+              CoreErrorType.ToolExecutionFailed,
+              "Не удалось безопасно согласовать сохранённое выполнение роя; новый запуск остановлен.",
+              {
+                context: { code: "SWARM_RECOVERY_OWNER_CONFLICT", swarmRunId: run.runID },
+                recoverable: true,
+              },
+            );
+          }
+          this.logger?.warn(
+            "Swarm journal owner claim conflict during chat open; skipped run projection",
+            {
+              ...traceContextToLogContext(options.traceContext),
+              event: "swarm.recovery.owner_conflict",
+              module: "core.runtime",
+              sessionId: this.sessionId,
+              swarmRunId: run.runID,
+            },
+          );
+          continue;
+        }
+        run = latest;
+      } else {
+        const attempts = await journal.listSwarmNodeAttempts({ runID: run.runID });
+        let attemptConflict = false;
+        for (const attempt of attempts) {
+          if (attempt.status !== "dispatching" && attempt.status !== "running") continue;
+          // 原因：重启前 child 已写完 lastOutcome，但 journal 的 resultText 仍空，后续节点看不到已完成的回答。
+          // 修复依据：只把最后一条 assistant 的 text parts 写入同一 attempt；工具输出和 user prompt 不复制。没有正文时保留占位说明。
+          const child = journal.getSession
+            ? await journal.getSession(attempt.childSessionID)
+            : null;
+          if (child?.lastOutcome === "completed") {
+            let revision = attempt.revision;
+            if (attempt.status === "dispatching") {
+              const running = await journal.transitionSwarmNodeAttempt({
+                runID: run.runID,
+                nodeID: attempt.nodeID,
+                attemptID: attempt.attemptID,
+                expectedRevision: revision,
+                ownerEpoch: nextOwnerEpoch,
+                status: "running",
+              });
+              if (!running) {
+                attemptConflict = true;
+                break;
+              }
+              revision += 1;
+              attempt.status = "running";
+              attempt.revision = revision;
+            }
+            let copiedText: string | undefined;
+            if (!attempt.resultText?.trim()) {
+              try {
+                copiedText = childAssistantResultText(
+                  await journal.messages({ sessionID: attempt.childSessionID }),
+                );
+              } catch (error) {
+                this.logger?.warn("Swarm child transcript was not readable during recovery", {
+                  ...traceContextToLogContext(options.traceContext),
+                  event: "swarm.recovery.transcript_unreadable",
+                  module: "core.runtime",
+                  sessionId: this.sessionId,
+                  swarmRunId: run.runID,
+                  nodeID: attempt.nodeID,
+                  errorName: error instanceof Error ? error.name : "Error",
+                });
+              }
+            }
+            const resultText =
+              attempt.resultText?.trim() || copiedText || SWARM_RECONCILED_COMPLETION_RESULT;
+            const completed = await journal.transitionSwarmNodeAttempt({
+              runID: run.runID,
+              nodeID: attempt.nodeID,
+              attemptID: attempt.attemptID,
+              expectedRevision: revision,
+              ownerEpoch: nextOwnerEpoch,
+              status: "completed",
+              resultText,
+            });
+            if (!completed) {
+              attemptConflict = true;
+              break;
+            }
+            attempt.status = "completed";
+            attempt.revision = revision + 1;
+            attempt.resultText = resultText;
+            continue;
+          }
+          const interrupted = await journal.transitionSwarmNodeAttempt({
+            runID: run.runID,
+            nodeID: attempt.nodeID,
+            attemptID: attempt.attemptID,
+            expectedRevision: attempt.revision,
+            ownerEpoch: nextOwnerEpoch,
+            status: "interrupted",
+            diagnosticCode: "swarm.attempt_interrupted_after_process_restart",
+          });
+          if (!interrupted) {
+            if (failClosed) {
+              throw createCoreError(
+                CoreErrorType.ToolExecutionFailed,
+                "Не удалось сохранить прерывание дочерней задачи роя; новый запуск остановлен.",
+                {
+                  context: {
+                    code: "SWARM_RECOVERY_ATTEMPT_CONFLICT",
+                    swarmRunId: run.runID,
+                    nodeID: attempt.nodeID,
+                  },
+                  recoverable: true,
+                },
+              );
+            }
+            attemptConflict = true;
+            this.logger?.warn(
+              "Swarm journal attempt interrupt conflict during chat open; skipped run projection",
+              {
+                ...traceContextToLogContext(options.traceContext),
+                event: "swarm.recovery.attempt_conflict",
+                module: "core.runtime",
+                sessionId: this.sessionId,
+                swarmRunId: run.runID,
+                nodeID: attempt.nodeID,
+              },
+            );
+            break;
+          }
+        }
+        if (attemptConflict) {
+          if (failClosed) {
+            throw createCoreError(
+              CoreErrorType.ToolExecutionFailed,
+              "Не удалось сохранить сверку дочерней задачи роя; новый запуск остановлен.",
+              {
+                context: { code: "SWARM_RECOVERY_ATTEMPT_CONFLICT", swarmRunId: run.runID },
+                recoverable: true,
+              },
+            );
+          }
+          continue;
+        }
+
+        const sameAcceptedInput =
+          options.mode === "resume_open" ||
+          (options.sourceCommandID !== undefined &&
+            options.sourceCommandID === run.sourceCommandID);
+        const pendingNodeIds = classifySwarmRestartNodes(
+          run.graph?.nodes,
+          attempts,
+        ).pendingNodeIds;
+        const keepPending =
+          run.status === "running" && pendingNodeIds.length > 0 && sameAcceptedInput;
+        if (!keepPending) {
+          const transitioned = await journal.transitionSwarmRun({
+            rootSessionID,
+            runID: run.runID,
+            expectedRevision: run.revision + 1,
+            ownerEpoch: nextOwnerEpoch,
+            status: "interrupted",
+            diagnosticCode: "swarm.run_interrupted_after_process_restart",
+          });
+          if (!transitioned) {
+            if (failClosed) {
+              throw createCoreError(
+                CoreErrorType.ToolExecutionFailed,
+                "Не удалось сохранить прерывание старого роя; новый запуск остановлен.",
+                {
+                  context: { code: "SWARM_RECOVERY_RUN_CONFLICT", swarmRunId: run.runID },
+                  recoverable: true,
+                },
+              );
+            }
+            this.logger?.warn(
+              "Swarm journal run interrupt conflict during chat open; skipped run projection",
+              {
+                ...traceContextToLogContext(options.traceContext),
+                event: "swarm.recovery.run_conflict",
+                module: "core.runtime",
+                sessionId: this.sessionId,
+                swarmRunId: run.runID,
+              },
+            );
+            continue;
+          }
+          run = {
+            ...run,
+            status: "interrupted",
+            ownerEpoch: nextOwnerEpoch,
+            revision: run.revision + 2,
+            diagnosticCode: "swarm.run_interrupted_after_process_restart",
+          };
+        } else {
+          run = {
+            ...run,
+            ownerEpoch: nextOwnerEpoch,
+            revision: run.revision + 1,
+          };
+        }
+      }
+    }
+
+    const status: SwarmRunUpdatedPayload["status"] =
+      run.status === "interrupted" ? "failed" : run.status;
+    if (projected.get(run.runID) === status) continue;
+
+    const attempts = await journal.listSwarmNodeAttempts({ runID: run.runID });
+    const childSessionIds = [
+      ...new Set(attempts.map((attempt) => String(attempt.childSessionID))),
+    ].slice(0, 128);
+    const graph = run.graph;
+    const childAgentTypes = Object.fromEntries(
+      attempts.flatMap((attempt) => {
+        const profile = graph?.nodes.find((node) => node.id === attempt.nodeID)?.subagent_type;
+        return profile ? [[String(attempt.childSessionID), profile]] : [];
+      }),
+    );
+    const summary =
+      run.status === "interrupted"
+        ? "Выполнение прервано после перезапуска. Автоматический повтор не выполнялся; отправьте новую задачу, чтобы продолжить вручную."
+        : run.status === "completed"
+          ? "Сохранённое выполнение роя завершено."
+          : run.status === "cancelled"
+            ? "Сохранённое выполнение роя отменено."
+            : run.status === "failed"
+              ? "Сохранённое выполнение роя завершилось ошибкой."
+              : run.status === "running"
+                ? "После перезапуска часть узлов ещё не начиналась. Они продолжатся только при повторной доставке того же принятого запроса; уже начатые задачи повторно не запускаются."
+                : "Восстановлено состояние выполнения роя.";
+    const event = this.createEvent(
+      SessionEventType.SwarmRunUpdated,
+      {
+        swarmRunId: run.runID,
+        status,
+        outcomeAcceptance: "unknown",
+        taskCount: graph?.nodes.length ?? 0,
+        childSessionIds,
+        ...(Object.keys(childAgentTypes).length === 0 ? {} : { childAgentTypes }),
+        summary,
+      },
+      options.traceContext,
+    );
+    await this.appendEvent(event, options.traceContext);
+    options.collectEvents?.push(event);
+    projected.set(run.runID, status);
+  }
+}
+

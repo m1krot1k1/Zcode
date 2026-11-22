@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { uiSourcePath } from "./uiSourcePath.js";
 import { createElement, type ContextType } from "react";
 import { DeliveryContext } from "@/v4/botGroupDeliveryContext.js";
 import { withTopicPreparationMessages } from "@/v4/topicPreparationRenderUnits.js";
@@ -26,6 +27,7 @@ import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { ConversationTurnGroup } from "@/v4/ConversationTurnGroup.js";
+import { resolveInterruptedStatusMessageId } from "@/v4/conversationTurnWorkSegments.js";
 import {
   completeHighspeedTurn,
   markHighspeedTurnMetricsPersisted,
@@ -481,8 +483,9 @@ describe("ConversationTurnGroup Hook footer", () => {
     ({ compactForRemoteControl, highspeed, hasAssistantText }) => {
       const [unit] = buildConversationTurnRenderUnits([
         turnHeader({ state: hasAssistantText ? "completedSuccess" : "completedInterrupted" }),
-        userInputRow(2, {
-          ...(highspeed
+        userInputRow(
+          2,
+          highspeed
             ? {
                 highspeed: {
                   schemaVersion: 1,
@@ -494,8 +497,8 @@ describe("ConversationTurnGroup Hook footer", () => {
                   expiresAt: 10_000,
                 },
               }
-            : {}),
-        }),
+            : {},
+        ),
         hookInvocationRow(3),
         ...(hasAssistantText ? [assistantTextRow(4)] : []),
         forkNoticeTimelineRow(5),
@@ -699,7 +702,7 @@ describe("ConversationTurnGroup message stream display settings", () => {
 
 describe("ConversationTurnGroup assistant history status", () => {
   it("源码将会话内分享按钮接到本地卡片，且不调用后端分享接口", () => {
-    const source = readFileSync("packages/ui/src/v4/ConversationTurnGroup.tsx", "utf8");
+    const source = readFileSync(uiSourcePath("src", "v4", "ConversationTurnGroup.tsx"), "utf8");
 
     expect(source).toContain("setHighspeedShareDialogOpen(true)");
     expect(source).toContain("<HighspeedShareDialog");
@@ -1210,6 +1213,26 @@ describe("ConversationTurnGroup assistant history status", () => {
     expect(renderUnit(interruptedUnit, { locale: "en-US" })).not.toContain("Worked for 5s");
     expect(renderUnit(interruptedUnit, { locale: "zh-CN" })).toContain("已停止");
     expect(renderUnit(interruptedUnit, { locale: "zh-CN" })).not.toContain("已工作 5 秒");
+  });
+
+  it("labels a failed turn as failed instead of worked", () => {
+    // docs/specs/max-turns-limit.md：error_max_turns 是受限结果，不能显示成普通成功；
+    // 轮次标签同理不能把失败终态写成「已工作 N 秒」。
+    const row = reasoningRow();
+    const failedUnit = baseUnit({
+      key: "turn-failed:1",
+      turnId: "turn-failed",
+      assistantHistoryDefaultOpen: true,
+      workStatus: { state: "failed", durationMs: 5_000 },
+      assistantWorkRows: [row],
+      assistantHistoryRows: [row],
+      renderRows: [row],
+    });
+
+    expect(renderUnit(failedUnit, { locale: "en-US" })).toContain("Failed");
+    expect(renderUnit(failedUnit, { locale: "en-US" })).not.toContain("Worked for 5s");
+    expect(renderUnit(failedUnit, { locale: "zh-CN" })).toContain("失败");
+    expect(renderUnit(failedUnit, { locale: "zh-CN" })).not.toContain("已工作 5 秒");
   });
 
   it("按语言格式化工作时长的单位间距", () => {
@@ -2285,6 +2308,28 @@ describe("ConversationTurnGroup assistant history status", () => {
 });
 
 describe("ConversationTurnGroup ChatLoading lifecycle", () => {
+  it("说明触发回退的是额度限制，而不是把原 Provider 误报为不可用", () => {
+    const html = renderUnit(baseUnit({ isRunning: true, assistantHistoryDefaultOpen: true }), {
+      locale: "en-US",
+      apiRetry: {
+        attempt: 1,
+        maxAttempts: 1,
+        nextRetryAt: 1_700_000_001_000,
+        reasonCode: "provider_fallback",
+        providerFallback: {
+          from: "opencode",
+          to: "opencode-go-responses",
+          reason: "free_usage_limit",
+        },
+      },
+    });
+
+    expect(html).toContain(
+      "Free usage limit reached for opencode; continuing with opencode-go-responses.",
+    );
+    expect(html).not.toContain("opencode is unavailable");
+  });
+
   it("第三次 retry 才替换当前 turn 底部的通用 loading，并保留 3/10 计数口径", () => {
     const html = renderUnit(
       baseUnit({
@@ -2952,5 +2997,21 @@ describe("topic preparation flow membership", () => {
       expect(html).toContain('data-v4-user-input-collapsible-content="true"');
       expect(html).toContain('aria-label="正在准备材料"');
     }
+  });
+});
+
+describe("中断原因 → 状态文案", () => {
+  it.each([
+    [undefined, undefined, "chat.history.stopped"],
+    ["user", undefined, "chat.history.stopped"],
+    ["error", undefined, "chat.history.stopped.byError"],
+    ["budget", "time budget", "chat.history.stopped.byBudget"],
+    // 运行资源预算（admission 预留账本）与时间预算成因不同，必须给用户不同的文案。
+    ["budget", "resource budget", "chat.history.stopped.byResourceBudget"],
+    // 旧数据可能只有 reason 没有 detail，仍回落到通用预算文案，避免文案缺失。
+    ["budget", undefined, "chat.history.stopped.byBudget"],
+    ["preempted", undefined, "chat.history.stopped.byPreempted"],
+  ] as const)("reason %j detail %j 映射为 %s", (reason, detail, expected) => {
+    expect(resolveInterruptedStatusMessageId(reason, detail)).toBe(expected);
   });
 });

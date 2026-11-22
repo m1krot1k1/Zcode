@@ -16,19 +16,19 @@ import {
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 const GITHUB_REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]+$/u;
 
-export interface PublicGitHubRepository {
+interface PublicGitHubRepository {
   owner: string;
   repo: string;
 }
 
-export interface ResolveGitHubArchiveSourceInput {
+interface ResolveGitHubArchiveSourceInput {
   path?: string;
   pin?: string;
   signal?: AbortSignal;
   url: string;
 }
 
-export class GitHubArchiveRequiresGitError extends Error {
+class GitHubArchiveRequiresGitError extends Error {
   readonly reason: string;
 
   constructor(reason: string) {

@@ -15,7 +15,7 @@ export interface StorageCleanCandidate {
   mtimeMs: number;
 }
 
-export interface StorageCleanPlan {
+interface StorageCleanPlan {
   targets: StorageCleanCandidate[];
   skippedCount: number;
 }

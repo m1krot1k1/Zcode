@@ -39,14 +39,13 @@ export const WorkflowScriptMetaSchema = z
   });
 export type WorkflowScriptMeta = z.infer<typeof WorkflowScriptMetaSchema>;
 
-export const WorkflowAgentIsolationSchema = z.enum(["worktree"]);
-export type WorkflowAgentIsolation = z.infer<typeof WorkflowAgentIsolationSchema>;
-
+// isolation 曾声明为 z.enum(["worktree"])，但唯一运行时读取者只会抛
+// "not implemented yet"，schema 因此承诺了不存在的隔离能力。删除后仍保持 strict：
+// 带 isolation 的 agent() 调用在解析阶段即被拒绝（fail-closed），不会静默降级执行。
 export const WorkflowAgentOptionsSchema = z
   .object({
     agentType: z.string().min(1).optional(),
     instructions: z.string().min(1).optional(),
-    isolation: WorkflowAgentIsolationSchema.optional(),
     label: z.string().min(1).optional(),
     maxTurns: z.number().int().positive().max(MAX_WORKFLOW_AGENT_TURNS).optional(),
     model: z.string().min(1).optional(),

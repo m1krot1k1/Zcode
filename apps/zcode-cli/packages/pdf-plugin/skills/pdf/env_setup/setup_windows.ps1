@@ -22,6 +22,7 @@ function Write-Info  { param($msg) Write-Host "  [->] $msg" -ForegroundColor Cya
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PDF_SKILL_DIR = Split-Path -Parent $ScriptDir
 $env:PDF_SKILL_DIR = $PDF_SKILL_DIR
+. (Join-Path $ScriptDir "soffice_discovery.ps1")
 
 Write-Host "============================================"
 Write-Host "  PDF Skill - Environment Setup"
@@ -222,11 +223,9 @@ Write-Host ""
 
 # ── Step 2g: LibreOffice (install-on-demand, NOT substitutable) ──
 Write-Host "--- [7/9] LibreOffice (Office->PDF conversion) ---"
-$SofficePath = "C:\Program Files\LibreOffice\program\soffice.exe"
-if (Test-Path $SofficePath) {
-    Write-Ok "libreoffice found"
-} elseif (Get-Command soffice -ErrorAction SilentlyContinue) {
-    Write-Ok "libreoffice (in PATH)"
+$SofficePath = Find-SofficeExecutable
+if ($SofficePath) {
+    Write-Ok "libreoffice found at $SofficePath"
 } else {
     Write-Warn "libreoffice not installed - REQUIRED for any .docx/.xlsx/.pptx -> PDF task"
     Write-Info "You MUST install it. FORBIDDEN: using Word/WPS/Keynote/Pages instead of"
@@ -241,12 +240,8 @@ if (Test-Path $SofficePath) {
     Write-Info "FALLBACK (only if the mirror is unreachable):"
     Write-Info "  winget install TheDocumentFoundation.LibreOffice"
     Write-Info "  or: https://www.libreoffice.org/download/"
-    Write-Info "AFTER installing, REGISTER it on PATH (Windows method - differs per OS):"
-    Write-Info '  setx PATH "$([Environment]::GetEnvironmentVariable(''PATH'',''User''));C:\Program Files\LibreOffice\program"'
-    Write-Info "  setx affects NEW shells only - for this session use the full soffice.exe path."
-    Write-Info '  then re-verify: & "C:\Program Files\LibreOffice\program\soffice.exe" --version'
-    Write-Info "An install left off PATH looks 'not installed' next run and gets reinstalled"
-    Write-Info "needlessly. If soffice already exists on disk but is off PATH, just register it."
+    Write-Info "After installation, rerun this helper; it searches PATH and configured system/user locations."
+    Write-Info "For a custom location, add its program folder to your user PATH, then open a new shell."
     Write-Info "Another program is allowed ONLY after an install attempt has FAILED. Report it."
     Write-Info "No install attempt = no substitute program."
 }

@@ -47,9 +47,9 @@ _Avoid_: 第三方 tab、我的 tab
 公开分段顶部的策展区，名单由官方 CDN 目录的 `featured` 字段远程控制。仅存在于公开分段。
 _Avoid_: 与 Recommended 混用
 
-**Recommended（推荐）**:
-个人分段顶部的策展区，名单由仓内 `recommendedPlugins.json` 维护（当前推 claude-plugins-official 的精选插件）。仅存在于个人分段。
-_Avoid_: 与 Featured 混用
+**Recommended（推荐, 已下线）**:
+历史术语。个人分段顶部曾经有策展区，名单由仓内 `recommendedPlugins.json` 维护。产品决策已移除该区（`packages/ui/src/settings/recommendedPlugins.ts` 只保留默认市场 id）。不要再把它当作当前 UI 事实。
+_Avoid_: 与 Featured 混用；恢复「推荐」区时不看代码就引用本节
 
 **Manage Installed View（插件管理）**:
 市场右上角的“插件管理”进入同一页面内的管理视图；保留全局默认和项目覆盖，可返回浏览并保留搜索、来源与管理范围。更多菜单仅暂停/启用与卸载，更新和恢复继承使用独立操作。

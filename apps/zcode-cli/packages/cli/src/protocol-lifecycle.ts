@@ -16,9 +16,11 @@ export function createProtocolProcessLifecycle(
     exitProcess?: (code: number) => void;
   } = {},
 ) {
-  const source = options.input ?? process.stdin;
-  const output = options.output ?? process.stdout;
-  const stderr = options.stderr ?? process.stderr;
+  // Причина: под TypeScript 6 + @types/node 25 объединение NodeJS.ReadableStream | ReadStream
+  // теряет вызываемую сигнатуру .on(); явная типизация нормализует поток к базовому контракту.
+  const source: NodeJS.ReadableStream = options.input ?? process.stdin;
+  const output: NodeJS.WritableStream = options.output ?? process.stdout;
+  const stderr: NodeJS.WritableStream = options.stderr ?? process.stderr;
   const input = new PassThrough();
   const controller = new AbortController();
   const exit = options.exitProcess ?? ((code: number) => process.exit(code));

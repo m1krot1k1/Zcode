@@ -46,7 +46,7 @@ import {
   type ResolvedRegistrySelection,
 } from "./provider-registry-selection.js";
 import { isClosableSessionStore } from "./session-store.js";
-import { createSubagentObservation } from "./subagent-observation.js";
+import { createSubagentObservation } from "./subagent-observation/index.js";
 import type { PrepareUserExecutionBoundary, ZCodeApp } from "./types.js";
 import type { CliDefaultSelection } from "./cli-default-selection.js";
 
@@ -101,18 +101,13 @@ type SessionFacade = Pick<
   | "updateTargetStatus"
 >;
 
-const DEFAULT_SESSION_RESOURCE_CLOSE_TIMEOUT_MS = 6_000;
+import { closeSessionResources } from "./session-facade-shutdown.js";
 
-interface SessionResourceCloseInput {
-  beginShutdown: () => void;
-  closeBrowserSession: () => Promise<void>;
-  closeExecution?: () => Promise<void> | void;
-  closeMcp?: () => Promise<void> | void;
-  closeNodeReplBrowserBroker?: () => Promise<void> | void;
-  closeSessionStore?: () => void;
-  logger: Logger;
-  timeoutMs?: number;
-}
+export {
+  closeSessionResources,
+  DEFAULT_SESSION_RESOURCE_CLOSE_TIMEOUT_MS,
+  type SessionResourceCloseInput,
+} from "./session-facade-shutdown.js";
 
 interface CreateSessionFacadeDeps {
   cliDefaultSelection?: CliDefaultSelection;
@@ -122,6 +117,8 @@ interface CreateSessionFacadeDeps {
    */
   closeDynamicWorkflowRuns?: () => Promise<void>;
   closeNodeReplBrowserBroker?: () => Promise<void> | undefined;
+  /** Освобождение PTY-сессий, принадлежащих этому app (только если app их создал). */
+  closePtySessions?: () => Promise<void>;
   configResult: ConfigResult;
   configuredMcpServers: Record<string, McpServerConfig>;
   configuredDefaultModelSelection?: ModelSelection;
@@ -137,6 +134,14 @@ interface CreateSessionFacadeDeps {
   prepareResume(traceContext?: TraceContext): Promise<void>;
   projectID: ProjectId;
   providerRegistry: ProviderRegistryModelSource;
+  /**
+   * project-scope MCP 显式审批：只有用户主动 connect 才调用，写用户域 store 后返回。
+   * 缺席表示本装配没有可写 store（嵌入/测试），此时 untrusted server 拒绝连接。
+   */
+  approveProjectMcpServer?: (input: {
+    name: string;
+    config: McpServerConfig;
+  }) => Promise<void>;
   resolveUiLocale(locale: UiLocale): SupportedLocale;
   runtime: AgentRuntime;
   sessionId: SessionId;
@@ -325,6 +330,7 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
               : undefined,
           closeMcp: deps.ownsMcpPort && deps.mcpPort ? () => deps.mcpPort?.close() : undefined,
           closeNodeReplBrowserBroker: deps.closeNodeReplBrowserBroker,
+          closePtySessions: deps.closePtySessions,
           closeSessionStore: closableSessionStore ? () => closableSessionStore.close() : undefined,
           logger: deps.logger,
         });
@@ -390,6 +396,16 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
       }
       if (!deps.mcpPort) {
         throw new Error("MCP is disabled");
+      }
+      if (deps.untrustedProjectMcpServers.has(name)) {
+        // project-scope 默认拒绝：必须先有显式用户批准，批准只绑定当前定义 digest。
+        // 没有可写 store 时保持 fail closed，不能退化成「内存临时放行」。
+        const approve = deps.approveProjectMcpServer;
+        if (!approve) {
+          throw new Error(`Project MCP server requires explicit approval before use: ${name}`);
+        }
+        await approve({ name, config });
+        deps.untrustedProjectMcpServers.delete(name);
       }
       return deps.mcpPort.connectServer(name, config, {
         trace: deps.traceContext,
@@ -763,84 +779,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
   };
 }
 
-export async function closeSessionResources(input: SessionResourceCloseInput): Promise<void> {
-  try {
-    // 第一拍先关闭 runtime admission；后续 execution cancel 只能收口状态，不能再唤醒模型。
-    input.beginShutdown();
-  } catch (error) {
-    input.logger.warn("Failed to begin runtime shutdown", {
-      error: error instanceof Error ? error.message : String(error),
-      event: "session.shutdown_admission.failed",
-    });
-  }
-
-  const timeoutMs = Math.max(
-    1,
-    Math.trunc(input.timeoutMs ?? DEFAULT_SESSION_RESOURCE_CLOSE_TIMEOUT_MS),
-  );
-  const resources: Array<[name: string, close: (() => Promise<void> | void) | undefined]> = [
-    ["browser_session", input.closeBrowserSession],
-    ["execution", input.closeExecution],
-    ["mcp", input.closeMcp],
-    ["node_repl_browser_broker", input.closeNodeReplBrowserBroker],
-  ];
-
-  // 旧关闭链串行 await；Browser close 永不 settle 时，Execution/MCP 永远不会执行。
-  // 各 owner 并行、独立带 deadline，任何一个失败都不能跳过其它资源。
-  await Promise.all(
-    resources.flatMap(([name, close]) =>
-      close ? [closeSessionResourceWithinDeadline(name, close, timeoutMs, input.logger)] : [],
-    ),
-  );
-
-  try {
-    input.closeSessionStore?.();
-  } catch (error) {
-    input.logger.warn("Failed to close session store", {
-      error: error instanceof Error ? error.message : String(error),
-      event: "session.resource_close.failed",
-      resource: "session_store",
-    });
-  }
-}
-
-async function closeSessionResourceWithinDeadline(
-  name: string,
-  close: () => Promise<void> | void,
-  timeoutMs: number,
-  logger: Logger,
-): Promise<void> {
-  let timer: NodeJS.Timeout | undefined;
-  const closePromise = Promise.resolve().then(close);
-  const outcome = await Promise.race([
-    closePromise.then(
-      () => ({ type: "completed" as const }),
-      (error: unknown) => ({ type: "failed" as const, error }),
-    ),
-    new Promise<{ type: "timed_out" }>((resolve) => {
-      timer = setTimeout(() => resolve({ type: "timed_out" }), timeoutMs);
-    }),
-  ]);
-  if (timer) clearTimeout(timer);
-
-  if (outcome.type === "completed") return;
-  if (outcome.type === "timed_out") {
-    logger.warn("Session resource close timed out", {
-      event: "session.resource_close.timed_out",
-      resource: name,
-      timeoutMs,
-    });
-    return;
-  }
-  logger.warn("Session resource close failed", {
-    error: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
-    event: "session.resource_close.failed",
-    resource: name,
-  });
-}
-
 async function persistSessionModelSelection(deps: CreateSessionFacadeDeps): Promise<void> {
   if (!deps.sessionStore.saveSessionEntry) return;
+  // Draft-сессия ещё не имеет строки `session`, а `session_entry.session_id` — FK на неё.
+  // Выбор живёт в runtime state и записывается штатным core `persistSession` при создании
+  // сессии; прямой write здесь давал `FOREIGN KEY constraint failed` и не был durable.
+  if (deps.runtime.isSessionPersisted?.() !== true) return;
   const selection = readUserModelSelection(deps);
   if (!selection) return;
   const timestamp = Date.now();

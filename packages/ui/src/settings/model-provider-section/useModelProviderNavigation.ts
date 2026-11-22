@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Model Provider 导航需要集中计算分组、选中项与 Coding Plan 权益态，后续拆分时再收敛。 */
 import { useEffect, useMemo } from "react";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 import { getProviderFormLabel } from "@/lib/providerSettingsFormTypes.js";
@@ -41,6 +40,17 @@ interface PresetProviderWithConfig extends PresetProviderSpec {
   provider: ProviderSettingsFormProvider | null;
 }
 
+const LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS = new Set([
+  "opencode-go-chat",
+  "opencode-go-responses",
+]);
+
+function isLegacyOpenCodeProvider(provider: ProviderSettingsFormProvider): boolean {
+  return (
+    provider.templateId != null && LEGACY_OPENCODE_PROVIDER_TEMPLATE_IDS.has(provider.templateId)
+  );
+}
+
 interface UseModelProviderNavigationOptions {
   presetProviders: PresetProviderWithConfig[];
   modelProviders: ProviderSettingsFormProvider[];
@@ -58,6 +68,7 @@ interface UseModelProviderNavigationOptions {
   familyConnectionSettingsFailed?: boolean;
   subscribedTeamProducts?: EnterpriseCodingPlanProductDisplay[];
   showPurchasedTeamPlanFallback?: boolean;
+  codeIntelligenceAvailable?: boolean;
   selectedNodeKey: string | null;
   setSelectedNodeKey: (key: string | null) => void;
   intl: ReturnType<typeof useZCodeIntl>["intl"];
@@ -77,6 +88,7 @@ export function useModelProviderNavigation({
   familyConnectionSettingsFailed = false,
   subscribedTeamProducts = [],
   showPurchasedTeamPlanFallback = false,
+  codeIntelligenceAvailable = false,
   selectedNodeKey,
   setSelectedNodeKey,
   intl,
@@ -88,6 +100,16 @@ export function useModelProviderNavigation({
     // 这里复用模型菜单的展示排序，确保设置页和聊天框供应商顺序一致。
     return sortModelProvidersForDisplay(allCustomProviders, displayOrder);
   }, [displayOrder, modelProviders]);
+  // Bug 原因：旧 OpenCode Go Chat/Responses 同时显示在默认 API 列表，用户会把它们误认为不同的 CLI 连接方式。
+  // 修复依据：保留 Registry 身份和 Composer 运行数据，只把旧入口收进单独折叠组。
+  const legacyOpenCodeProviders = useMemo(
+    () => customProviders.filter(isLegacyOpenCodeProvider),
+    [customProviders],
+  );
+  const regularCustomProviders = useMemo(
+    () => customProviders.filter((provider) => !isLegacyOpenCodeProvider(provider)),
+    [customProviders],
+  );
 
   const codingPlanItems = useMemo(
     () =>
@@ -213,7 +235,7 @@ export function useModelProviderNavigation({
       {
         id: "custom",
         title: intl.formatMessage({ id: "settings.modelProvider.customTitle" }),
-        items: customProviders.map((provider) => ({
+        items: regularCustomProviders.map((provider) => ({
           key: createCustomProviderNodeKey(provider.providerId),
           type: "custom" as const,
           label: getProviderFormLabel(provider),
@@ -221,11 +243,58 @@ export function useModelProviderNavigation({
           statusActive: provider.executable === true,
         })),
       },
+      ...(legacyOpenCodeProviders.length > 0
+        ? [
+            {
+              id: "legacy-opencode" as const,
+              title: intl.formatMessage({ id: "settings.modelProvider.legacyOpenCodeTitle" }),
+              items: legacyOpenCodeProviders.map((provider) => ({
+                key: createCustomProviderNodeKey(provider.providerId),
+                type: "custom" as const,
+                label: getProviderFormLabel(provider),
+                provider,
+                statusActive: provider.executable === true,
+              })),
+            },
+          ]
+        : []),
+      {
+        id: "agent-integrations",
+        title: intl.formatMessage({ id: "settings.modelProvider.agentIntegrationsTitle" }),
+        items: [
+          {
+            key: "agent-integration:opencode-cli",
+            type: "agentIntegration" as const,
+            integrationId: "opencode-cli" as const,
+            label: intl.formatMessage({ id: "settings.modelProvider.openCodeCli" }),
+          },
+        ],
+      },
+      ...(codeIntelligenceAvailable
+        ? [
+            {
+              id: "workspace-intelligence" as const,
+              title: intl.formatMessage({
+                id: "settings.modelProvider.workspaceIntelligenceTitle",
+              }),
+              items: [
+                {
+                  key: "workspace-intelligence:embeddings",
+                  type: "codeIntelligence" as const,
+                  label: intl.formatMessage({ id: "settings.embedding.navigationLabel" }),
+                },
+              ],
+            },
+          ]
+        : []),
     ];
 
     return groups;
   }, [
     customProviders,
+    codeIntelligenceAvailable,
+    legacyOpenCodeProviders,
+    regularCustomProviders,
     codingPlanItems,
     connectionModeCodingPlanItems,
     // 左侧导航分组标题在这个 memo 内格式化。
@@ -379,7 +448,10 @@ export function resolveFallbackModelProviderNodeKey({
     Exclude<ModelProviderNavGroup["items"][number], { type: "codingPlanLoading" }>
   >;
 }): string | null {
-  const initialConnectionItem = pickInitialConnectionNavigationItem(selectableNavigationItems);
+  const defaultProviderItems = selectableNavigationItems.filter(
+    (item) => item.type !== "agentIntegration" && item.type !== "codeIntelligence",
+  );
+  const initialConnectionItem = pickInitialConnectionNavigationItem(defaultProviderItems);
   const initialSideNodeKey = initialConnectionItem
     ? resolveSideNavigationNodeKeyForConnectionItem(initialConnectionItem)
     : null;
@@ -392,7 +464,7 @@ export function resolveFallbackModelProviderNodeKey({
   // 初始化只在没有有效选中项时发生；如果当前用户选择仍有效，上层 effect 不会调用 fallback 抢焦点。
   return (
     initialSideNodeKey ??
-    resolveSideNavigationNodeKeyForConnectionItem(selectableNavigationItems[0] ?? null)
+    resolveSideNavigationNodeKeyForConnectionItem(defaultProviderItems[0] ?? null)
   );
 }
 
@@ -558,7 +630,12 @@ export function connectionSelectionMatchesNavigationItem(
   selection: ProviderFamilyConnectionSelection,
   item: Exclude<ModelProviderNavGroup["items"][number], { type: "codingPlanLoading" }>,
 ): boolean {
-  if (item.type === "custom") return false;
+  if (
+    item.type === "custom" ||
+    item.type === "agentIntegration" ||
+    item.type === "codeIntelligence"
+  )
+    return false;
   const familySpec = resolveModelProviderFamilySpecByProviderId(item.presetId ?? "");
   if (familySpec?.id !== family) return false;
   if (selection.kind === "start-plan") {

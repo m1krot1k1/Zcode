@@ -185,6 +185,11 @@ describe("stageRelease", () => {
     await writeFakePackage(workspaceNodeModulesDir, "@lydell/node-pty-linux-x64", {
       files: { "prebuilds/linux-x64/pty.node": "linux-binary" },
     });
+    // Пакеты динамического парсера не видны сканеру bundle: их обязан добавить stage.
+    await writeFakePackage(workspaceNodeModulesDir, "web-tree-sitter");
+    await writeFakePackage(workspaceNodeModulesDir, "tree-sitter-wasms", {
+      files: { "out/tree-sitter-typescript.wasm": "fake-wasm" },
+    });
 
     const bundledSkillsDir = join(root, "bundled-skills");
     await mkdir(join(bundledSkillsDir, "skills/dynamic-workflows"), { recursive: true });
@@ -263,6 +268,10 @@ describe("stageRelease", () => {
       "runtime/node",
       "runtime/node_modules/fake-dep/package.json",
       "runtime/node_modules/fake-transitive/package.json",
+      // Регрессия: без этих пакетов серверный индекс уходит в text fallback (0 refs/edges).
+      "runtime/node_modules/web-tree-sitter/package.json",
+      "runtime/node_modules/tree-sitter-wasms/package.json",
+      "runtime/node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm",
       "runtime/node_modules/node-pty/lib/index.js",
       "runtime/node_modules/node-pty/LICENSE",
       "runtime/THIRD-PARTY-NOTICES.md",
@@ -308,7 +317,13 @@ describe("stageRelease", () => {
       agent: "runtime/zcode.cjs",
     });
 
-    expect(staged.packagedDependencies).toEqual(["fake-dep", "fake-transitive", "node-pty"]);
+    expect(staged.packagedDependencies).toEqual([
+      "fake-dep",
+      "fake-transitive",
+      "node-pty",
+      "tree-sitter-wasms",
+      "web-tree-sitter",
+    ]);
     expect(staged.archivePath).toBeNull();
   });
 

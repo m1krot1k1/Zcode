@@ -4,7 +4,12 @@
 
 import { anthropic } from "@ai-sdk/anthropic";
 import { jsonSchema, tool, type ToolSet } from "ai";
-import { ModelErrorCode, type JsonSchema, type ModelToolContract } from "@zcode/contracts";
+import {
+  ModelErrorCode,
+  normalizeToolJsonSchema,
+  type JsonSchema,
+  type ModelToolContract,
+} from "@zcode/contracts";
 import { AiSdkModelAdapterError } from "./errors.js";
 import { isAnthropicFirstPartyModelId, toStrictToolSchema } from "./strict-tool-schema.js";
 
@@ -12,10 +17,13 @@ export interface AiSdkToolTransformOptions {
   toolSearchEnabled?: boolean;
   requiresMfjsToolSchema?: boolean;
   supportsNativeWebSearch?: boolean;
-  providerKind?: "openai" | "anthropic" | "openai-compatible" | "gateway" | "custom";
+  providerKind?: "openai" | "anthropic" | "openai-compatible" | "opencode-sdk" | "gateway" | "custom";
 
   /** 本次请求的模型 id，仅用于首方 strict 资格判定；缺席即不启用 strict。 */
   modelId?: string;
+
+  /** 在 Anthropic 预算允许时为最后一个客户端工具声明添加 ephemeral cache_control 断点。 */
+  cacheLastTool?: boolean;
 }
 
 export function toAiSdkTools(
@@ -26,7 +34,15 @@ export function toAiSdkTools(
     return undefined;
   }
 
-  const entries = tools.flatMap((contract): [string, ToolSet[string]][] => {
+  let lastClientToolIndex = -1;
+  for (let i = tools.length - 1; i >= 0; i -= 1) {
+    if (!tools[i]?.providerNative) {
+      lastClientToolIndex = i;
+      break;
+    }
+  }
+
+  const entries = tools.flatMap((contract, index): [string, ToolSet[string]][] => {
     if (contract.providerNative) {
       const providerTool = toAiSdkProviderNativeTool(contract, options);
       return providerTool ? [[contract.name, providerTool]] : [];
@@ -44,7 +60,11 @@ export function toAiSdkTools(
       ),
       ...(strictSchema === undefined ? {} : { strict: true }),
       needsApproval: contract.needsApproval,
-      ...providerOptionsForClientTool(options, contract),
+      ...providerOptionsForClientTool(
+        options,
+        contract,
+        options.cacheLastTool === true && index === lastClientToolIndex,
+      ),
     };
 
     if (!contract.execute) {
@@ -98,10 +118,86 @@ function normalizeToolInputSchema(
   schema: JsonSchema,
   options: AiSdkToolTransformOptions,
 ): JsonSchema {
-  if (!options.requiresMfjsToolSchema) {
-    return schema;
+  // OpenCode Go Responses 的严格工具编译器拒绝 propertyNames，带上它整次请求会失败；
+  // Record 的值约束留在 additionalProperties。删除会改写入参，先深拷贝，避免改写调用方 contract。
+  const copy = structuredClone(schema);
+  if (options.requiresMfjsToolSchema) {
+    normalizeToolJsonSchemaKeepingLocalRefs(copy);
+    return hoistLocalJsonSchemaRefsToDefs(toolName, copy);
   }
-  return hoistLocalJsonSchemaRefsToDefs(toolName, schema);
+  deletePropertyNames(copy);
+  return copy;
+}
+
+function deletePropertyNames(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) deletePropertyNames(item);
+    return;
+  }
+  const record = asPlainRecord(value);
+  if (!record) return;
+  delete record.propertyNames;
+  for (const child of Object.values(record)) {
+    deletePropertyNames(child);
+  }
+}
+
+function normalizeToolJsonSchemaKeepingLocalRefs(schema: JsonSchema): JsonSchema {
+  // K3 提升要改写本地 $ref。normalizeToolJsonSchema 会删掉 $ref 和 $defs，先摘下再归一化，否则提升看不到引用。
+  const defs = detachSchemaRecord(schema, "$defs");
+  const definitions = detachSchemaRecord(schema, "definitions");
+  const refs = detachLocalRefs(schema);
+  normalizeToolJsonSchema(schema);
+  for (const ref of refs) {
+    ref.parent.$ref = ref.value;
+  }
+  if (defs) {
+    normalizeDetachedSchemaMap(defs);
+    schema.$defs = defs;
+  }
+  if (definitions) {
+    normalizeDetachedSchemaMap(definitions);
+    schema.definitions = definitions;
+  }
+  return schema;
+}
+
+function detachSchemaRecord(
+  schema: JsonSchema,
+  key: "$defs" | "definitions",
+): Record<string, unknown> | undefined {
+  const record = asPlainRecord(schema[key]);
+  if (key in schema) delete schema[key];
+  return record;
+}
+
+function normalizeDetachedSchemaMap(record: Record<string, unknown>): void {
+  for (const child of Object.values(record)) {
+    const schema = asPlainRecord(child);
+    if (schema) normalizeToolJsonSchemaKeepingLocalRefs(schema);
+  }
+}
+
+interface DetachedLocalRef {
+  parent: Record<string, unknown>;
+  value: unknown;
+}
+
+function detachLocalRefs(value: unknown, refs: DetachedLocalRef[] = []): DetachedLocalRef[] {
+  if (Array.isArray(value)) {
+    for (const item of value) detachLocalRefs(item, refs);
+    return refs;
+  }
+  const record = asPlainRecord(value);
+  if (!record) return refs;
+  if ("$ref" in record) {
+    refs.push({ parent: record, value: record.$ref });
+    delete record.$ref;
+  }
+  for (const child of Object.values(record)) {
+    detachLocalRefs(child, refs);
+  }
+  return refs;
 }
 
 function hoistLocalJsonSchemaRefsToDefs(toolName: string, schema: JsonSchema): JsonSchema {
@@ -226,8 +322,9 @@ function asPlainRecord(value: unknown): Record<string, unknown> | undefined {
 function providerOptionsForClientTool(
   options: AiSdkToolTransformOptions,
   contract: ModelToolContract,
+  cacheBreakpoint = false,
 ): {
-  providerOptions?: Record<string, Record<string, boolean>>;
+  providerOptions?: NonNullable<ToolSet[string]["providerOptions"]>;
 } {
   if (options.providerKind !== "anthropic") {
     return {};
@@ -242,6 +339,7 @@ function providerOptionsForClientTool(
       anthropic: {
         eagerInputStreaming: false,
         ...(options.toolSearchEnabled && contract.deferLoading ? { deferLoading: true } : {}),
+        ...(cacheBreakpoint ? { cacheControl: { type: "ephemeral" } } : {}),
       },
     },
   };

@@ -4,6 +4,14 @@
 - 以当前检出的源码、`package.json` 和架构策略为准。说明中只保留当前仓库提供的功能、命令和文件；删除功能时同步清理指令和技能中的引用。
 - 定位问题时，未明确要求修改代码就先调查原因。结合源码、日志和运行时证据，区分已确认原因与待验证假设。
 - 保留与任务无关的本地改动，不自行恢复已移除的模块或内部依赖。
+- 目标必须做到最后：不要只完成第一层或第一个切片就停下。按请求的全部范围实现、验证并修复，再报告；只有真实阻塞才允许 partial，并写明证据、未完成项和下一步。
+
+## Definition of Done
+
+- 请求中的每一项都已实现，或明确列为真实阻塞；不能用“第一阶段完成”“MVP”“后续再做”替代交付。
+- 行为改动有对应 spec 与回归测试；目标层级的 typecheck、lint、测试和构建真实执行过。
+- 交付前检查 git 状态，保留无关改动，并把本次完成的代码、测试、spec 和版本变更一起提交；只有用户明确要求时才额外发布。
+- 报告区分已验证事实、未验证项和残余风险，不把计划、测试通过或部分证据写成完整成功。
 
 ## 命令与仓库结构
 
@@ -23,6 +31,7 @@
 | 模块阅读包       | `pnpm architecture:context <module-id>`              |
 | 未使用依赖与导出 | `pnpm knip`                                          |
 | 导出引用查询     | `pnpm dep:refs --list-exports <file>`                |
+| 同步 skills.sh   | `pnpm skills:sync`（默认 20 个，`--dry-run` 预览）   |
 
 affected 使用 Vitest 官方选择，只运行选中的根 UT；选中整个套件时说明并跳过 UT，成功退出，不因此阻止 Push；不替代 CLI 测试或桌面 E2E。全量使用 `pnpm test` / `pnpm test:unit`，仅在用户明确要求时调用。范围与输出合同见 [pre-push 说明](docs/testing/pre-push-hook.md)。
 
@@ -49,6 +58,14 @@ affected 使用 Vitest 官方选择，只运行选中的根 UT；选中整个套
 - 使用异步文件和网络 IO；跨包导入使用公开入口，遵守现有路径别名。
 - 禁止 UI 直接调用 Repo、Service 引用 Runtime 具体实现、跨域导入实现细节及循环依赖。
 
+## 本地资源与并行度
+
+- 本机是开发者的工作机，可能同时在跑游戏、录屏和 IDE；`pnpm typecheck`、`pnpm test` 和整包构建都是满核负载，不是免费操作。
+- 同时存活的 subagent 不超过 `max(1, availableParallelism() − 2)` 个；上一批没有收敛前不要开下一批。多波次任务按波串行，不要一次把 q/z/y/x 全放出去。
+- 跨工作树验证串行执行：一个工作树跑完再跑下一个，不要为每个工作树各起一份 `pnpm typecheck` / `pnpm test`。
+- subagent 只跑自己改动相关的验证范围，不要全量 `pnpm test`、全量构建或反复整包 bundle。
+- 需要长时间满核任务时先限流：`nice -n 19 …` 或 `systemd-run --user --scope -p CPUQuota=40% …`。
+
 ## UI 与平台边界
 
 - 遵守 `DESIGN.md`，复用已有组件，兼顾桌面与手机 Web 的布局、交互、主题和国际化。
@@ -65,8 +82,8 @@ affected 使用 Vitest 官方选择，只运行选中的根 UT；选中整个套
 - 手机远控连接桌面已有 Host attachment，复用会话运行时；不为手机另起 Agent、Local Host 或远程会话。
 - Desktop 的 `desktop-continuous` 实时链路与手机的 `web-remote-replayable` 恢复链路必须明确区分。修改 stream、snapshot、queue 或重连时，同时验证两种语义。
 - 外部 relay 与 Main 只做鉴权、配对、心跳、转发及 attachment 调度，不保存任务队列、快照等业务状态。
-- 已接受的 busy/running 输入由 CLI/runtime `CommandInbox` 串行 admission；Renderer 只保留未提交草稿与 pending optimistic overlay，Host owner/lease 负责路由。
-- 保留 owner/lease、跨 Host 路由和 stale run 防护，不能仅根据单一路径删除边界判断。
+- 已接受的 busy/running 输入由 CLI/runtime `CommandInbox` 串行 admission；Renderer 只保留未提交草稿与 pending optimistic overlay，Host 只转发任务元数据和 session route。
+- 跨 Host session route 由 main 的 `TaskRealtimeBus` 承担；Host 不创建 owner/lease/mirror bridge，也不注入 realtime port。恢复镜像前必须同时验证 stale run、跨端去重和手机 relay 恢复语义。
 
 ## Workspace Identity
 

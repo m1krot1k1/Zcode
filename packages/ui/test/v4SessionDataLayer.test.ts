@@ -751,6 +751,59 @@ describe("ConversationProjectionStore", () => {
     expect(hasOlderRows(snapshot)).toBe(false);
   });
 
+  it("AC7：mid-stream gap 触发 resync(base)，重复帧不改状态，终态等于 seq 0 全量重放", async () => {
+    await store.connect();
+
+    // 第二个 store 走无断档的全量顺序投递，作为权威对照。
+    const replayTransport = new FakeTransport();
+    const replayStore = new ConversationProjectionStore("conversation/s1", replayTransport);
+    replayTransport.onFrame((frame, context) => replayStore.handleFrame(frame, context));
+    await replayStore.connect();
+
+    const prefix = [
+      { op: "row.appended" as const, row: assistantRow(1, "part-1") },
+      { op: "row.appended" as const, row: assistantRow(2, "part-2") },
+      { op: "row.appended" as const, row: assistantRow(3, "part-3") },
+    ];
+
+    // 在线帧 5→6 应用；随后 7→8 断档（缺 (6,7]），触发 resync(base=6)。
+    transport.emit(makeFrame("sub-1", 5, 6, { kind: "deltas", deltas: [prefix[0]!] }));
+    transport.emit(makeFrame("sub-1", 7, 8, { kind: "deltas", deltas: [prefix[2]!] }));
+    expect(transport.resyncCalls).toEqual([
+      { subscriptionId: "sub-1", base: { logEpoch: "epoch-1", seq: 6 } },
+    ]);
+    await flushMicrotasks();
+
+    // recovery 从 base=6 补齐 (6,8]：两行合并为一个 logical frame。
+    transport.emitRecovery(
+      makeFrame("sub-1", 6, 8, { kind: "deltas", deltas: [prefix[1]!, prefix[2]!] }),
+    );
+    await flushMicrotasks();
+    expect(store.getState().subscriptionId).toBe("sub-1");
+    expect(transport.resyncCalls).toHaveLength(1);
+
+    // 全量重放：同一初始 snapshot 后按 5→6→7→8 无断档投递。
+    replayTransport.emit(makeFrame("sub-1", 5, 6, { kind: "deltas", deltas: [prefix[0]!] }));
+    replayTransport.emit(makeFrame("sub-1", 6, 7, { kind: "deltas", deltas: [prefix[1]!] }));
+    replayTransport.emit(makeFrame("sub-1", 7, 8, { kind: "deltas", deltas: [prefix[2]!] }));
+
+    const recovered = store.getState().snapshot!;
+    expect(recovered.seq).toBe(8);
+    expect(recovered).toEqual(replayStore.getState().snapshot);
+
+    // 重复投递 recovery/online 帧：引用不变，不追加行、不再次 resync。
+    transport.emitRecovery(
+      makeFrame("sub-1", 6, 8, { kind: "deltas", deltas: [prefix[1]!, prefix[2]!] }),
+    );
+    transport.emit(makeFrame("sub-1", 5, 6, { kind: "deltas", deltas: [prefix[0]!] }));
+    expect(store.getState().snapshot).toBe(recovered);
+    expect(store.getState().snapshot!.rows.window.map((row) => row.rowId)).toEqual([1, 2, 3]);
+    expect(transport.resyncCalls).toHaveLength(1);
+
+    await store.close();
+    await replayStore.close();
+  });
+
   it("late duplicate toSeq<=localSeq 静默丢弃且不触发 resync", async () => {
     await store.connect();
     transport.emit(makeFrame("sub-1", 0, 5, { kind: "deltas", deltas: [] }));

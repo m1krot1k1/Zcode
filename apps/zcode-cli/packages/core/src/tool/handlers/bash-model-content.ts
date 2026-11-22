@@ -65,11 +65,25 @@ function formatTextContentForModel(result: BashOutput): string {
     formatStdoutContentForModel(result),
     formatStderrForModel(result),
     formatBackgroundInfoForModel(result),
+    formatSandboxInfoForModel(result),
     result.staleReadFileStateHint?.trim() ?? "",
     result.ghRateLimitHint?.trim() ?? "",
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * Причина: системный промпт Bash обещает модели, что результат сообщает `sandbox.mode`,
+ * но структурное поле в текст не попадало — модель не видела, была ли команда
+ * реально изолирована. Без этого агент не может отличить «запись запрещена
+ * песочницей» от «команда не выполнена» и повторяет те же попытки.
+ */
+function formatSandboxInfoForModel(result: BashOutput): string {
+  const sandbox = result.sandbox;
+  if (!sandbox) return "";
+  const reason = sandbox.reason ? `, reason: ${sandbox.reason}` : "";
+  return `[sandbox: mode=${sandbox.mode}${reason}, filesystemIsolated=${sandbox.filesystemIsolated}, networkIsolated=${sandbox.networkIsolated}]`;
 }
 
 function formatStdoutContentForModel(result: BashOutput): string {

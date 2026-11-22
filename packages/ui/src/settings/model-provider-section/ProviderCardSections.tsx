@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 模型供应商卡片仍在迁移期集中维护多个紧耦合区块，后续拆分时再移除。 */
 import {
   useCallback,
   useRef,
@@ -12,7 +11,6 @@ import type {
   ProviderSettingsFormModel,
 } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
-import type { ProviderApiType } from "@zcode/provider";
 import {
   TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
   TID_MODEL_PROVIDER_BASE_URL_INPUT,
@@ -41,7 +39,7 @@ import { PresetProviderApiKeyBanner } from "./PresetProviderApiKeyBanner.js";
 import { type ProviderModelDraftValues } from "@/settings/model-provider-section/ProviderModelMetadata.js";
 import { ProviderModelMetadataDialog } from "@/settings/model-provider-section/ProviderModelMetadataDialog.js";
 import {
-  PROVIDER_CONNECTION_API_FORMATS,
+  type ProviderConnectionApiFormat,
   ProviderApiFormatSelect,
   resolveProviderConnectionApiFormatDisplayLabel,
 } from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
@@ -50,19 +48,8 @@ import { useProviderModelDraft } from "@/settings/model-provider-section/useProv
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
 import type { ProviderConfigObject } from "@zcode/provider";
 
-export {
-  resolveProviderConnectionApiFormatDisplayLabel,
-  resolveProviderConnectionApiFormatOptions,
-} from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
 export { formatModelContextWindowLabel } from "@/lib/tokenNumberFormat.js";
-
-export function resolveProviderApiFormatOptions(
-  _provider: Pick<ProviderSettingsFormProvider, "config" | "models">,
-): ProviderApiType[] {
-  return [...PROVIDER_CONNECTION_API_FORMATS];
-}
-
-export function shouldShowProviderApiFormat(
+function shouldShowProviderApiFormat(
   _provider: Pick<ProviderSettingsFormProvider, "providerId">,
 ): boolean {
   return true;
@@ -70,6 +57,7 @@ export function shouldShowProviderApiFormat(
 
 export function ProviderCardHeader({
   providerName,
+  credentialModeLabel,
   logo,
   editingName,
   nameValue,
@@ -86,6 +74,7 @@ export function ProviderCardHeader({
   providerToggle,
 }: {
   providerName: string;
+  credentialModeLabel?: string;
   logo?: ProviderConfigObject["logo"];
   editingName: boolean;
   nameValue: string;
@@ -131,6 +120,11 @@ export function ProviderCardHeader({
             </div>
           </>
         )}
+        {credentialModeLabel ? (
+          <span className="shrink-0 rounded-md border border-border px-2 py-0.5 text-ui-xs text-foreground-subtle">
+            {credentialModeLabel}
+          </span>
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {providerToggle}
@@ -198,9 +192,9 @@ export function ProviderConnectionSection({
 }: {
   provider: ProviderSettingsFormProvider;
   readOnly?: boolean;
-  apiFormat: ProviderApiType;
+  apiFormat: ProviderConnectionApiFormat;
   baseUrlValue: string;
-  onApiFormatChange: (value: ProviderApiType) => void;
+  onApiFormatChange: (value: ProviderConnectionApiFormat) => void;
   onBaseUrlChange: (value: string) => void;
   onBaseUrlBlur: () => void;
   onBaseUrlKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
@@ -210,7 +204,10 @@ export function ProviderConnectionSection({
   const { intl } = useZCodeIntl();
   const showApiFormat = shouldShowProviderApiFormat(provider);
   const readOnlyBaseUrl = provider.config.api?.baseUrl ?? "";
-  const resolvedApiFormat = provider.config.api?.type ?? "anthropic-messages";
+  const resolvedApiFormat =
+    provider.config.api?.type === "opencode-sdk"
+      ? "openai-chat-completions"
+      : (provider.config.api?.type ?? "anthropic-messages");
 
   const renderReadOnlyField = (label: string, value: string) => (
     <div>
@@ -276,6 +273,9 @@ export function ProviderConnectionSection({
             {intl.formatMessage({ id: "settings.modelProvider.apiFormat" })}
           </label>
           <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} />
+          <p className="mt-1 text-ui-xs text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.modelProvider.apiFormat.autoHint" })}
+          </p>
         </div>
       ) : null}
     </>

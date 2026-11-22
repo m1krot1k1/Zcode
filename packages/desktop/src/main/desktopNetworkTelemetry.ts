@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 网络指标采集/聚合/ARMS 上报 */
 import armsRum from "@arms/rum-electron";
 import { mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
 import type { NetworkObservation } from "@zcode/rpc";
@@ -140,7 +139,7 @@ export function ingestHostNetworkObservations(observations: NetworkObservation[]
 }
 
 /** 远控 relay WebSocket：接口维度固定为 web_remote_control.relay */
-export const WEB_REMOTE_RELAY_INTERFACE = "web_remote_control.relay";
+const WEB_REMOTE_RELAY_INTERFACE = "web_remote_control.relay";
 
 export function noteWebRemoteRelayConnectAttempt(
   durationMs: number,

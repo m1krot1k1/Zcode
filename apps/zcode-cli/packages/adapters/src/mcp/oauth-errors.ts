@@ -24,14 +24,14 @@ export type McpOAuthInteractiveRequiredReason =
   | "unauthorized"
   | "legacy_provider_seam";
 
-export interface McpOAuthInteractiveRequiredError extends Error {
+interface McpOAuthInteractiveRequiredError extends Error {
   code: typeof MCP_OAUTH_INTERACTIVE_REQUIRED_ERROR_CODE;
   reason: McpOAuthInteractiveRequiredReason;
   requiredScope?: string;
   resourceMetadataUrl?: string;
 }
 
-export interface McpOAuthTemporaryRefreshFailureError extends Error {
+interface McpOAuthTemporaryRefreshFailureError extends Error {
   code: typeof MCP_OAUTH_TEMPORARY_REFRESH_FAILURE_ERROR_CODE;
 }
 
@@ -79,13 +79,13 @@ export function createTemporaryRefreshFailureError(input: {
   return error;
 }
 
-export function isInteractiveAuthorizationRequiredError(
+function isInteractiveAuthorizationRequiredError(
   error: unknown,
 ): error is McpOAuthInteractiveRequiredError {
   return hasBrand(error, INTERACTIVE_REQUIRED_BRAND);
 }
 
-export function isTemporaryRefreshFailureError(
+function isTemporaryRefreshFailureError(
   error: unknown,
 ): error is McpOAuthTemporaryRefreshFailureError {
   return hasBrand(error, TEMPORARY_REFRESH_FAILURE_BRAND);

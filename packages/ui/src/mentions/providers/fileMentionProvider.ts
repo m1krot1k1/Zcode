@@ -4,13 +4,7 @@ import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js"
 import { buildFileMentionMarkdown } from "@/mentions/mentionMarkdown.js";
 import { WORKSPACE_FILE_SEARCH_DISPLAY_CAP } from "@zcode/shared/workspaceFileSearch";
 import { getMentionGroupLimitForQuery } from "@/mentions/mentionSearch.js";
-import type { MentionCategoryResult, MentionItem } from "@/mentions/mentionTypes.js";
-
-export function isLocalWorkspaceForFileMentionIndex(workspaceIdentity?: string): boolean {
-  return !workspaceIdentity?.trim();
-}
-
-type ProjectFileEntry = WorkspaceFileEntry & {
+import type { MentionCategoryResult, MentionItem } from "@/mentions/mentionTypes.js";type ProjectFileEntry = WorkspaceFileEntry & {
   rootPath?: string;
   rootName?: string;
   mentionPath?: string;

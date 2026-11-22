@@ -64,6 +64,11 @@ const WEB_REMOTE_REPLAYABLE_ALLOWED_CHANNELS = new Set<string>([
   ServiceChannels.Feedback,
   ServiceChannels.PromptAttachmentTransfer,
   ServiceChannels.OffPeakTask,
+  // Проактивная подсказка — тот же канал/транспорт, что ghost-autocomplete, и монтируется
+  // в общем композере (спека 2026-11-19-composer-proactive-suggestion.md: Web remote
+  // использует тот же контракт). Клиент создаёт proxy безусловно, поэтому без allowlist
+  // телефонный вызов уходит в таймаут (как было с onboarding-record), а не в silent no-op.
+  ServiceChannels.ProactiveSuggestion,
 ]);
 
 const WEB_REMOTE_REPLAYABLE_EXPOSURE_POLICY: ServiceExposurePolicy = {

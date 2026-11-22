@@ -37,7 +37,7 @@ export function setWorkspaceSidebarResizeActive({
   }
 }
 
-export function getWorkspaceSidebarResizeRootForElement(
+function getWorkspaceSidebarResizeRootForElement(
   element: WorkspaceResizeMeasuredElement,
 ): HTMLElement | null {
   return element?.closest(WORKSPACE_SHELL_SELECTOR) ?? null;

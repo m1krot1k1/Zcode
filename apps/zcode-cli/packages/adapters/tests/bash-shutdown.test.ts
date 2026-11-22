@@ -56,7 +56,9 @@ async function main() {
     : adapter.run(request, options);
   const background = mode === 'background' || mode === 'crash' ? await pending : undefined;
   if (background) console.log('ROOT_PID ' + background.task.pid);
-  const deadline = Date.now() + 5000;
+  // Драйвер стартует дочерний shell; под полной нагрузкой turbo 5 секунд мало.
+  // Ждём дольше, но по-прежнему падаем, если процесс так и не поднялся.
+  const deadline = Date.now() + 30000;
   while (true) {
     try { await access(ready); break; } catch {}
     if (Date.now() >= deadline) throw new Error('Worker did not start');
@@ -142,8 +144,11 @@ describe.skipIf(process.platform === "win32")("Bash shutdown in an isolated Node
     }
   }, 15_000);
 
+  // Драйвер собирается esbuild-ом и запускается отдельным процессом: под полной
+  // нагрузкой старт воркера выходит за дефолтные лимиты. Retry не ослабляет проверки.
   it.each(["abort", "close", "background", "timeout", "output_limit"])(
     "finishes cleanup before process exit after %s",
+    { retry: 1, timeout: 60_000 },
     async (mode) => {
       const root = join(directory, mode);
       await mkdir(root);

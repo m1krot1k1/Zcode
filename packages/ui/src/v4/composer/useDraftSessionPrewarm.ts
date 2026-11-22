@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- draft prewarm 的创建、复用、回收和首帧 ModelSelection 必须共享同一 owner 状态机；拆到多文件会让 StrictMode/transport 换代清理时序更难审计。 */
 // 草稿态 v4 draft session 预热。
 //
 // 背景：草稿态没有任何 session 在册时，配置面被迫走 workspace-default 旧 RPC，
@@ -21,7 +20,7 @@ type DispatchCommand = (
   targetSessionId: string | null,
 ) => Promise<CommandAck>;
 
-export interface DraftPrewarmController {
+interface DraftPrewarmController {
   /** 首条 admission 命令已发出、ACK 未收口；dispose 不得删除结果未知的会话。 */
   markPromotionPending(): void;
   /** 首发成功后标记（dispose 不再删除已提升的会话）。 */
@@ -42,10 +41,22 @@ export function startDraftSessionPrewarm(params: {
   onReady: (sessionId: string) => void;
   /** single-flight owner 用于等待不可取消的 createSession 收口；无论成功失败都只调用一次。 */
   onSettled?: () => void;
+  /** Последняя причина отказа createSession; попадает в текст ошибки отправки, не в лог-секрет. */
+  onFailure?: (reason: string) => void;
   /** 预热会话初始 config（全局「上次选择」，同步解析）；让投影首帧即全局、不闪。 */
   resolveInitialConfig?: () => Partial<SessionConfigState> | undefined;
+  /** 仅当前 Composer 明确选中 OpenCode ACP 时，允许走 Host 只读创建路径。 */
+  openCodeAcpDraft?: boolean;
 }): DraftPrewarmController {
-  const { workspaceKey, dispatchCommand, onReady, onSettled, resolveInitialConfig } = params;
+  const {
+    workspaceKey,
+    dispatchCommand,
+    onReady,
+    onSettled,
+    onFailure,
+    resolveInitialConfig,
+    openCodeAcpDraft = false,
+  } = params;
   let disposed = false;
   let promotionState: "draft" | "pending" | "promoted" | "discarded" = "draft";
   let createdSessionId: string | null = null;
@@ -67,8 +78,11 @@ export function startDraftSessionPrewarm(params: {
   };
 
   const createPayload = () => {
-    const createPayload: Record<string, unknown> = { workspaceId: workspaceKey };
-    const initialConfig = resolveInitialConfig?.();
+    const createPayload: Record<string, unknown> = {
+      workspaceId: workspaceKey,
+      ...(openCodeAcpDraft ? { openCodeAcpDraft: true } : {}),
+    };
+    const initialConfig = openCodeAcpDraft ? undefined : resolveInitialConfig?.();
     if (initialConfig && Object.keys(initialConfig).length > 0) {
       // 预热会话首帧即用全局模型（CLI 归并 createSession.config），不闪 workspace 缺省。
       createPayload.config = initialConfig;
@@ -94,6 +108,7 @@ export function startDraftSessionPrewarm(params: {
           reasonCode: ack.reasonCode ?? null,
           workspaceKey,
         });
+        onFailure?.(ack.reasonCode ?? ack.status);
         return;
       }
       createdSessionId = ack.result.sessionId;
@@ -109,10 +124,12 @@ export function startDraftSessionPrewarm(params: {
       onReady(createdSessionId);
     })
     .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
       logger.warn("[v4-draft-prewarm] createSession 失败", {
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         workspaceKey,
       });
+      onFailure?.(message);
     })
     .finally(() => {
       onSettled?.();
@@ -145,7 +162,7 @@ export function startDraftSessionPrewarm(params: {
   };
 }
 
-export interface DraftSessionPrewarm {
+interface DraftSessionPrewarm {
   /** 当前 workspace/transport generation 已就绪的预热 binding。 */
   binding: DraftPrewarmBinding | null;
   /** 首发等待本 owner 当前创建任务；失败或换代即拒绝，不在发送路径另建会话。 */
@@ -178,6 +195,8 @@ interface DraftPrewarmCurrent {
   retiring: boolean;
   /** 本代是第几次退避重试的产物；0 表示首发。 */
   retryAttempt: number;
+  /** Последняя причина отказа createSession для этой генерации. */
+  failureReason: string | null;
 }
 
 /**
@@ -205,23 +224,36 @@ class DraftSessionPrewarmCoordinator {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private dispatchCommand: DispatchCommand;
   private resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined;
+  private openCodeAcpDraft: boolean;
 
   constructor(
     private readonly workspaceKey: string,
     dispatchCommand: DispatchCommand,
     resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined,
+    openCodeAcpDraft: boolean,
     private readonly onEmpty: () => void,
   ) {
     this.dispatchCommand = dispatchCommand;
     this.resolveInitialConfig = resolveInitialConfig;
+    this.openCodeAcpDraft = openCodeAcpDraft;
   }
 
   update(
     dispatchCommand: DispatchCommand,
     resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined,
+    openCodeAcpDraft: boolean,
   ): void {
+    const routeChanged = this.openCodeAcpDraft !== openCodeAcpDraft;
     this.dispatchCommand = dispatchCommand;
     this.resolveInitialConfig = resolveInitialConfig;
+    this.openCodeAcpDraft = openCodeAcpDraft;
+    if (!routeChanged) return;
+
+    // 根因：Composer 恢复/切换到 OpenCode 可能晚于首次 draft prewarm；只更新字段会让
+    // 已在途的普通 createSession 继续成为首发目标。让唯一 owner 退休旧代，收口后再建最新路由。
+    this.blockedInvalidationVersion = null;
+    this.retireCurrent();
+    this.reconcile();
   }
 
   async waitForSession(
@@ -235,7 +267,7 @@ class DraftSessionPrewarmCoordinator {
           (subscriber) => subscriber.generation === generation,
         )
       )
-        throw new Error("草稿会话已切换，请重新发送");
+        throw new Error("Draft session changed. Send the message again.");
     };
     assertCurrentSubscriber();
     // 新草稿已接管时，旧创建仍可能在回收；这是等待窗口，不是用户再次切换。
@@ -253,7 +285,7 @@ class DraftSessionPrewarmCoordinator {
       this.startCurrent(invalidationVersion);
     }
     const current = this.current;
-    if (!current) throw new Error("草稿会话尚未开始创建");
+    if (!current) throw new Error("Draft session creation has not started.");
     // Bug 根因：binding=null 同时表示创建在途和失败，首发据此另建会话会与预热并发。
     // 创建只归此 owner；等待捕获的一代，不能在 await 后悄悄换成另一个会话发送。
     await current.completion;
@@ -264,8 +296,13 @@ class DraftSessionPrewarmCoordinator {
       current.invalidationVersion !== invalidationVersion ||
       this.requestedInvalidationVersion() !== invalidationVersion
     )
-      throw new Error("草稿会话已切换，请重新发送");
-    if (!current.binding) throw new Error("草稿会话创建失败，请重试");
+      throw new Error("Draft session changed. Send the message again.");
+    if (!current.binding)
+      throw new Error(
+        current.failureReason
+          ? `Draft session creation failed: ${current.failureReason}`
+          : "Draft session creation failed. Retry the send.",
+      );
     return current.binding;
   }
 
@@ -377,6 +414,7 @@ class DraftSessionPrewarmCoordinator {
       dispatchCommand: (type, payload, targetSessionId) =>
         this.dispatchCommand(type, payload, targetSessionId),
       resolveInitialConfig: () => this.resolveInitialConfig?.(),
+      openCodeAcpDraft: this.openCodeAcpDraft,
       onReady: (sessionId) => {
         if (this.current !== current || current.retiring) {
           return;
@@ -428,6 +466,11 @@ class DraftSessionPrewarmCoordinator {
           this.onEmpty();
         }
       },
+      onFailure: (reason) => {
+        // Причина нужна только текущей генерации: после retry/смены workspace
+        // пользователь не должен увидеть ошибку прошлой попытки.
+        if (this.current === current) current.failureReason = reason;
+      },
     });
     current = {
       invalidationVersion,
@@ -437,6 +480,7 @@ class DraftSessionPrewarmCoordinator {
       completion,
       retiring: false,
       retryAttempt,
+      failureReason: null,
     };
     this.current = current;
   }
@@ -487,6 +531,7 @@ function getDraftSessionPrewarmCoordinator(params: {
   transportIdentity: unknown;
   dispatchCommand: DispatchCommand;
   resolveInitialConfig: (() => Partial<SessionConfigState> | undefined) | undefined;
+  openCodeAcpDraft: boolean;
 }): DraftSessionPrewarmCoordinator {
   let transportCoordinators = draftPrewarmCoordinatorsByTransport.get(params.transportIdentity);
   if (!transportCoordinators) {
@@ -500,6 +545,7 @@ function getDraftSessionPrewarmCoordinator(params: {
       params.workspaceKey,
       params.dispatchCommand,
       params.resolveInitialConfig,
+      params.openCodeAcpDraft,
       () => {
         if (transportCoordinators?.get(ownerKey) !== coordinator) {
           return;
@@ -528,6 +574,8 @@ export function useDraftSessionPrewarm(params: {
   dispatchCommand: DispatchCommand;
   /** 预热会话初始 config（全局「上次选择」，同步解析）；让投影首帧即全局、不闪。 */
   resolveInitialConfig?: () => Partial<SessionConfigState> | undefined;
+  /** Composer 明确选择 OpenCode ACP 时才可跳过 ZCode provider startup gate。 */
+  openCodeAcpDraft?: boolean;
 }): DraftSessionPrewarm {
   const {
     enabled,
@@ -537,6 +585,7 @@ export function useDraftSessionPrewarm(params: {
     invalidationVersion = 0,
     dispatchCommand,
     resolveInitialConfig,
+    openCodeAcpDraft = false,
   } = params;
   // workspace/pane/transport 共同定义逻辑 owner：同 owner 重挂复用 single-flight，transport
   // 换代仍生成新 coordinator，确保旧 session 的清理不会误走新 transport。
@@ -552,12 +601,13 @@ export function useDraftSessionPrewarm(params: {
         transportIdentity,
         dispatchCommand,
         resolveInitialConfig,
+        openCodeAcpDraft,
       }),
     [owner],
   );
   useLayoutEffect(() => {
-    coordinator.update(dispatchCommand, resolveInitialConfig);
-  }, [coordinator, dispatchCommand, resolveInitialConfig]);
+    coordinator.update(dispatchCommand, resolveInitialConfig, openCodeAcpDraft);
+  }, [coordinator, dispatchCommand, openCodeAcpDraft, resolveInitialConfig]);
   const generation = useMemo(() => ({ owner }), [enabled, invalidationVersion, owner]);
   const [ready, setReady] = useState<{
     generation: typeof generation;
@@ -581,7 +631,7 @@ export function useDraftSessionPrewarm(params: {
   }, [coordinator, enabled, generation, invalidationVersion]);
 
   const waitForSession = useCallback(async () => {
-    if (!enabled) throw new Error("草稿会话尚未启用");
+    if (!enabled) throw new Error("Draft session prewarm is disabled.");
     return coordinator.waitForSession(invalidationVersion, generation);
   }, [coordinator, enabled, generation, invalidationVersion]);
 

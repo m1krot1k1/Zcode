@@ -4,7 +4,7 @@ import { access, cp, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promi
 import { basename, dirname, join, resolve } from "node:path";
 import { appendPluginSourceCleanupError, cleanupPluginSourceBestEffort } from "./helpers.js";
 
-export interface ActivateDirectoryAtomicallyInput {
+interface ActivateDirectoryAtomicallyInput {
   authorityPath?: string;
   prepare?: (stagedPath: string) => Promise<void>;
   signal?: AbortSignal;
@@ -12,7 +12,7 @@ export interface ActivateDirectoryAtomicallyInput {
   targetPath: string;
 }
 
-export interface ReplaceDirectoryAtomicallyInput extends ActivateDirectoryAtomicallyInput {
+interface ReplaceDirectoryAtomicallyInput extends ActivateDirectoryAtomicallyInput {
   sourcePath: string;
 }
 

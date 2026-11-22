@@ -1,5 +1,6 @@
 import {
   resolveManagedPluginDisplay,
+  skillComponentSearchText,
   type StorePluginItem,
 } from "@/settings/pluginStoreListing.js";
 import type {
@@ -30,7 +31,7 @@ export function selectBuiltInPlugins(
   return plugins.filter((plugin) => plugin.source === "official" && !installedIds.has(plugin.id));
 }
 
-export interface PluginSettingsGroups {
+interface PluginSettingsGroups {
   installed: ZCodePluginInfo[];
   builtIn: ZCodePluginInfo[];
 }
@@ -66,7 +67,14 @@ export function filterPluginsByQuery(
     const display = resolveManagedPluginDisplay(plugin, item, locale);
     return pluginSearchMatches(
       normalizedQuery,
-      [plugin.name, plugin.id, plugin.marketplace, display.name, display.description],
+      [
+        plugin.name,
+        plugin.id,
+        plugin.marketplace,
+        display.name,
+        display.description,
+        ...skillComponentSearchText(plugin.components ?? item?.info?.components),
+      ],
       [
         plugin.name,
         item?.listing?.displayName,
@@ -137,7 +145,7 @@ export function selectCommandsForScope(
   });
 }
 
-export interface SkillSourceGroup {
+interface SkillSourceGroup {
   id: string;
   label: string;
   pluginId?: string;

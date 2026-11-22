@@ -48,7 +48,7 @@ const MAX_TASK_STOP_DISPLAY_FIELD_BYTES = 16 * 1024;
 export const MAX_NODE_REPL_DISPLAY_IMAGE_BASE64_BYTES = 200 * 1024;
 const MAX_NODE_REPL_DISPLAY_IMAGES = 2;
 
-export interface McpToolDisplayMetadata {
+interface McpToolDisplayMetadata {
   serverName: string;
   toolName: string;
   description?: string;

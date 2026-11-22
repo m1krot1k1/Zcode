@@ -61,7 +61,7 @@ export function buildPluginSandboxCsp(input: {
 }
 
 /** CSP host-source 的 host 字符集（ALPHA / DIGIT / "-"）。 */
-export const PLUGIN_SANDBOX_CSP_HOST_SAFE_ID = /^[A-Za-z0-9-]+$/;
+const PLUGIN_SANDBOX_CSP_HOST_SAFE_ID = /^[A-Za-z0-9-]+$/;
 
 /** 受信 shell 只加载打包资源，不联网。 */
 export const PLUGIN_SANDBOX_SHELL_CSP = [
@@ -73,19 +73,7 @@ export const PLUGIN_SANDBOX_SHELL_CSP = [
   "connect-src 'none'",
   "form-action 'none'",
   "base-uri 'self'",
-].join("; ");
-
-export const PLUGIN_SANDBOX_PERMISSIONS_POLICY = [
-  "camera=()",
-  "microphone=()",
-  "geolocation=()",
-  "display-capture=()",
-  "payment=()",
-  "usb=()",
-  "clipboard-read=()",
-].join(", ");
-
-/**
+].join("; ");/**
  * 按资源声明放宽 Permissions-Policy：shell 文档对声明的特性用 `*`（它只嵌本沙箱的插件 iframe，
  * 自定义 scheme 的 origin 串 Chromium 不一定接受），插件文档用 `(self)`；未声明的一律 `()`。
  */

@@ -20,6 +20,7 @@ import type {
   ModelTextResult,
 } from "@zcode/contracts";
 import type { RegistryModelConfig, RegistryProviderConfig } from "@zcode/provider";
+import type { OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
 import {
   AiSdkModelExecution,
   type AiSdkResolvedModel,
@@ -33,6 +34,7 @@ import {
   type ResolvedAiSdkModelRetryOptions,
 } from "./retry-policy.js";
 import { resolveRetryOptionsForBudget } from "./retry-budget.js";
+import { DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS } from "./first-token-watchdog.js";
 import { DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS } from "./stream-idle-timeout.js";
 import { runGenerateText } from "./runner-generate.js";
 import { runStreamText } from "./runner-stream.js";
@@ -59,6 +61,8 @@ export type {
 export { normalizeUsage, toModelStreamEvent } from "./runner-normalization.js";
 
 export interface AiSdkModelAdapterOptions {
+  /** 注入 process-owned OpenCode provider；adapter 不初始化包级 singleton。 */
+  opencodeProvider?: OpencodeProvider;
   defaultHeaders?: AiSdkModelExecutionConfig["defaultHeaders"];
   requestSecurityState?: ModelRequestSecurityState;
   endpointRoutingPort?: import("@zcode/contracts").ProviderEndpointRoutingPort;
@@ -70,6 +74,8 @@ export interface AiSdkModelAdapterOptions {
   retry?: AiSdkModelRetryOptions;
   statusSink?: ModelStatusSink;
   streamIdleTimeoutMs?: number;
+  /** 首 token 看门狗窗口（ms）；<=0 关闭。与 streamIdleTimeoutMs 相互独立。 */
+  firstTokenTimeoutMs?: number;
   modelIoFullRetentionEnabled?: boolean;
 }
 
@@ -92,6 +98,7 @@ export class AiSdkModelAdapter {
   private readonly retry: ResolvedAiSdkModelRetryOptions;
   private statusSink?: ModelStatusSink;
   private readonly streamIdleTimeoutMs: number;
+  private readonly firstTokenTimeoutMs: number;
   private modelIoFullRetentionEnabled: boolean;
 
   constructor(options: AiSdkModelAdapterOptions) {
@@ -105,6 +112,7 @@ export class AiSdkModelAdapter {
         ...(options.env ? { env: options.env } : {}),
       },
       {
+        ...(options.opencodeProvider ? { opencodeProvider: options.opencodeProvider } : {}),
         ...(options.requestSecurityState
           ? { requestSecurityState: options.requestSecurityState }
           : {}),
@@ -118,11 +126,17 @@ export class AiSdkModelAdapter {
     this.retry = resolveAiSdkModelRetryOptions(options.retry, this.env);
     this.statusSink = options.statusSink;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS;
+    this.firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? DEFAULT_MODEL_FIRST_TOKEN_TIMEOUT_MS;
     this.modelIoFullRetentionEnabled = options.modelIoFullRetentionEnabled ?? false;
   }
 
   setModelIoFullRetentionEnabled(enabled: boolean): void {
     this.modelIoFullRetentionEnabled = enabled;
+  }
+
+  /** OpenCode provider resources are released by the owning process at shutdown. */
+  async dispose(): Promise<void> {
+    await this.execution.dispose();
   }
 
   addStatusSink(sink: ModelStatusSink): void {
@@ -152,6 +166,7 @@ export class AiSdkModelAdapter {
       providerId: options.providerId,
       modelId: options.modelId,
       providerConfig: options.providerConfig,
+      modelApi: options.modelConfig.api,
       supportsJsonSchemaOutput: options.modelConfig.properties.supportsJsonSchemaOutput,
       optionSpecs: options.modelConfig.optionSpecs,
     });
@@ -359,6 +374,7 @@ export class AiSdkModelAdapter {
       runtime: this.runtime,
       statusSink: this.statusSink,
       streamIdleTimeoutMs: this.streamIdleTimeoutMs,
+      firstTokenTimeoutMs: this.firstTokenTimeoutMs,
       modelIoFullRetentionEnabled: this.modelIoFullRetentionEnabled,
     });
   }

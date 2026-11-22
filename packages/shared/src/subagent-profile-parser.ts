@@ -97,9 +97,11 @@ export function parseAgentProfileFromMarkdown(input: {
       ...(memory ? { memory } : {}),
       ...optionalList("tools", frontmatter.tools),
       ...optionalList("disallowedTools", frontmatter.disallowedTools),
+      ...optionalList("preferredSkills", frontmatter.preferredSkills),
       ...optionalList("skills", frontmatter.skills),
       ...optionalBoolean("background", frontmatter.background),
       ...optionalBoolean("injectAgentsMd", frontmatter.injectAgentsMd),
+      ...optionalBoolean("includeInSwarm", frontmatter.includeInSwarm),
       ...(mcpServers === undefined ? {} : { mcpServers }),
     },
   };
@@ -147,10 +149,13 @@ function parseToolList(value: unknown): string[] | undefined {
 }
 
 function optionalList(
-  key: "disallowedTools" | "skills" | "tools",
+  key: "disallowedTools" | "preferredSkills" | "skills" | "tools",
   value: unknown,
 ): Partial<AgentProfile> {
-  const list = key === "skills" ? normalizeStringList(value) : parseToolList(value);
+  const list =
+    key === "skills" || key === "preferredSkills"
+      ? normalizeStringList(value)
+      : parseToolList(value);
   if (list && list.length > 0) return { [key]: list };
   if (key === "tools" && Array.isArray(value)) {
     return { tools: [] };
@@ -159,7 +164,7 @@ function optionalList(
 }
 
 function optionalBoolean(
-  key: "background" | "injectAgentsMd",
+  key: "background" | "injectAgentsMd" | "includeInSwarm",
   value: unknown,
 ): Partial<AgentProfile> {
   if (typeof value === "boolean") return { [key]: value };

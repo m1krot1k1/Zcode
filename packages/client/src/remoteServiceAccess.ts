@@ -1,6 +1,10 @@
 import { IGenUiService } from "@zcode/services";
 import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
 import {
+  ICodeIntelligenceService,
+  IPromptEnhancerService,
+  IChatAutocompleteService,
+  IProactiveSuggestionService,
   IFileService,
   IMediaPreviewService,
   IGitService,
@@ -45,6 +49,7 @@ import {
   IPluginsService,
   IPluginManagementService,
   ISubagentsService,
+  IOpenCodeAcpRuntime,
   ICommandsService,
   IHooksService,
   IMemoryService,
@@ -57,7 +62,11 @@ import {
   IWindowRemoteProjectService,
   IWindowProjectChangesService,
   type WindowProjectDirectoryServices,
+  type CodeIntelligenceService,
   type IServiceAccessor,
+  type PromptEnhancerService,
+  type ChatAutocompleteService,
+  type ProactiveSuggestionService,
 } from "@zcode/services";
 
 /**
@@ -117,6 +126,14 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly pluginsService: IPluginsService;
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
+  /** Optional local Host code index; never exposed by Web/remote transports by default. */
+  readonly codeIntelligenceService?: CodeIntelligenceService;
+  /** Нативное улучшение промптов; доступно на любом Host, где зарегистрирован канал. */
+  readonly promptEnhancerService: PromptEnhancerService;
+  readonly chatAutocompleteService: ChatAutocompleteService;
+  /** Проактивная подсказка; Host без канала proactive-suggestion оставляет поле пустым. */
+  readonly proactiveSuggestionService?: ProactiveSuggestionService;
+  readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
@@ -127,7 +144,12 @@ export class RemoteServiceAccess implements IServiceAccessor {
 
   constructor(
     channelClient: IChannelClient,
-    options: { sourceServerManagementService?: boolean; windowProjectDirectory?: boolean } = {},
+    options: {
+      sourceServerManagementService?: boolean;
+      windowProjectDirectory?: boolean;
+      openCodeAcpRuntime?: boolean;
+      codeIntelligenceService?: boolean;
+    } = {},
   ) {
     // 远端工作区的 project 必须保留 Source 语义；只有显式能力才创建完整窗口目录组。
     if (options.windowProjectDirectory) {
@@ -290,6 +312,19 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.subagentsService = ProxyChannel.toService<ISubagentsService>(
       channelClient.getChannel(ISubagentsService.channelName),
     );
+    // Code-index access is explicitly opted into only by the local Desktop Host attachment.
+    // Older server, Web, and mobile attachments keep the capability absent instead of creating
+    // a lazy proxy whose first call would fail after the dashboard has advertised it.
+    this.codeIntelligenceService = options.codeIntelligenceService
+      ? ProxyChannel.toService<CodeIntelligenceService>(
+          channelClient.getChannel(ICodeIntelligenceService.channelName),
+        )
+      : undefined;
+    if (options.openCodeAcpRuntime) {
+      this.openCodeAcpRuntime = ProxyChannel.toService<IOpenCodeAcpRuntime>(
+        channelClient.getChannel(IOpenCodeAcpRuntime.channelName),
+      );
+    }
     this.commandsService = ProxyChannel.toService<ICommandsService>(
       channelClient.getChannel(ICommandsService.channelName),
     );
@@ -310,6 +345,21 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
       channelClient.getChannel(IPromptAttachmentTransferService.channelName),
+    );
+    // Enhancer не зависит от локального индекса: он работает и на удалённом Host,
+    // поэтому проксируется безусловно, как git или file.
+    this.promptEnhancerService = ProxyChannel.toService<PromptEnhancerService>(
+      channelClient.getChannel(IPromptEnhancerService.channelName),
+    );
+    // Ghost-подсказка не зависит от локального индекса: она работает и на удалённом
+    // Host, поэтому канал проксируется безусловно, как enhancer или git.
+    this.chatAutocompleteService = ProxyChannel.toService<ChatAutocompleteService>(
+      channelClient.getChannel(IChatAutocompleteService.channelName),
+    );
+    // Proactive suggestion использует тот же транспорт и паттерн, что ghost-подсказка;
+    // доступность канала определяется Host-регистрацией и allowlist attachment.
+    this.proactiveSuggestionService = ProxyChannel.toService<ProactiveSuggestionService>(
+      channelClient.getChannel(IProactiveSuggestionService.channelName),
     );
   }
 }

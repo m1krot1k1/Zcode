@@ -5,7 +5,7 @@ import {
   type WorkspaceSidePaneState,
 } from "@/lib/workspaceSidePane.js";
 
-export interface TaskSidePaneMemoryState {
+interface TaskSidePaneMemoryState {
   sidePaneState: WorkspaceSidePaneState | null;
   isSidePaneCollapsed: boolean;
   /** 对话级展开/收起偏好；tabs 本身仍按 workspace 复用。 */

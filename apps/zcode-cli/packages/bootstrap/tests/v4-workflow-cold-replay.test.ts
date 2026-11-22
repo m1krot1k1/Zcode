@@ -188,6 +188,127 @@ describe("v4 冷物化 · dwf run 的冷回放", () => {
     });
   }
 
+  it("OpenCode ACP: 重启后从有界 run snapshot 回放外部 agent 行", async () => {
+    await createSessionRow(PARENT_SESSION_ID);
+    await store.admitOpenCodeAgentRun!({
+      commandID: "oc-run-1",
+      runID: "oc-run-1",
+      input: {
+        id: "oc-run-1",
+        sessionID: PARENT_SESSION_ID,
+        kind: "sendText",
+        delivery: "startNow",
+        payload: { text: "检查仓库", executionRoute: "opencode-cli" },
+      },
+      requestedModelID: "opencode/deepseek-v4.1-flash-free",
+      now: 10,
+    });
+    await store.transitionOpenCodeAgentRun!({
+      sessionID: PARENT_SESSION_ID,
+      runID: "oc-run-1",
+      expectedStatus: "pending",
+      expectedEventSequence: 0,
+      status: "dispatching",
+      eventSequence: 1,
+      now: 11,
+    });
+    const applyRunEvent = async (input: {
+      hostEventSequence: number;
+      expectedEventSequence: number;
+      expectedHostEventSequence: number;
+      expectedStatus: "dispatching" | "running";
+      status: "running" | "completed";
+      hostEvent: import("@zcode/shared").ZCodeOpenCodeAgentRunEvent["event"];
+      openCodeSessionID?: string | null;
+      resultText?: string;
+      stopReason?: string;
+    }) =>
+      store.applyOpenCodeAgentRunHostEvent!({
+        sessionID: PARENT_SESSION_ID,
+        runID: "oc-run-1",
+        eventSequence: input.expectedEventSequence + 1,
+        ...input,
+      });
+    expect(
+      await applyRunEvent({
+        hostEventSequence: 1,
+        expectedEventSequence: 1,
+        expectedHostEventSequence: 0,
+        expectedStatus: "dispatching",
+        status: "running",
+        hostEvent: { type: "started" },
+        openCodeSessionID: "acp-session-1",
+      }),
+    ).toBe(true);
+    expect(
+      await applyRunEvent({
+        hostEventSequence: 2,
+        expectedEventSequence: 2,
+        expectedHostEventSequence: 1,
+        expectedStatus: "running",
+        status: "running",
+        hostEvent: { type: "content", text: "Результат OpenCode" },
+        openCodeSessionID: "acp-session-1",
+      }),
+    ).toBe(true);
+    expect(
+      await applyRunEvent({
+        hostEventSequence: 3,
+        expectedEventSequence: 3,
+        expectedHostEventSequence: 2,
+        expectedStatus: "running",
+        status: "running",
+        hostEvent: {
+          type: "tool",
+          toolCallId: "tool-oc-1",
+          title: "Read source",
+          status: "completed",
+        },
+        openCodeSessionID: "acp-session-1",
+      }),
+    ).toBe(true);
+    expect(
+      await applyRunEvent({
+        hostEventSequence: 4,
+        expectedEventSequence: 4,
+        expectedHostEventSequence: 3,
+        expectedStatus: "running",
+        status: "completed",
+        hostEvent: { type: "completed", stopReason: "end_turn", finalText: "Результат OpenCode" },
+        openCodeSessionID: null,
+        resultText: "Результат OpenCode",
+        stopReason: "end_turn",
+      }),
+    ).toBe(true);
+
+    const eventStore = createInMemorySessionEventStore();
+    const record = makeRecord(eventStore);
+    const sessions = new Map<string, ZCodeProtocolSessionRecord>([[PARENT_SESSION_ID, record]]);
+    const context = makeContext({ sessions, store, warnings });
+    const gateway = createConversationV4Gateway(context);
+    context.v4Gateway = gateway;
+    const result = await gateway.subscribe({
+      topic: conversationTopic(PARENT_SESSION_ID),
+      connectionId: `conn-${PARENT_SESSION_ID}`,
+      clientMode: "desktop-continuous",
+    });
+    const payload = result.initialFrame?.payload;
+    if (payload?.kind !== "snapshot") throw new Error("Expected snapshot initial frame");
+    expect(payload.snapshot.rows.window).toMatchObject([
+      {
+        kind: "externalAgentRun",
+        runId: "oc-run-1",
+        commandId: "oc-run-1",
+        status: "completed",
+        promptText: "检查仓库",
+        tools: [{ toolCallId: "tool-oc-1", title: "Read source", status: "completed" }],
+        output: { text: "Результат OpenCode" },
+      },
+    ]);
+    expect(payload.snapshot.rows.window.some((row) => row.kind === "assistantText")).toBe(false);
+    gateway.dispose();
+  });
+
   it("父会话：回放载荷经同一个 reducer 落进 workflowRuns；内存里已有的 runId 交给 CLI 排除", async () => {
     await createSessionRow(PARENT_SESSION_ID);
     const eventStore = createInMemorySessionEventStore();

@@ -1,0 +1,8 @@
+---
+description: Ground claims in files, commands, tests, and observed runtime results.
+alwaysApply: true
+---
+
+For every load-bearing claim, identify the source that supports it. Separate observed facts from inference and unknowns. A planned command, model statement, or child-agent summary is not proof that work ran or passed.
+
+Report what was actually checked, including failures and checks that could not run. Match the strength of the conclusion to the evidence: a unit test does not prove packaged desktop behavior, and an HTTP response does not prove the user-visible result.

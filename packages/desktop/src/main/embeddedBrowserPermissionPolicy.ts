@@ -20,7 +20,7 @@ import {
  * 回写内存 sessionAllow 或持久 store。
  */
 
-export const EMBEDDED_BROWSER_SILENT_ALLOW_PERMISSIONS: ReadonlySet<string> = new Set([
+const EMBEDDED_BROWSER_SILENT_ALLOW_PERMISSIONS: ReadonlySet<string> = new Set([
   // 写剪贴板对应网页「复制」按钮、fullscreen/pointerLock 对应视频全屏与交互、
   // mediaKeySystem 对应 DRM 视频播放：拒绝会造成大面积功能性故障，且不泄露用户数据。
   "clipboard-sanitized-write",
@@ -85,7 +85,7 @@ export interface EmbeddedBrowserDevicePickerSession {
   updateDevices(devices: EmbeddedBrowserPermissionDeviceOption[]): void;
 }
 
-export interface EmbeddedBrowserPermissionPolicyOptions {
+interface EmbeddedBrowserPermissionPolicyOptions {
   logger: EmbeddedBrowserPermissionLogger;
   /** 弹窗层（Step 2）注入；缺省时敏感权限一律拒绝。 */
   prompt?: (

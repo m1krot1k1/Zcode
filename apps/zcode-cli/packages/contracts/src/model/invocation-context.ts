@@ -18,6 +18,25 @@ import type {
  * Runtime 只在统一模型调用边界设置，Adapter 在同一异步调用链内读取。
  */
 export interface ModelInvocationContext {
+  /** Рабочий каталог текущей сессии для локальных model runtime; не сохраняется в модели. */
+  workingDirectory?: string;
+  /**
+   * Invocation-scoped capability exposed only when the current runtime model request
+   * already includes Agent or Task. OpenCode's MCP bridge delegates through the same
+   * Core ToolExecutor rather than invoking a provider-owned subagent runtime.
+   */
+  executeOpenCodeTask?: (
+    input: {
+      description: string;
+      prompt: string;
+      subagent_type: string;
+    },
+    context?: { correlationId: string; signal?: AbortSignal },
+  ) => Promise<string>;
+  /** Exact selectable ZCode role IDs captured for this model request; never generic OpenCode roles. */
+  openCodeAgentTypes?: readonly string[];
+  /** Invocation-scoped capability exposed only when Core registered Skill for this request. */
+  executeOpenCodeSkill?: (input: { skill: string; args?: string }) => Promise<string>;
   metadata?: Record<string, unknown>;
   modelCall?: ModelApiCallObservation;
   modelRequestSessionType?: ModelRequestSessionType;

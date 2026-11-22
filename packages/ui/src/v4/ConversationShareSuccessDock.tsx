@@ -11,7 +11,7 @@ import {
   resolveConversationShareWarningMessageId,
 } from "@/lib/conversationShareError.js";
 
-export interface ConversationShareSuccessDockProps {
+interface ConversationShareSuccessDockProps {
   url?: string;
   title: string;
   warnings?: ConversationShareDisplayWarnings | null;

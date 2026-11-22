@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 商店详情页把 hero/示例提示词/组件分区/信息区/高级折叠组织为一个连贯页面，与截图 1:1 对齐。 */
 import { useState, type ReactNode } from "react";
 import {
   Anchor,
@@ -81,7 +80,7 @@ const EXAMPLE_PROMPT_DOCUMENT_ICON_URLS: Record<ExamplePromptDocumentIcon, strin
   spreadsheets: spreadsheetsIconUrl,
 };
 
-export function resolveExamplePromptDocumentIcon(prompt: string): ExamplePromptDocumentIcon {
+function resolveExamplePromptDocumentIcon(prompt: string): ExamplePromptDocumentIcon {
   if (/\bpdf\b/iu.test(prompt)) {
     return "pdf";
   }

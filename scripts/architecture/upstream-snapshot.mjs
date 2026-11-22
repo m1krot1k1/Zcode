@@ -56,15 +56,13 @@ export async function readUpstreamSnapshot(cwd, snapshotPath) {
   for (const entry of index) {
     const separator = entry.indexOf("\t");
     const file = entry.slice(separator + 1);
-    const [mode, blob, stage] = entry.slice(0, separator).split(" ");
-    if (stage === "0" && !different.has(file) && snapshot.files[file] === `${mode} ${blob}`)
-      accepted.add(file);
-    if (
-      stage === "0" &&
-      !different.has(file) &&
-      snapshot.historicalFiles?.[file] === `${mode} ${blob}`
-    )
-      historical.add(file);
+    const [, blob, stage] = entry.slice(0, separator).split(" ");
+    // 快照记录的是上游内容；当前仓库大量源文件带有可执行位，模式差异是文件系统噪声，
+    // 不作为准入失败。真正的内容变化仍由 blob 校验，合并时的模式变化仍由 commit 路径拒绝。
+    const snapshotBlob = snapshot.files[file]?.split(" ")[1];
+    if (stage === "0" && !different.has(file) && snapshotBlob === blob) accepted.add(file);
+    const historicalBlob = snapshot.historicalFiles?.[file]?.split(" ")[1];
+    if (stage === "0" && !different.has(file) && historicalBlob === blob) historical.add(file);
   }
   return { accepted, historical, introduced: snapshot.introduced };
 }

@@ -1673,10 +1673,9 @@ describe("ZCodeProtocolAgentServer", () => {
         command: "plugin-server",
         type: "stdio",
       });
-      expect(connectedConfigs[0]?.["project-only"]).toMatchObject({
-        command: "project-server",
-        type: "stdio",
-      });
+      // project-scope server 默认 untrusted：仓库里的 zcode.json 不能靠提交配置就启动
+      // stdio command（docs/specs/2026-11-11-mcp-project-trust.md §7.2）。
+      expect(connectedConfigs[0]?.["project-only"]).toBeUndefined();
       expect(result).toMatchObject({
         statuses: {
           "plugin:status-plugin:plugin-live": {
@@ -1685,8 +1684,8 @@ describe("ZCodeProtocolAgentServer", () => {
             transport: "stdio",
           },
           "project-only": {
-            status: "connected",
-            toolCount: 3,
+            status: "untrusted",
+            failureKind: "status_unavailable",
             transport: "stdio",
           },
         },
@@ -6067,6 +6066,7 @@ describe("ZCodeProtocolAgentServer", () => {
       text: "fix(git): generate message",
       selection: { providerId: "custom-openai", modelId: "backup-model" },
       finishReason: "stop",
+      requestId: "request-protocol-projection",
     }));
     const providerRegistry = createProtocolTestProviderRegistry();
     const server = new ZCodeProtocolAgentServer({
@@ -6092,6 +6092,7 @@ describe("ZCodeProtocolAgentServer", () => {
     );
 
     expect(result.text).toBe("fix(git): generate message");
+    expect(result.requestId).toBe("request-protocol-projection");
     expect(generateWorkspaceText).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
     const temporaryAppOptions = appOptions.at(-1);

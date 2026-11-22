@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createPartId,
   createSessionId,
+  type Logger,
   type MessageInfo,
   type MessagePart,
   type MessageWithParts,
@@ -727,6 +728,38 @@ describe("AgentRuntime background Memory extraction", () => {
     expect(extractionReadCount(messageReadStacks)).toBe(readsAfterPendingSchedule.messages);
     expect(extractionReadCount(sessionReadStacks)).toBe(readsAfterPendingSchedule.session);
   });
+
+  it("turn 结束后 extraction 请求照常发出，失败时写 project_memory_extraction.failed warn", async () => {
+    const warn = vi.fn();
+    const logger: Logger = {
+      debug() {},
+      info() {},
+      warn,
+      error() {},
+      child: () => logger,
+    };
+    let extractionRequestCount = 0;
+    const runtime = createExtractionRuntime({
+      logger,
+      async generateText(request) {
+        if (!isExtractionRequest(request)) return textResult(request, "main answer");
+        extractionRequestCount += 1;
+        throw new Error("extraction model unavailable");
+      },
+    });
+
+    await runtime.executeTurn("persist this durable project preference");
+    // extract 在 turn 收尾后运行：已释放的 root-run 预算不能拦住它，也不能让错误冒泡。
+    await expect(runtime.drainMemoryExtractions()).resolves.toBeUndefined();
+    expect(extractionRequestCount).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      "Project memory extraction failed",
+      expect.objectContaining({
+        errorMessage: "extraction model unavailable",
+        event: "project_memory_extraction.failed",
+      }),
+    );
+  });
 });
 
 function createExtractionRuntime(input: {
@@ -738,6 +771,7 @@ function createExtractionRuntime(input: {
   ) => Promise<ModelResult>;
   fileSystemPort?: MemoryFileSystem;
   isRemoteWorkspace?: () => boolean;
+  logger?: Logger;
   memory?: { enabled?: boolean; extractionEnabled?: boolean; use?: boolean };
   inputFormat?: Partial<ModelInputFormat>;
   modelFactory?: RuntimeModelFactory;
@@ -767,6 +801,7 @@ function createExtractionRuntime(input: {
       eventStore: createTestSessionEventStore(),
       fileSystemPort,
       isRemoteWorkspace: input.isRemoteWorkspace,
+      logger: input.logger,
       modelFactory:
         input.modelFactory ??
         createTestModelFactory({

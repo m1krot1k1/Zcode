@@ -46,7 +46,7 @@ interface ModelIoToolCall {
   name?: string;
 }
 
-export interface ModelIoTrajectoryOptions extends TrajectoryDerivationOptions {
+interface ModelIoTrajectoryOptions extends TrajectoryDerivationOptions {
   querySource?: string;
 }
 

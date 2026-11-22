@@ -20,7 +20,7 @@ const METRIC_KEYS = [
 ] as const satisfies readonly (keyof HighspeedTurnMetrics)[];
 
 /** 水合一批 transcript row 的结果；store 按序应用后只发一次通知。 */
-export interface HighspeedHydrationPlan {
+interface HighspeedHydrationPlan {
   /** 需要落库的记录，按 transcript 顺序；`existed` 区分替换已有记录与新登记。 */
   records: Array<{ record: HighspeedTurnRecord; existed: boolean }>;
   /** 需要写入的卡级 TPS。 */
@@ -29,7 +29,7 @@ export interface HighspeedHydrationPlan {
   changedRows: number;
 }
 
-export interface HighspeedHydrationContext {
+interface HighspeedHydrationContext {
   sessionId: string;
   now: number;
   findRecord(sourceCommandId: string): HighspeedTurnRecord | null;

@@ -18,7 +18,7 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 import { PROTOCOL_V4_LIMITS } from "@zcode/shared/zcode-protocol-v4";
 
-export interface RowBaseInput {
+interface RowBaseInput {
   rowId: number;
   turnId: string;
   createdAt: number;
@@ -122,6 +122,45 @@ export function mapTurnResultToHeaderState(
     default:
       return "failed";
   }
+}
+
+const INTERRUPT_DETAIL_MAX_LENGTH = 240;
+
+// TurnComplete(cancelled) → turnHeader.interruptReason：把 abort 原文归成用户可读的闭集，
+// 不新增 state 枚举值。纯函数、不抛错：任何未知文本都收敛为 error + 截断摘要，
+// 没有原文时返回空对象，让 UI 回落到旧的 “Stopped”。
+export function classifyTurnInterruptReason(input: {
+  resultType: string;
+  abortReason?: string;
+  preserveQueueAutoDrainOnCancel?: boolean;
+}): { interruptReason?: "user" | "error" | "budget" | "preempted"; interruptDetail?: string } {
+  if (input.resultType !== "cancelled") return {};
+  // 内部“立即发送”抢占但仍保留队列：对用户就是一次主动停止。
+  if (input.preserveQueueAutoDrainOnCancel === true) return { interruptReason: "user" };
+  const reason = typeof input.abortReason === "string" ? input.abortReason.trim() : "";
+  const normalized = reason.toLowerCase();
+  if (normalized.includes("root run time budget exhausted")) {
+    return { interruptReason: "budget", interruptDetail: "time budget" };
+  }
+  // Bugfix：admission 拒绝预留时抛的是 “Root run resource budget is exhausted: <session>:<turn>”，
+  // 与 time 预算的原文不同；旧实现只 includes 那一句，资源预算会落到 error 分支，
+  // 把带 session/turn id 的英文原文原样透给 UI。放在 time 之后，保持既有 detail 优先级。
+  if (/root run resource budget (is )?exhausted/iu.test(normalized)) {
+    return { interruptReason: "budget", interruptDetail: "resource budget" };
+  }
+  if (
+    normalized.includes("owner disconnected") ||
+    normalized.includes("preempts active turn") ||
+    normalized.includes("protocol runtime stopping")
+  ) {
+    return { interruptReason: "preempted" };
+  }
+  if (normalized.includes("v4 session stopped")) return { interruptReason: "user" };
+  if (reason.length === 0) return {};
+  return {
+    interruptReason: "error",
+    interruptDetail: reason.slice(0, INTERRUPT_DETAIL_MAX_LENGTH),
+  };
 }
 
 // CompactTimelineStatus → compact marker.status。

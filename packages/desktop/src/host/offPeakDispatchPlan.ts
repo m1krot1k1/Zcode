@@ -7,7 +7,7 @@ import { OffPeakPermanentDispatchError } from "@zcode/services/node";
  *   （对齐 dispatchCronRun 的 targetTaskId 路径）；
  * - init：表单创建，新建专属 session。
  */
-export type OffPeakDispatchKind = "resume" | "bound-first-run" | "init";
+type OffPeakDispatchKind = "resume" | "bound-first-run" | "init";
 
 export function resolveOffPeakDispatchKind(request: {
   conversationId?: string;

@@ -1,26 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  AppUsageRange,
-  AppUsageSnapshot,
-  CodingPlanUsageRange,
-  CodingPlanUsageSnapshot,
-  UsageStatsRange,
-  UsageStatsSnapshot,
-  ZCodeAccountAccess,
-  ZCodeProviderAccountAccess,
-} from "@zcode/shared";
+import type { AppUsageRange, AppUsageSnapshot, CodingPlanUsageRange, CodingPlanUsageSnapshot, ZCodeAccountAccess, ZCodeProviderAccountAccess } from "@zcode/shared";
 import { logger } from "@/logger.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useStableAccountAccess } from "@/hooks/useStableAccountAccess.js";
-import { USAGE_ENTITLEMENT_ACCESS_REFRESH_MS } from "@/lib/usageEntitlementRefreshPolicy.js";
-
-interface UsageStatsState {
-  snapshot: UsageStatsSnapshot | null;
-  loading: boolean;
-  error: string | null;
-}
-
-interface AppUsageStatsState {
+import { USAGE_ENTITLEMENT_ACCESS_REFRESH_MS } from "@/lib/usageEntitlementRefreshPolicy.js";interface AppUsageStatsState {
   snapshot: AppUsageSnapshot | null;
   loading: boolean;
   error: string | null;
@@ -61,134 +44,7 @@ function getErrorMessage(error: unknown): string {
     }
   }
   return String(error);
-}
-
-const INITIAL_STATE: UsageStatsState = {
-  snapshot: null,
-  loading: false,
-  error: null,
-};
-
-export function useUsageStats(
-  range: UsageStatsRange,
-  options: {
-    dataSource?: "local" | "monitor";
-    enabled?: boolean;
-    preferredProviderId?: string;
-    accountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess;
-    requirePreferredProvider?: boolean;
-    allowEnvApiKey?: boolean;
-  } = {},
-) {
-  const { usageStatsService } = useServices();
-  const [state, setState] = useState<UsageStatsState>(INITIAL_STATE);
-  const requestVersionRef = useRef(0);
-  const dataSource = options.dataSource;
-  const enabled = options.enabled ?? true;
-  const preferredProviderId = options.preferredProviderId;
-  const accountAccess = useStableAccountAccess(options.accountAccess);
-  const requirePreferredProvider = options.requirePreferredProvider === true;
-  const allowEnvApiKey = options.allowEnvApiKey;
-  const requestScope = [
-    dataSource ?? "",
-    preferredProviderId ?? "",
-    JSON.stringify(accountAccess ?? null),
-    requirePreferredProvider ? "strict" : "relaxed",
-    allowEnvApiKey === false ? "no-env" : "env",
-  ].join("|");
-  const lastRequestScopeRef = useRef(requestScope);
-
-  const refresh = useCallback(async () => {
-    if (!enabled) {
-      return;
-    }
-
-    const requestVersion = requestVersionRef.current + 1;
-    requestVersionRef.current = requestVersion;
-    const keepPreviousSnapshot = lastRequestScopeRef.current === requestScope;
-    lastRequestScopeRef.current = requestScope;
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-    setState((current) => ({
-      // App Usage 与 Coding Plan 共用同一个 hook 实例。
-      // 切 tab 后如果继续保留旧 snapshot，Coding Plan 请求期间或失败后会显示本地 App Usage 数据。
-      snapshot: keepPreviousSnapshot ? current.snapshot : null,
-      loading: true,
-      error: null,
-    }));
-
-    try {
-      const snapshot = await usageStatsService.getSnapshot({
-        range,
-        dataSource,
-        preferredProviderId,
-        accountAccess,
-        requirePreferredProvider,
-        allowEnvApiKey,
-        timeZone,
-      });
-      if (requestVersionRef.current !== requestVersion) {
-        return;
-      }
-      setState({
-        snapshot,
-        loading: false,
-        error: null,
-      });
-    } catch (error) {
-      if (requestVersionRef.current !== requestVersion) {
-        return;
-      }
-      const message = getErrorMessage(error);
-      logger.warn("[useUsageStats] 读取 usage 统计失败", {
-        dataSource,
-        range,
-        preferredProviderId,
-        timeZone,
-        error: message,
-      });
-      setState((current) => ({
-        snapshot: lastRequestScopeRef.current === requestScope ? current.snapshot : null,
-        loading: false,
-        error: message,
-      }));
-    }
-  }, [
-    accountAccess,
-    allowEnvApiKey,
-    dataSource,
-    enabled,
-    preferredProviderId,
-    range,
-    requestScope,
-    requirePreferredProvider,
-    usageStatsService,
-  ]);
-
-  useEffect(() => {
-    if (!enabled) {
-      setState({
-        // Coding Plan provider 被移除或禁用后，使用统计查询会被关闭。
-        // 这里清空旧快照，避免设置页继续显示上一家账号的用量数据。
-        snapshot: null,
-        loading: false,
-        error: null,
-      });
-      return;
-    }
-
-    void refresh();
-  }, [enabled, refresh]);
-
-  return {
-    snapshot: state.snapshot,
-    loading: state.loading,
-    error: state.error,
-    refresh,
-  };
-}
-
-export function useAppUsageStats(range: AppUsageRange) {
+}export function useAppUsageStats(range: AppUsageRange) {
   const { usageStatsService } = useServices();
   const [state, setState] = useState<AppUsageStatsState>({
     snapshot: null,

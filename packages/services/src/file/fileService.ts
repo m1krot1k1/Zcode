@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 import type { Dirent } from "node:fs";
 import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";

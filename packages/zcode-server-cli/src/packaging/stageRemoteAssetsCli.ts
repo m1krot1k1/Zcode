@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { SourceServerReleaseTarget } from "@zcode/shared";
 import {
   SOURCE_SERVER_REMOTE_RELEASE_TARGETS,
   beginSourceServerRemoteReleaseGeneration,
@@ -24,11 +25,28 @@ async function run(
   });
 }
 
+function readTargetArg(argv: readonly string[]): SourceServerReleaseTarget | undefined {
+  const index = argv.indexOf("--target");
+  if (index < 0) return undefined;
+  const value = argv[index + 1];
+  if (!value) throw new Error("--target requires a value");
+  if (!(SOURCE_SERVER_REMOTE_RELEASE_TARGETS as readonly string[]).includes(value)) {
+    throw new Error(
+      `Invalid --target: ${value} (supported: ${SOURCE_SERVER_REMOTE_RELEASE_TARGETS.join(", ")})`,
+    );
+  }
+  return value as SourceServerReleaseTarget;
+}
+
 async function main(): Promise<void> {
-  const linuxOnly = process.argv.slice(2).includes("--linux");
-  const targets = linuxOnly
-    ? SOURCE_SERVER_REMOTE_RELEASE_TARGETS.filter((target) => target.startsWith("linux-"))
-    : SOURCE_SERVER_REMOTE_RELEASE_TARGETS;
+  const argv = process.argv.slice(2);
+  const linuxOnly = argv.includes("--linux");
+  const onlyTarget = readTargetArg(argv);
+  const targets: readonly SourceServerReleaseTarget[] = onlyTarget
+    ? [onlyTarget]
+    : linuxOnly
+      ? SOURCE_SERVER_REMOTE_RELEASE_TARGETS.filter((target) => target.startsWith("linux-"))
+      : SOURCE_SERVER_REMOTE_RELEASE_TARGETS;
   const env = { ...process.env };
   if (linuxOnly) {
     // Linux 开发入口与 dev:desktop 共用 production 默认值，避免远端模型配置退回 test。

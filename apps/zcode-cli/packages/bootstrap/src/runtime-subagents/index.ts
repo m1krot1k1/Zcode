@@ -16,11 +16,11 @@ export function parseRuntimeSubagentConfig(configuration: RuntimeSubagentConfigu
     const result = parseAgentProfileFromMarkdown(document);
     if (result.diagnostic) diagnostics.push(result.diagnostic);
     if (!result.profile) continue;
-    profiles.push(
-      document.namespace
-        ? { ...result.profile, name: `${document.namespace}/${result.profile.name}` }
-        : result.profile,
-    );
+    const profile = document.namespace
+      ? { ...result.profile, name: `${document.namespace}/${result.profile.name}` }
+      : result.profile;
+    // 修复依据：profile loader 只从 ZCode 所有的配置根读取；解析器不再保留 Cursor 格式标签或优先级分支。
+    profiles.push(profile);
   }
   return {
     ...resolveSubagentRuntimeProfiles(profiles, configuration.state),

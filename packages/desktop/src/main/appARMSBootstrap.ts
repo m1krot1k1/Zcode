@@ -11,6 +11,7 @@ import { ingestArmsApiEventsFromBatch } from "./desktopNetworkTelemetry.js";
 import { desktopRuntimeEnv, runtimeApplicationName } from "./desktopRuntimeEnv.js";
 import { summarizeLongTaskAttribution } from "./longTaskAttributionSummary.js";
 import { logger } from "./logger.js";
+import { isDesktopTelemetryEnabled } from "./desktopTelemetryGate.js";
 
 // LoAF 长任务事件的 snapshots(SDK 已采集的 top-5 attribution)默认不落 SLS，此处补写进
 // event.properties，使归因摘要(top 耗时/占比/invokerType)可查询。不上报原始脚本名/URL。
@@ -157,6 +158,8 @@ armsRum.client.useReporter = (reporter) => {
   reporter.request = wrapStartupReporterRequest(request, {
     acknowledged: (eventIds, delivery) =>
       logger.info("[database-startup] telemetry delivery", { eventIds, delivery }),
+    // Единый ARMS-выключатель: opt-out и DO_NOT_TRACK блокируют очередь до сети.
+    isEnabled: isDesktopTelemetryEnabled,
   });
   useReporter(reporter);
 };

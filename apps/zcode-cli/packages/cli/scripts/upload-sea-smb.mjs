@@ -13,6 +13,13 @@ export const DEFAULT_MOUNT_ROOT = "/Volumes/shared";
 export const DEFAULT_DESTINATION_ROOT = resolve(DEFAULT_MOUNT_ROOT, "zcode", "deps");
 export const RELEASE_DIRECTORY_PREFIX = "zcode-cli-";
 
+// Bug 根因：SEA 发布脚本把 macOS SMB 挂载点作为所有操作系统的默认值，Linux/Windows 会解析到错误位置。
+export const resolveDefaultDestinationRoot = ({ platform = process.platform, env = process.env } = {}) => {
+  const configured = env.ZCODE_SEA_DEST_ROOT?.trim();
+  if (configured) return configured;
+  return platform === "darwin" ? DEFAULT_DESTINATION_ROOT : undefined;
+};
+
 const root = resolve(import.meta.dirname, "../../..");
 const cliRoot = resolve(import.meta.dirname, "..");
 const defaultDist = resolve(cliRoot, "dist");
@@ -25,7 +32,7 @@ const usage = `Usage:
 
 Options:
   --dist <path>       SEA binary dist directory. Defaults to packages/cli/dist.
-  --dest-root <path>  Mounted SMB release root. Defaults to /Volumes/shared/zcode/deps.
+  --dest-root <path>  Mounted SMB release root. Uses ZCODE_SEA_DEST_ROOT, or the macOS default.
   --version <text>    Release version. Defaults to the root package.json version.
   --smb-url <url>     SMB label for messages. Defaults to ${DEFAULT_SMB_URL}.
   --force, -f         Replace an existing version directory.
@@ -56,9 +63,12 @@ const readArgValue = (argv, arg, index) => {
   };
 };
 
-export const parseUploadSeaSmbArgs = (argv, { cwd = process.cwd(), env = process.env } = {}) => {
+export const parseUploadSeaSmbArgs = (
+  argv,
+  { cwd = process.cwd(), env = process.env, platform = process.platform } = {},
+) => {
   const options = {
-    destinationRoot: DEFAULT_DESTINATION_ROOT,
+    destinationRoot: resolveDefaultDestinationRoot({ platform, env }),
     distDir: defaultDist,
     force: false,
     help: false,
@@ -110,6 +120,8 @@ export const parseUploadSeaSmbArgs = (argv, { cwd = process.cwd(), env = process
 
     throw new Error(`Unknown option "${arg}". Run with --help for usage.`);
   }
+
+  if (options.destinationRoot) options.destinationRoot = resolvePath(options.destinationRoot, cwd);
 
   return options;
 };
@@ -192,8 +204,17 @@ const ensureDirectory = async (path, label) => {
   }
 };
 
-export const ensureDestinationRoot = async ({ destinationRoot, smbUrl }) => {
-  if (destinationRoot === DEFAULT_DESTINATION_ROOT) {
+export const ensureDestinationRoot = async ({
+  destinationRoot,
+  smbUrl,
+  platform = process.platform,
+}) => {
+  if (!destinationRoot) {
+    throw new Error(
+      "No SMB destination configured for this operating system. Mount the share and set ZCODE_SEA_DEST_ROOT or pass --dest-root.",
+    );
+  }
+  if (platform === "darwin" && destinationRoot === DEFAULT_DESTINATION_ROOT) {
     await ensureDirectory(
       DEFAULT_MOUNT_ROOT,
       `Default SMB mount root for ${smbUrl}. Mount ${smbUrl} before uploading`,
@@ -248,6 +269,7 @@ export const uploadSeaBinaries = async ({
   distDir,
   force,
   onProgress = () => {},
+  platform = process.platform,
   rootDirectory = root,
   smbUrl,
   version,
@@ -275,6 +297,7 @@ export const uploadSeaBinaries = async ({
   await ensureDestinationRoot({
     destinationRoot,
     smbUrl,
+    platform,
   });
 
   const existing = await maybeStat(targetDirectory);

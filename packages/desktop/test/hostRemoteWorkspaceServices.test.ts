@@ -17,6 +17,7 @@ import {
   IPluginsService,
   ISubagentsService,
   ISettingsSyncService,
+  IProactiveSuggestionService,
   IProjectService,
   IRemoteProjectService,
   ITaskGroupService,
@@ -164,6 +165,9 @@ describe("server remote workspace host service wiring", () => {
       remoteServices.sourceServerWorkspaceService,
     );
     expect(services.get(IPluginSyncService)).toBe(remoteServices.pluginSyncService);
+    expect(services.get(IProactiveSuggestionService)).toBe(
+      remoteServices.proactiveSuggestionService,
+    );
     expect(services.get(IPluginsService)).toBe(remoteServices.pluginsService);
     expect(services.get(ISubagentsService)).toBe(remoteServices.subagentsService);
     expect(services.get(ISettingsSyncService)).toBe(remoteServices.settingsSyncService);
@@ -273,6 +277,53 @@ describe("server remote workspace host service wiring", () => {
     entries = [];
     expect(await services.get(IProjectService).readProjects()).toEqual([]);
   });
+  it("passes workspaceIdentity from retained remote roots into task queries", async () => {
+    const remoteServices = makeServerRemoteServices();
+    remoteServices.settingService = {
+      get: vi.fn(async () => ({ lastWorkspaceSession: [], recentProjects: [] })),
+    } as unknown as typeof remoteServices.settingService;
+    const listTasks = vi.fn(async () => []);
+    const listPinnedTasks = vi.fn(async () => []);
+    const listArchivedTasks = vi.fn(async () => []);
+    remoteServices.zcodeTaskService = {
+      listTasks,
+      listPinnedTasks,
+      listArchivedTasks,
+    } as unknown as typeof remoteServices.zcodeTaskService;
+    const sourceServices = new ServiceCollection().register(IRemoteProjectService, {
+      readDirectory: vi.fn(async () => ({
+        hosts: [],
+        entries: [
+          {
+            hostId: "remote:server:old",
+            roots: [{ rootPath: "/retained" }],
+            legacyWorkspace: null,
+          },
+        ],
+      })),
+    } as unknown as IRemoteProjectService);
+    const services = createServerRemoteWorkspaceServiceCollection({
+      connectionServices: remoteServices,
+      serverId: "old",
+      sourceServices,
+    });
+
+    await services.get(IProjectService).readTree();
+
+    expect(listTasks).toHaveBeenCalledWith({
+      workspacePath: "/retained",
+      workspaceIdentity: "remote:server:old:/retained",
+    });
+    expect(listPinnedTasks).toHaveBeenCalledWith({
+      workspacePath: "/retained",
+      workspaceIdentity: "remote:server:old:/retained",
+    });
+    expect(listArchivedTasks).toHaveBeenCalledWith({
+      workspacePath: "/retained",
+      workspaceIdentity: "remote:server:old:/retained",
+    });
+  });
+
   it("缺少握手能力时忽略未知频道 proxy，通过旧 API 提供单 root 项目", async () => {
     const remoteServices = makeServerRemoteServices();
     const unsupportedRead = vi.fn(async () => {

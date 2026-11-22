@@ -483,7 +483,7 @@ function cloneTokenUsageInfo(tokens: TokenUsageInfo): TokenUsageInfo {
   };
 }
 
-export function cloneRuntimeMessageMetadata(
+function cloneRuntimeMessageMetadata(
   metadata: RuntimeMessageMetadata | undefined,
 ): RuntimeMessageMetadata | undefined {
   if (!metadata) return undefined;

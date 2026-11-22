@@ -8,7 +8,7 @@ import {
   type WebRemoteControlRelayV2OutgoingMessage,
 } from "@zcode/shared/web-remote-relay";
 
-export async function readWebSocketData(data: unknown): Promise<string | null> {
+async function readWebSocketData(data: unknown): Promise<string | null> {
   if (typeof data === "string") {
     return new TextEncoder().encode(data).byteLength <=
       WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes
@@ -66,7 +66,7 @@ export function createFailure(
   return { reason, message };
 }
 
-export function safePayloadMetadata(payload: unknown): Record<string, string | undefined> {
+function safePayloadMetadata(payload: unknown): Record<string, string | undefined> {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return {};
   }

@@ -1,8 +1,12 @@
 import {
   ZCODE_AGENT_CA_CERT_ENV_KEY,
   ZCODE_HTTP_PROXY_ENV_KEY,
+  ZCODE_HTTP_PROXY_LIST_ENV_KEY,
   ZCODE_NO_PROXY_ENV_KEY,
+  ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY,
+  ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY,
   ZCODE_WORKSPACE_IDENTITY_ENV,
+  readZCodeProxyList,
 } from "@zcode/shared";
 
 // 把设置页的 HTTP 代理、No Proxy 和自定义 CA 翻译成 agent 子进程的环境变量补丁。
@@ -68,12 +72,15 @@ export function buildAgentNoProxyEnv(noProxy: string | undefined): Record<string
  */
 export function buildAgentRuntimeEnv(input: {
   httpProxy: string | undefined;
+  httpProxyList?: string | undefined;
   noProxy?: string | undefined;
   caCertPath?: string | undefined;
 }): Record<string, string> {
   const proxyEnv = buildAgentProxyEnv(input.httpProxy);
+  const proxyList = readZCodeProxyList(input.httpProxyList);
   return {
     ...proxyEnv,
+    ...(proxyList.length > 0 ? { [ZCODE_HTTP_PROXY_LIST_ENV_KEY]: proxyList.join("\n") } : {}),
     ...buildAgentNoProxyEnv(input.noProxy),
     ...buildAgentCaCertEnv(input.caCertPath),
   };
@@ -118,6 +125,33 @@ export function buildAgentWorkspaceIdentityEnv(
 ): Record<string, string> {
   const trimmed = workspaceIdentity?.trim();
   return trimmed ? { [ZCODE_WORKSPACE_IDENTITY_ENV]: trimmed } : {};
+}
+
+/**
+ * 把 Host 并行偏好和单任务期限注入 agent 子进程。
+ * 总任务数上限是弃用设置，不再注入或应用；实际并行仍由 runtime capacity 限制。
+ */
+export function buildAgentRootRunBudgetEnv(
+  subagentMaxParallel?: number,
+  subagentTaskTimeoutMinutes?: number,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (
+    subagentMaxParallel !== undefined &&
+    Number.isSafeInteger(subagentMaxParallel) &&
+    subagentMaxParallel >= 0
+  ) {
+    env[ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY] = String(subagentMaxParallel);
+  }
+  if (
+    subagentTaskTimeoutMinutes !== undefined &&
+    Number.isSafeInteger(subagentTaskTimeoutMinutes) &&
+    subagentTaskTimeoutMinutes >= 0 &&
+    subagentTaskTimeoutMinutes <= 180
+  ) {
+    env[ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES_ENV_KEY] = String(subagentTaskTimeoutMinutes);
+  }
+  return env;
 }
 
 function normalizeProxyValue(value: string | undefined): string | undefined {

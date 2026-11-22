@@ -11,6 +11,8 @@ export interface ZCodeCopy {
 export interface CliCopy {
   errors: {
     localeUnsupported(value: string): string;
+    /** Ход отклонён на входе исполнения: нет провайдера/модели в Selection. */
+    noModelSelected: string;
   };
   help(version: string): string;
 }

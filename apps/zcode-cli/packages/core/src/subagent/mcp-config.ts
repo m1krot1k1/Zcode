@@ -1,13 +1,13 @@
 import type { McpServerConfig, McpServerStatus } from "@zcode/contracts";
 import { matchesModelVisibleMcpServerName } from "../mcp/name.js";
 
-export interface ParsedAgentMcpServers {
+interface ParsedAgentMcpServers {
   invalidServerNames: string[];
   missingServerNames: string[];
   scopedServers: Record<string, McpServerConfig>;
 }
 
-export function parseAgentMcpServers(
+function _parseAgentMcpServers(
   mcpServers: readonly unknown[] | undefined,
   configuredServers: Record<string, McpServerConfig>,
 ): ParsedAgentMcpServers {
@@ -59,7 +59,7 @@ export function matchesRequiredMcpServer(
   );
 }
 
-export function matchesScopedMcpServer(
+function _matchesScopedMcpServer(
   requiredName: string,
   scopedServers: Record<string, McpServerConfig>,
 ): boolean {

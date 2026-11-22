@@ -20,7 +20,7 @@ import {
   marketingSettingsSections,
   waitForMarketingCapability,
 } from "@/lib/marketingNavigation.js";
-import { BUILTIN_MODEL_PROVIDER_IDS, ZCODE_ENV } from "@zcode/shared";
+import { BUILTIN_MODEL_PROVIDER_IDS, toLegacyBilingualLocale, ZCODE_ENV } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -90,11 +90,12 @@ export function MarketingTouchProvider({
   const createRuntime = useCallback(() => {
     const service = services.marketingTouchService;
     if (!service || restoring) return null;
+    const integrationLocale = toLegacyBilingualLocale(locale);
     let poller: ReturnType<typeof createMarketingTouchPoller>;
     const controller = createMarketingTouchController({
-      query: () => service.query({ locale }),
+      query: () => service.query({ locale: integrationLocale }),
       report: (input) => service.report(input),
-      locale,
+      locale: integrationLocale,
       canOpen: canOpenMarketingPopup,
       refresh: () => poller.refresh(),
       prepare: async (delivery) => {
@@ -103,10 +104,10 @@ export function MarketingTouchProvider({
           delivery.resource_position === "banner"
             ? delivery.banner.success_popup?.hero
             : delivery.popup.hero;
-        const success = prepareMarketingHero(visual, assets, locale, desktop);
+        const success = prepareMarketingHero(visual, assets, integrationLocale, desktop);
         const background =
           delivery.resource_position === "banner"
-            ? prepareMarketingHero(delivery.banner.background, assets, locale, desktop)
+            ? prepareMarketingHero(delivery.banner.background, assets, integrationLocale, desktop)
             : undefined;
         let released = false;
         const release = async () => {

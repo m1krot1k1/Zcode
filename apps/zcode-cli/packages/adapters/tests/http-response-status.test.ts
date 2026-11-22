@@ -52,6 +52,88 @@ describe("proxy-aware fetch", () => {
     expect(response.body).toBeNull();
   });
 
+  it("retries HTTP 429 through the next proxy and then stays there", async () => {
+    const hits = { first: 0, second: 0 };
+    const bodies: string[] = [];
+    const first = await countingProxy(429, () => {
+      hits.first += 1;
+    });
+    const second = await countingProxy(200, (body) => {
+      hits.second += 1;
+      bodies.push(body);
+    });
+    const proxyFetch = createNetworkProxyFetch({
+      httpProxy: first,
+      httpProxyList: [first, second],
+    });
+
+    const response = await proxyFetch("http://api.example/v1/messages", {
+      method: "POST",
+      body: "same-body",
+    });
+    const again = await proxyFetch("http://api.example/v1/messages", {
+      method: "POST",
+      body: "same-body",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("ok");
+    expect(again.status).toBe(200);
+    expect(hits).toEqual({ first: 1, second: 2 });
+    expect(bodies).toEqual(["same-body", "same-body"]);
+  });
+
+  it("wraps from the last rate-limited proxy back to the first on the next request", async () => {
+    const hits = { first: 0, second: 0 };
+    const first = await countingProxy(429, () => {
+      hits.first += 1;
+    });
+    const second = await countingProxy(429, () => {
+      hits.second += 1;
+    });
+    const proxyFetch = createNetworkProxyFetch({ httpProxyList: [first, second] });
+
+    expect((await proxyFetch("http://api.example/v1/messages")).status).toBe(429);
+    expect(hits).toEqual({ first: 1, second: 1 });
+    expect((await proxyFetch("http://api.example/v1/messages")).status).toBe(429);
+    expect(hits).toEqual({ first: 2, second: 2 });
+  });
+
+  it("does not rotate a single proxy or a non-429 server response", async () => {
+    let limited = 0;
+    let refused = 0;
+    let serverErrors = 0;
+    let healthy = 0;
+    const only = await countingProxy(429, () => {
+      limited += 1;
+    });
+    const down = await refusingProxy(() => {
+      refused += 1;
+    });
+    const unhealthy = await countingProxy(500, () => {
+      serverErrors += 1;
+    });
+    const good = await countingProxy(200, () => {
+      healthy += 1;
+    });
+
+    const single = createNetworkProxyFetch({ httpProxy: only });
+    expect((await single("http://api.example/v1/messages")).status).toBe(429);
+    expect(limited).toBe(1);
+
+    // 入口拒绝隧道 → 不是模型错误：кольцо уходит на следующий прокси (NPS-11).
+    const ring = createNetworkProxyFetch({ httpProxyList: [down, good] });
+    expect((await ring("http://api.example/v1/messages")).status).toBe(200);
+    expect(refused).toBe(1);
+    expect(healthy).toBe(1);
+
+    // А вот НЕ-429 ответ сервера ротацию не крутит: 500 отдаётся как есть (NPS-13).
+    const serverError = createNetworkProxyFetch({ httpProxyList: [unhealthy, good] });
+    expect((await serverError("http://api.example/v1/messages")).status).toBe(500);
+    expect(serverErrors).toBe(1);
+    expect(healthy).toBe(1);
+  });
+
   it("fails only this request when the status cannot be a Response", async () => {
     const proxyFetch = createNetworkProxyFetch({ httpProxy: await answeringProxy(999) });
 
@@ -82,6 +164,46 @@ async function answeringProxy(status: number): Promise<string> {
   });
   const address = server.address() as AddressInfo;
   return `http://127.0.0.1:${address.port}`;
+}
+
+async function countingProxy(
+  status: number,
+  onHit: (body: string) => void,
+): Promise<string> {
+  const server = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      onHit(Buffer.concat(chunks).toString("utf8"));
+      response.writeHead(status, { "content-type": "text/plain" });
+      response.end(status === 200 ? "ok" : "rate-limited");
+    });
+  });
+  servers.push(server);
+  await listen(server);
+  const address = server.address() as AddressInfo;
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function refusingProxy(onHit: () => void): Promise<string> {
+  const server = http.createServer((request) => {
+    onHit();
+    request.socket.destroy();
+  });
+  servers.push(server);
+  await listen(server);
+  const address = server.address() as AddressInfo;
+  return `http://127.0.0.1:${address.port}`;
+}
+
+function listen(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
 }
 
 async function closeServer(server: Server): Promise<void> {

@@ -15,7 +15,7 @@ function hashString(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-export interface ConversationShareTurnFingerprintContext {
+interface ConversationShareTurnFingerprintContext {
   capabilitiesFingerprint?: string;
   logEpoch?: string;
   productTurnId?: string;

@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- Provider/Model 的原子配置生命周期共享一次 Repository 更新边界，拆开会重复顺序与规范化逻辑。 */
 import type {
   ModelConfigRules,
   ModelId,
@@ -227,6 +226,8 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
     const templateId = input.templateId?.trim();
     const template = templateId ? zcodeBuiltin.providerTemplates?.get(templateId) : undefined;
     if (templateId && !template) throw new Error(`Provider Template 不存在: ${templateId}`);
+    if (template?.deprecated)
+      throw new Error(`Provider Template 已弃用，不能创建新实例: ${templateId}`);
     if (input.initialConfig?.group !== undefined) {
       throw new Error("initialConfig 不能包含 group");
     }

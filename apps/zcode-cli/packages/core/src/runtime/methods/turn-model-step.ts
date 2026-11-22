@@ -1,39 +1,16 @@
-import type { ToolSearchExecutionContext } from "@zcode/contracts";
-import { getTurnTools } from "./turn-tool-visibility.js";
+import type {
+  ToolSearchExecutionContext,
+} from "@zcode/contracts";
 import { isOffPeakUserTakeover, refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 
 import { beginLocalTurnPreparation } from "@zcode/contracts";
-import {
-  CompactTrigger,
-  CoreErrorType,
-  SessionEventType,
-  createChildTraceContext,
-  createCoreError,
-  createMessageId,
-  createPartId,
-  getModelUsageTotalTokens,
-  traceContextToLogContext,
-  TurnMachineImpl,
-} from "../deps.js";
+import { SessionEventType, createChildTraceContext, createMessageId, createPartId, getModelUsageTotalTokens, traceContextToLogContext, TurnMachineImpl } from "../deps.js";
 import type { MessageId, ModelNetworkStatusEvent, ModelToolContract } from "../deps.js";
 import {
   createRuntimeAssistantEntry,
   type RuntimeMessageEntry,
 } from "../../agent/message-history.js";
-import {
-  createModelContextExceededFinishError,
-  createCompactRapidRefillError,
-  objectKeys,
-  projectExecutionErrorPayload,
-  finalizeSuspiciousEmptyModelResult,
-  isContextExceededFinishReason,
-  isSuspiciousEmptyModelResult,
-  readRawFinishReason,
-  throwIfTurnAborted,
-  isModelContextExceededError,
-  isTurnCancellationError,
-  buildTurnFileChangeSummary,
-} from "../helpers/index.js";
+import { createModelContextExceededFinishError, projectExecutionErrorPayload, finalizeSuspiciousEmptyModelResult, isContextExceededFinishReason, isSuspiciousEmptyModelResult, readRawFinishReason, throwIfTurnAborted, isModelContextExceededError, isTurnCancellationError, buildTurnFileChangeSummary } from "../helpers/index.js";
 import type {
   DrainedPendingInputDiagnostics,
   RunModelTextRequestOptions,
@@ -45,8 +22,6 @@ import { executeToolCallsForModelStep } from "./turn-tools.js";
 import {
   captureAssistantPersistenceAnchor,
   finishModelStepWithoutToolCalls,
-  persistCompletedAssistantStep,
-  persistOutputTokenLimitErrorCarrier,
 } from "./turn-stop.js";
 import { createStreamingToolCoordinator } from "./streaming-tool-coordinator.js";
 import { persistCancelledStreamSnapshot } from "./cancelled-stream-persistence.js";
@@ -59,39 +34,37 @@ import {
   isStartPlanBusyStreamRecoveryFailure,
 } from "./streaming-recovery.js";
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
-import {
-  evaluateRapidRefill,
-  MAX_CONSECUTIVE_RAPID_REFILLS,
-  RAPID_REFILL_TOOL_TURN_THRESHOLD,
-  recordCompactHistoryRound,
-  recordCompactSuccess,
-  recordModelHistoryRound,
-} from "./turn-loop-state.js";
+import { recordModelHistoryRound } from "./turn-loop-state.js";
 import {
   querySourceForTask,
   recordMainTurnCacheHitUsage,
   recordMainTurnModelUsage,
 } from "./turn-model-step-usage.js";
 import { estimateCurrentModelInputTokens } from "./compact.js";
-import {
-  resolveModelStepMaxOutputTokens,
-  resolveNormalRequestMaxOutputTokens,
-} from "./model-token-limits.js";
+import { resolveReasoningAwareMaxOutputTokens } from "./model-token-limits.js";
+import { resolvePromptDepthRuntimeTuning } from "../../context/cognitive-protocols.js";
 import {
   applyExecutionSelectionFallback,
   matchExecutionSelectionFallback,
 } from "./turn-execution-fallback.js";
 import {
-  appendOutputTokenContinuation,
   classifyOutputTokenContinuation,
   commitAssistantToTurnRequest,
   commitTurnRequestEntries,
   completeOutputTokenRecovery,
   hasAssistantReasoningContent,
-  OUTPUT_TOKEN_LIMIT_ERROR_MESSAGE,
+  recordTruncatedToolCallRecovery,
 } from "./turn-output-token-continuation.js";
-
-type ModelStepResult = "continue" | "output_continuation" | "break";
+import { synthesizeTruncatedToolCallSettlements } from "../../tool/self-repair/index.js";
+import { recoverModelStepAfterContextExceeded } from "./turn-model-step-compact-recovery.js";
+import { handleOutputTokenLimitOutcome } from "./turn-model-step-output-limit.js";
+import {
+  buildAutomationCreateLimitFallback,
+  buildStepDiagnostics,
+  logModelRequestCompleted,
+  logModelResponseDiagnostics,
+  type ModelStepResult,
+} from "./turn-model-step-diagnostics.js";
 
 export async function runModelBackedTurnStep(
   this: AgentRuntimeInternal,
@@ -239,23 +212,30 @@ async function runModelBackedTurnStepImpl(
   };
 
   let result: RuntimeModelTextResult;
+  // Инкремент 4.4: явный профиль глубины повышает бюджет рассуждения и минимальный выходной
+  // бюджет. Пока профиль не задан, рантайм сохраняет поведение 4.1 — новый параметр не меняет
+  // рассуждения существующих сессий молча (условие обратной совместимости).
+  const depthTuning =
+    this.config.promptDepth === undefined
+      ? undefined
+      : resolvePromptDepthRuntimeTuning(this.config.promptDepth);
+  const outputBudget = resolveReasoningAwareMaxOutputTokens({
+    modelHardMaxOutputTokens: executionMaxOutputTokens,
+    configuredMaxOutputTokens: depthTuning?.minMaxOutputTokens,
+    contextWindow: executionContextWindow,
+    estimatedInputTokens: estimateCurrentModelInputTokens(
+      options.messages,
+      options.sourceEntries,
+    ),
+    reasoningEffort: depthTuning?.reasoningEffort ?? model.options?.reasoningLevel,
+    minToolPayloadReserveTokens: this.config.reasoningReserveOutputTokens,
+  });
   try {
-    const baselineMaxOutputTokens = resolveNormalRequestMaxOutputTokens({
-      modelMaxOutputTokens: executionMaxOutputTokens,
-    });
     result = await this.runModelTextRequest({
       abortSignal: state.turnAbortSignal,
       assistantMessageId,
       events: state.events,
-      maxOutputTokens: resolveModelStepMaxOutputTokens({
-        baselineMaxOutputTokens,
-        contextWindow: executionContextWindow,
-        estimatedCurrentUsage: estimateCurrentModelInputTokens(
-          options.messages,
-          options.sourceEntries,
-        ),
-        modelContextBudgetStrategy: this.config.modelContextBudgetStrategy,
-      }),
+      maxOutputTokens: outputBudget.effectiveMaxOutputTokens,
       latestRealUserMessageIndex: options.latestRealUserMessageIndex,
       messages: options.messages,
       sourceEntries: options.sourceEntries,
@@ -555,23 +535,14 @@ async function runModelBackedTurnStepImpl(
         rawFinishReason,
         toolCallCount: providerToolCallCount,
       });
-  this.logger?.info("Model response diagnostics", {
-    ...traceContextToLogContext(modelTraceContext),
-    event: "model.response.diagnostics",
-    finishReason: result.finishReason,
-    module: "core.runtime",
-    providerMetadataKeys: objectKeys(result.providerMetadata),
+  logModelResponseDiagnostics({
+    logger: this.logger,
+    modelTraceContext,
+    result,
     rawFinishReason,
-    responseEmpty: responseLength === 0,
     responseLength,
-    status: "completed",
     toolCallCount: toolCalls.length,
-    usageCacheReadTokens: usage.cacheReadTokens,
-    usageCacheWriteTokens: usage.cacheWriteTokens,
-    usageInputTokens: usage.inputTokens,
-    usageOutputTokens: usage.outputTokens,
-    usageReasoningTokens: usage.reasoningTokens,
-    usageTotalTokens: usage.totalTokens,
+    usage,
   });
   if (
     !localTerminalResponse &&
@@ -598,19 +569,28 @@ async function runModelBackedTurnStepImpl(
     }
     throw contextError;
   }
-  if (
+  const emptyMainTurnResult =
+    querySource === "main_turn" &&
     !localTerminalResponse &&
     outputTokenContinuation === "none" &&
-    isSuspiciousEmptyModelResult(result.finishReason, responseLength, toolCalls.length, usage)
+    responseLength === 0 &&
+    toolCalls.length === 0;
+  if (
+    emptyMainTurnResult ||
+    (!localTerminalResponse &&
+      outputTokenContinuation === "none" &&
+      isSuspiciousEmptyModelResult(result.finishReason, responseLength, toolCalls.length, usage))
   ) {
-    this.logger?.warn("Model returned an empty non-stop result", {
+    // 根因：空 stop + 非零 usage 会绕过 adapter 的 zero-usage retry/anomaly 判据，随后被写成成功空 TurnComplete。
+    // 修复依据：普通主 turn 必须给用户可见正文或工具调用；内部查询仍由各自调用方处理空结果。
+    this.logger?.warn("Model returned an empty final result", {
       ...traceContextToLogContext(modelTraceContext),
       event: "model.response.suspicious_empty",
       finishReason: result.finishReason,
       module: "core.runtime",
       rawFinishReason,
       responseLength,
-      status: "completed",
+      status: "failed",
       toolCallCount: toolCalls.length,
       usageTotalTokens: usage.totalTokens,
     });
@@ -624,6 +604,17 @@ async function runModelBackedTurnStepImpl(
   // AI SDK 可能把非标准 output-limit 归一化为 other；Runtime 已确认恢复语义后，
   // live 事件与持久化必须统一使用 length，同时由上方 diagnostics 保留 provider 原始事实。
   if (outputTokenContinuation !== "none") result.finishReason = "length";
+  const cacheHitRatio =
+    (usage.inputTokens ?? 0) > 0
+      ? Math.min(1, Math.max(0, (usage.cacheReadTokens ?? 0) / usage.inputTokens!))
+      : undefined;
+  state.lastStepDiagnostics = buildStepDiagnostics({
+    finishReason: result.finishReason,
+    rawFinishReason,
+    outputBudget,
+    cacheHitRatio,
+    stateTransitions: state.turnMachine.state.stateTransitions ?? [],
+  });
   for (const reasoning of result.reasoning ?? []) {
     if (!hasAssistantReasoningContent(reasoning)) continue;
     await this.persistPart(
@@ -672,6 +663,7 @@ async function runModelBackedTurnStepImpl(
     SessionEventType.ModelComplete,
     {
       content: state.modelResponse,
+      ...(latestModelRequestId ? { requestId: latestModelRequestId } : {}),
       // 桌面 continuous 实时事件只携带当前 model_complete payload。
       // 如果主轮次只发 usage 不发 contextWindow，旧 task stream 无法生成 usage_update，
       // 长程任务中输入栏会拿不到 context meter 的 size 而隐藏。
@@ -708,12 +700,12 @@ async function runModelBackedTurnStepImpl(
   );
   throwIfTurnAborted(state.turnAbortSignal);
 
-  this.logger?.info("Model request completed", {
-    ...traceContextToLogContext(modelTraceContext),
+  logModelRequestCompleted({
+    logger: this.logger,
+    modelTraceContext,
+    agentType: this.config.agentType ?? "root",
     durationMs: Date.now() - modelStartedAt,
-    event: "model.request.completed",
-    module: "core.runtime",
-    status: "completed",
+    sessionId: this.sessionId,
     totalTokens: state.tokenCount,
     toolCallCount: toolCalls.length,
   });
@@ -722,65 +714,70 @@ async function runModelBackedTurnStepImpl(
     .filter((toolCall) => !toolCall.providerExecuted)
     .map((toolCall) => streamingToolCoordinator.admit(toolCall));
   const streamedToolResults = await streamingToolCoordinator.drain(executableToolCalls);
-  if (outputTokenContinuation !== "none") {
-    // 首次命中 output-limit 时，当前 request 可能带有一次性的 project-memory attachment；
-    // query-local 状态必须从实际请求数组推进，不能退回请求前的数组。
-    state.turnRequestState.entries = options.requestEntries;
-    const assistantCommitted = await persistCompletedAssistantStep(this, state, {
+  if (outputTokenContinuation === "recover_truncated_tool_calls") {
+    const truncatedSettlements = synthesizeTruncatedToolCallSettlements({
+      toolCalls: executableToolCalls,
+      existingStreamedIds: new Set(streamedToolResults.map((entry) => entry.toolCallId)),
+      resolveEntry: (name) => this.registry.get(name),
+      maxOutputTokens: outputBudget.effectiveMaxOutputTokens,
+      reasoningTokens: usage.reasoningTokens,
+      outputTokens: usage.outputTokens,
+    });
+    if (truncatedSettlements.length > 0) {
+      state.turnRequestState.entries = options.requestEntries;
+      recordTruncatedToolCallRecovery(state.turnRequestState);
+      state.reactiveCompactAttemptedInCurrentModelStep = false;
+      state.turnMachine = new TurnMachineImpl(
+        state.turnMachine.enterTruncatedToolRecovery("finish_reason_length"),
+      );
+      const firstTruncatedPreview = truncatedSettlements.find(
+        (entry) => entry.result.failureDiagnostics?.rawTruncatedInputPreview,
+      )?.result.failureDiagnostics?.rawTruncatedInputPreview;
+      if (firstTruncatedPreview && state.lastStepDiagnostics) {
+        state.lastStepDiagnostics = {
+          ...state.lastStepDiagnostics,
+          rawTruncatedInputPreview: firstTruncatedPreview,
+        };
+      }
+      const truncatedIds = new Set(truncatedSettlements.map((entry) => entry.toolCallId));
+      const sanitizedToolCalls = executableToolCalls.map((tc) =>
+        truncatedIds.has(tc.id as never) &&
+        (typeof tc.input !== "object" || tc.input === null || Array.isArray(tc.input))
+          ? { ...tc, input: {} }
+          : tc,
+      );
+      state.toolCallCount += sanitizedToolCalls.length;
+      if (commitAssistantToTurnRequest(this, state, result, sanitizedToolCalls)) {
+        recordModelHistoryRound(state);
+      }
+      return await executeToolCallsForModelStep.call(this, state, {
+        toolSearch: options.toolSearch,
+        assistantCreatedAt,
+        assistantMessageId,
+        modelTraceContext,
+        result,
+        toolCalls: sanitizedToolCalls,
+        streamedToolResults: [
+          ...streamedToolResults.filter((entry) => !truncatedIds.has(entry.toolCallId)),
+          ...truncatedSettlements,
+        ],
+      });
+    }
+  }
+  if (
+    outputTokenContinuation !== "none" &&
+    outputTokenContinuation !== "recover_truncated_tool_calls"
+  ) {
+    return await handleOutputTokenLimitOutcome(this, state, {
       assistantPersistenceAnchor,
       assistantCreatedAt,
       assistantMessageId,
-      includeEmptyAssistant: false,
-      modelTraceContext,
-      result,
-    });
-    if (assistantCommitted) recordModelHistoryRound(state);
-    if (outputTokenContinuation === "continue") {
-      appendOutputTokenContinuation(state.turnRequestState);
-      state.reactiveCompactAttemptedInCurrentModelStep = false;
-      state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
-      return "output_continuation";
-    }
-
-    const exhaustedError = createCoreError(
-      CoreErrorType.ModelError,
-      OUTPUT_TOKEN_LIMIT_ERROR_MESSAGE,
-      {
-        context: {
-          providerCode: "model_output_limit_exceeded",
-          reason: "model_output_limit_exceeded",
-          source: "provider",
-        },
-        recoverable: true,
-      },
-    );
-    const exhaustedErrorProjection = projectExecutionErrorPayload(
-      exhaustedError,
-      OUTPUT_TOKEN_LIMIT_ERROR_MESSAGE,
-    );
-    completeOutputTokenRecovery(state.turnRequestState);
-    await persistOutputTokenLimitErrorCarrier(this, state, {
-      error: {
-        name: exhaustedErrorProjection.code ?? exhaustedError.type,
-        data: {
-          ...(exhaustedErrorProjection.code ? { code: exhaustedErrorProjection.code } : {}),
-          message: exhaustedErrorProjection.message,
-          // 既有 cold hydration 用 retryable 恢复 UI recoverable；这里复用该字段，
-          // 不为单一错误扩展 transcript/hydration schema。
-          retryable: exhaustedError.recoverable,
-          ...(exhaustedErrorProjection.attribution
-            ? { attribution: exhaustedErrorProjection.attribution }
-            : {}),
-        },
-      },
-      finishReason: result.finishReason,
       model,
       modelTraceContext,
+      outputTokenContinuation,
+      requestEntries: options.requestEntries,
+      result,
     });
-    if (state.activeTurn) state.activeTurn.steerable = false;
-    // 上游 query loop 会把 max_output_tokens API-error assistant 交给外层；这里复用
-    // 既有 ModelError -> TurnError 收口表达同一实时错误，同时只结束当前 Turn command。
-    throw exhaustedError;
   }
   completeOutputTokenRecovery(state.turnRequestState);
   if (executableToolCalls.length === 0) {
@@ -809,76 +806,4 @@ async function runModelBackedTurnStepImpl(
     streamedToolResults,
   });
   return toolStepResult;
-}
-
-function buildAutomationCreateLimitFallback(input: string): string {
-  if (/\p{Script=Han}/u.test(input)) {
-    return "定时任务已达到 20 个上限，本次未创建。请前往“自动化”手动删除一个已有任务后重试。";
-  }
-  return "The limit of 20 scheduled tasks has been reached, so no task was created. Manually delete an existing task on the Automations page, then try again.";
-}
-
-async function recoverModelStepAfterContextExceeded(
-  this: AgentRuntimeInternal,
-  state: RegularTurnLoopState,
-  contextError: unknown,
-  modelStepIndex: number,
-  activeEntries: readonly RuntimeMessageEntry[],
-): Promise<boolean> {
-  if (state.reactiveCompactAttemptedInCurrentModelStep) {
-    return false;
-  }
-
-  const rapidRefill = evaluateRapidRefill(state.compactTracking);
-  if (rapidRefill.shouldBlock) {
-    this.logger?.warn("Reactive compact rapid-refill breaker tripped", {
-      ...traceContextToLogContext(state.turnTraceContext),
-      event: "compact.rapid_refill_breaker",
-      consecutiveRapidRefills: rapidRefill.consecutiveRapidRefills,
-      modelStepIndex,
-      module: "core.runtime",
-      status: "failed",
-      toolTurnsSinceCompact: rapidRefill.toolTurnsSinceCompact,
-      trigger: CompactTrigger.Reactive,
-    });
-    throw createCompactRapidRefillError({
-      consecutiveRapidRefills: rapidRefill.consecutiveRapidRefills,
-      maxConsecutiveRapidRefills: MAX_CONSECUTIVE_RAPID_REFILLS,
-      toolTurnThreshold: RAPID_REFILL_TOOL_TURN_THRESHOLD,
-      toolTurnsSinceCompact: rapidRefill.toolTurnsSinceCompact,
-    });
-  }
-
-  state.reactiveCompactAttemptedInCurrentModelStep = true;
-  const compactOutcome = await this.reactiveCompactAfterContextExceeded(
-    contextError,
-    state.turnTraceContext,
-    state.events,
-    state.turnAbortSignal,
-    {
-      activeEntries,
-      modelStepIndex,
-      agentListingTools: getTurnTools(this, state),
-      rapidRefillCount: rapidRefill.consecutiveRapidRefills,
-      model: state.model,
-      turnRequestState: state.turnRequestState,
-      getContinuationTools: () => getTurnTools(this, state),
-    },
-  );
-  if (compactOutcome !== "compacted") {
-    return false;
-  }
-
-  recordCompactSuccess(state, rapidRefill);
-  recordCompactHistoryRound(state);
-  state.turnMachine = new TurnMachineImpl(
-    TurnMachineImpl.create(
-      this.sessionId,
-      this.turnNumber,
-      state.input,
-      state.traceId,
-      state.turnId,
-    ).start(),
-  );
-  return true;
 }

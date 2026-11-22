@@ -89,6 +89,18 @@ export async function settleToolResults(
     );
   }
   state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
+  if (state.lastStepDiagnostics) {
+    const collectedRepairAttempts = results.flatMap((res) => res.repairAttempts ?? []);
+    const firstTruncatedPreview =
+      state.lastStepDiagnostics.rawTruncatedInputPreview ??
+      results.find((res) => res.failureDiagnostics?.rawTruncatedInputPreview)?.failureDiagnostics
+        ?.rawTruncatedInputPreview;
+    state.lastStepDiagnostics = {
+      ...state.lastStepDiagnostics,
+      ...(firstTruncatedPreview ? { rawTruncatedInputPreview: firstTruncatedPreview } : {}),
+      ...(collectedRepairAttempts.length > 0 ? { repairAttempts: collectedRepairAttempts } : {}),
+    };
+  }
   this.logger?.debug("Tools executed", {
     resultCount: results.length,
     results: results.map((r) => ({
@@ -142,10 +154,12 @@ export async function settleToolResults(
                 title: projectedResultToolName.toolName,
                 metadata: {
                   ...completedToolPartMetadata(result),
+                  ...(result.repairAttempts ? { repairAttempts: result.repairAttempts } : {}),
                   ...(mediaPersistence
                     ? { modelContentLayout: mediaPersistence.modelContentLayout }
                     : {}),
                 },
+                ...(result.repairAttempts ? { repairAttempts: result.repairAttempts } : {}),
                 time: {
                   start: result.startedAt.getTime(),
                   end: result.completedAt.getTime(),
@@ -165,7 +179,15 @@ export async function settleToolResults(
                   ...(typeof result.modelContent === "string"
                     ? { modelContent: result.modelContent }
                     : {}),
+                  ...(result.repairAttempts ? { repairAttempts: result.repairAttempts } : {}),
+                  ...(result.failureDiagnostics
+                    ? { failureDiagnostics: result.failureDiagnostics }
+                    : {}),
                 },
+                ...(result.repairAttempts ? { repairAttempts: result.repairAttempts } : {}),
+                ...(result.failureDiagnostics
+                  ? { failureDiagnostics: result.failureDiagnostics }
+                  : {}),
                 time: {
                   start: result.startedAt.getTime(),
                   end: result.completedAt.getTime(),

@@ -21,7 +21,7 @@ import { projectMessagesForModelMediaPolicy } from "../helpers/media-budget.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { isRuntimeAttachmentEntry, type RuntimeMessageEntry } from "../../agent/message-history.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
-import { createRuntimeModel } from "./runtime-model.js";
+import { createRuntimeModel, getLatestCompletedModelRequestId } from "./runtime-model.js";
 import { isStartPlanBusyStreamRecoveryFailure } from "./streaming-recovery.js";
 import { recordModelUsageFact } from "./usage-observability.js";
 import { runTargetCompletionVerificationWithTelemetry } from "./target-completion-verification-telemetry.js";
@@ -170,10 +170,14 @@ async function verifyTargetCompletion(
     });
     throwIfTurnAborted(input.abortSignal);
     const toolCalls = this.extractToolCallsFromResult(result);
+    const completedRequestId = getLatestCompletedModelRequestId(
+      input.events.slice(networkEventStartIndex),
+    );
     const modelCompleteEvent = this.createEvent(
       SessionEventType.ModelComplete,
       {
         content: result.text,
+        ...(completedRequestId ? { requestId: completedRequestId } : {}),
         querySource: GOAL_COMPLETION_VERIFICATION_QUERY_SOURCE,
         stopReason: result.finishReason,
         toolCallCount: toolCalls.length,

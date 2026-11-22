@@ -1,8 +1,8 @@
 import { resolveZCodeRuntimeEnv } from "@zcode/shared";
 
-export type EffectiveNodeEnv = "development" | "production";
+type EffectiveNodeEnv = "development" | "production";
 
-export function resolveEffectiveNodeEnv(
+function resolveEffectiveNodeEnv(
   env: Record<string, string | undefined> = process.env,
 ): EffectiveNodeEnv {
   const runtimeEnv = resolveZCodeRuntimeEnv(env);

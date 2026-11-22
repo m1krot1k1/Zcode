@@ -55,6 +55,51 @@ describe("createComposerSubmissionConfig", () => {
     expect(Object.isFrozen(submission?.modelSelection.options)).toBe(true);
   });
 
+  it("OpenCode CLI выбор фиксируется как обычная ModelSelection для общего send pipeline", () => {
+    const modelId = "opencode/deepseek-v4.1-flash-free";
+    const openCodeView = {
+      revision: 2,
+      providers: [
+        {
+          providerId: "opencode",
+          config: {
+            access: { type: "local-auth" },
+            api: { type: "opencode-sdk" },
+          },
+          models: [
+            {
+              modelId,
+              config: {
+                optionSpecs: { reasoningLevel: { values: ["low", "high"], map: "{}" } },
+              },
+            },
+          ],
+        },
+      ],
+    } as ModelSelectionView;
+    const submission = createComposerSubmissionConfig(
+      {
+        mode: "build",
+        modelSelection: {
+          providerId: "opencode",
+          modelId,
+          options: { reasoningLevel: "high" },
+        },
+      },
+      openCodeView,
+    );
+
+    expect(submission).toEqual({
+      mode: "build",
+      planEnabled: false,
+      modelSelection: {
+        providerId: "opencode",
+        modelId,
+        options: { reasoningLevel: "high" },
+      },
+    });
+  });
+
   it("空选择、空档位和失效档位不创建 Submission，也不使用 preferred", () => {
     for (const modelSelection of [
       undefined,

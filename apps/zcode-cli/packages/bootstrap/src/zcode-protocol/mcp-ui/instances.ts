@@ -1,7 +1,7 @@
 import type { McpAppInstance } from "@zcode/shared/mcp-apps";
 import { createHash, randomUUID } from "node:crypto";
 
-export interface McpUiInstanceBinding {
+interface McpUiInstanceBinding {
   workspace: string;
   accountContext?: string;
   sessionId: string;

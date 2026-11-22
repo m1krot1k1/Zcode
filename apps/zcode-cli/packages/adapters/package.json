@@ -26,6 +26,14 @@
       "types": "./dist/exec/index.d.ts",
       "import": "./dist/exec/index.js"
     },
+    "./exec/sandbox": {
+      "types": "./dist/exec/sandbox/index.d.ts",
+      "import": "./dist/exec/sandbox/index.js"
+    },
+    "./exec/pty": {
+      "types": "./dist/exec/pty/index.d.ts",
+      "import": "./dist/exec/pty/index.js"
+    },
     "./http": {
       "types": "./dist/http/index.d.ts",
       "import": "./dist/http/index.js"
@@ -94,17 +102,18 @@
   "scripts": {
     "build": "tsc",
     "clean": "node ../../scripts/clean-dist.mjs",
-    "test": "vitest tests",
+    "test": "vitest run tests --pool=forks --maxWorkers=2",
     "coverage": "vitest run tests --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src",
-    "lint:fix": "oxlint --write src"
+    "lint:fix": "oxlint --fix src"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.81",
     "@ai-sdk/openai": "^3.0.58",
     "@ai-sdk/openai-compatible": "^2.0.58",
     "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@zcode/contracts": "workspace:*",
     "@zcode/dynamic-workflow": "workspace:*",
     "@zcode/model-option-map": "workspace:*",
@@ -112,21 +121,25 @@
     "@zcode/shared": "workspace:*",
     "@zcode/zcode-cua": "workspace:*",
     "ai": "6.0.193",
-    "cheerio": "^1.0.0",
+    "ai-sdk-provider-opencode-sdk": "3.0.6",
+    "@opencode-ai/sdk": "1.19.4",
     "iconv-lite": "0.7.2",
     "jimp": "^1.6.1",
     "koffi": "2.15.6",
+    "node-pty": "^1.1.0",
     "playwright-core": "1.59.1",
     "proxy-agent": "^8.0.1",
     "ripgrep": "0.3.1",
     "semver": "^7.7.4",
     "yauzl": "^3.3.0",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "@ai-sdk/provider": "^3.0.10"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/semver": "^7.7.0",
     "@types/yauzl": "^2.10.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "@modelcontextprotocol/server": "^2.0.0"
   }
 }

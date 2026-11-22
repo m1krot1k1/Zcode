@@ -77,6 +77,13 @@ class ConfigStore {
     if (config.modelStream?.idleTimeoutMs !== undefined) {
       this.set(ConfigKey.ModelStreamIdleTimeout, config.modelStream.idleTimeoutMs, scope);
     }
+    if (config.modelStream?.firstTokenTimeoutMs !== undefined) {
+      this.set(
+        ConfigKey.ModelStreamFirstTokenTimeout,
+        config.modelStream.firstTokenTimeoutMs,
+        scope,
+      );
+    }
     if (config.permission) {
       if (config.permission.mode) this.set(ConfigKey.PermissionMode, config.permission.mode, scope);
       if (config.permission.allowedTools)
@@ -96,6 +103,10 @@ class ConfigStore {
           config.permission.allowMediumRiskInAuto,
           scope,
         );
+      }
+      // 0 是有效值（显式关闭审批超时），不能用真值判断把它丢掉。
+      if (config.permission.approvalTimeoutMs !== undefined) {
+        this.set(ConfigKey.PermissionApprovalTimeout, config.permission.approvalTimeoutMs, scope);
       }
     }
     if (config.storage) {
@@ -183,6 +194,9 @@ class ConfigStore {
       if (config.toolConcurrency.maxConcurrency !== undefined)
         this.set(ConfigKey.ToolConcurrencyMax, config.toolConcurrency.maxConcurrency, scope);
     }
+    if (config.workspaceBoundary !== undefined) {
+      this.set(ConfigKey.WorkspaceBoundary, config.workspaceBoundary, scope);
+    }
     if (config.modelAnomalyGuard) {
       const previous = this.get(ConfigKey.ModelAnomalyGuard) ?? DefaultConfig.modelAnomalyGuard;
       this.set(
@@ -261,6 +275,9 @@ export class ConfigPortImpl implements ConfigPort {
         idleTimeoutMs:
           this.store.get(ConfigKey.ModelStreamIdleTimeout) ??
           DefaultConfig.modelStream.idleTimeoutMs,
+        firstTokenTimeoutMs:
+          this.store.get(ConfigKey.ModelStreamFirstTokenTimeout) ??
+          DefaultConfig.modelStream.firstTokenTimeoutMs,
       },
       permission: {
         mode: this.get(ConfigKey.PermissionMode),
@@ -268,6 +285,7 @@ export class ConfigPortImpl implements ConfigPort {
         disallowedTools: this.get(ConfigKey.PermissionDisallowedTools),
         autoApproveHighRisk: this.get(ConfigKey.PermissionAutoApproveHighRisk),
         allowMediumRiskInAuto: this.get(ConfigKey.PermissionAllowMediumRiskInAuto),
+        approvalTimeoutMs: this.get(ConfigKey.PermissionApprovalTimeout),
       },
       storage: {
         dir: this.store.get(ConfigKey.StorageDir) ?? DefaultConfig.storage.dir,
@@ -326,6 +344,8 @@ export class ConfigPortImpl implements ConfigPort {
           this.store.get(ConfigKey.ToolConcurrencyMax) ??
           DefaultConfig.toolConcurrency.maxConcurrency,
       },
+      workspaceBoundary:
+        this.store.get(ConfigKey.WorkspaceBoundary) ?? DefaultConfig.workspaceBoundary,
       modelAnomalyGuard:
         this.store.get(ConfigKey.ModelAnomalyGuard) ?? DefaultConfig.modelAnomalyGuard,
       hooks: this.store.get(ConfigKey.Hooks) ?? DefaultConfig.hooks,
@@ -371,6 +391,8 @@ function getDefaultValue(key: ConfigKey): unknown {
   switch (key) {
     case ConfigKey.ModelStreamIdleTimeout:
       return defaults.modelStream.idleTimeoutMs;
+    case ConfigKey.ModelStreamFirstTokenTimeout:
+      return defaults.modelStream.firstTokenTimeoutMs;
     case ConfigKey.PermissionMode:
       return defaults.permission.mode;
     case ConfigKey.PermissionAllowedTools:
@@ -381,6 +403,8 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.permission.autoApproveHighRisk;
     case ConfigKey.PermissionAllowMediumRiskInAuto:
       return defaults.permission.allowMediumRiskInAuto;
+    case ConfigKey.PermissionApprovalTimeout:
+      return defaults.permission.approvalTimeoutMs;
     case ConfigKey.StorageDir:
       return defaults.storage.dir;
     case ConfigKey.StorageSessionDbPath:
@@ -435,6 +459,8 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.logging.format;
     case ConfigKey.ToolConcurrencyMax:
       return defaults.toolConcurrency.maxConcurrency;
+    case ConfigKey.WorkspaceBoundary:
+      return defaults.workspaceBoundary;
     case ConfigKey.ModelAnomalyGuard:
       return defaults.modelAnomalyGuard;
     case ConfigKey.Hooks:
@@ -481,7 +507,11 @@ export {
   type UiLocalePatchResult,
 } from "./file-config.adapter.js";
 export { parseEnvConfig, getToolConcurrencyConfig } from "./env-config.adapter.js";
-export { ZCodeConfigFileSchema, type ZCodeConfigFile } from "./schema.js";
+export {
+  ZCodeConfigFileSchema,
+  parseMcpServerConfig,
+  type ZCodeConfigFile,
+} from "./schema.js";
 export { mergeConfigs, createPrioritizedConfig, getScopePriority } from "./config-merger.js";
 export {
   createConfig,

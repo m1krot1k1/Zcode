@@ -151,7 +151,9 @@ describe("Read model-result harness", () => {
       startLine: 0,
       totalLines: 2,
     });
-    expect(asModelText(result.modelContent)).toBe("0\tfirst");
+    expect(asModelText(result.modelContent)).toBe(
+      "<system-reminder>This Read result shows lines 0-0 of 2; it is a range, not a full-file read.</system-reminder>\n\n0\tfirst",
+    );
   });
 
   it("records explicit ranges as range views instead of partial views", async () => {
@@ -398,7 +400,26 @@ describeReadStrictContract("Read strict model-result contract", () => {
       startLine: 2,
       totalLines: 3,
     });
-    expect(asModelText(result.modelContent)).toBe("2\tsecond");
+    expect(asModelText(result.modelContent)).toBe(
+      "<system-reminder>This Read result shows lines 2-2 of 3; it is a range, not a full-file read.</system-reminder>\n\n2\tsecond",
+    );
+  });
+
+  it("reports the full line count when Read returns only the requested prefix", async () => {
+    const file = join(tmpDir, "bounded-range.txt");
+    const fs = createMemoryFileSystem({
+      [file]: Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n"),
+    });
+
+    const result = await readForModel(
+      { file_path: file, offset: 1, limit: 16 },
+      contextWith(fs),
+    );
+
+    expect(result.output).toMatchObject({ numLines: 16, startLine: 1, totalLines: 20 });
+    expect(asModelText(result.modelContent)).toContain(
+      "This Read result shows lines 1-16 of 20; it is a range, not a full-file read.",
+    );
   });
 
   it("reads relative paths against cwd while preserving the original input path in output data", async () => {

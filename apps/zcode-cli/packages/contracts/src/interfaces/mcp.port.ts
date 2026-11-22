@@ -454,6 +454,13 @@ export interface McpPort {
   status(): Promise<Record<string, McpServerStatus>>;
   listTools(): Promise<McpToolDescriptor[]>;
   /**
+   * Текущий снимок всех подключений, а не зафиксированный на старте runtime.
+   * Нужен при spawn ребёнка: MCP, подключённый через InstallCapability уже после
+   * старта сессии, обязан быть виден следующей дочерней задаче без reload.
+   * Реализации без метода сохраняют прежний startup-снимок.
+   */
+  currentSnapshot?(): Promise<McpConnectionSnapshot>;
+  /**
    * 自端口创建以来收到 `notifications/tools/list_changed` 的累计次数。
    * runtime 在回合开始前比较该值，变了才重新 listTools 并重注册；未实现表示端口不会主动变化。
    */

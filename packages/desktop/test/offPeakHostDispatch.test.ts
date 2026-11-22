@@ -13,8 +13,8 @@ let createDispatch: (
 ) => (request: Record<string, unknown>) => Promise<unknown>;
 
 beforeAll(async () => {
-  // 只装载真实派发函数，隔离 host/index 的进程启动副作用；不复制一份派发算法测试自己。
-  const path = new URL("../src/host/index.ts", import.meta.url);
+  // 只装载真实派发函数，隔离 host 启动副作用；Host 入口拆分后函数归属 hostOffPeakDispatch。
+  const path = new URL("../src/host/hostOffPeakDispatch.ts", import.meta.url);
   const source = ts.createSourceFile(
     path.pathname,
     await readFile(path, "utf8"),
@@ -26,7 +26,7 @@ beforeAll(async () => {
       ts.isFunctionDeclaration(node) && node.name?.text === "dispatchOffPeakRun",
   );
   if (!declaration) throw new Error("Missing production dispatchOffPeakRun");
-  const code = ts.transpileModule(declaration.getText(source), {
+  const code = ts.transpileModule(declaration.getText(source).replace(/^export\s+/, ""), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
   createDispatch = (dependencies) =>
@@ -71,7 +71,7 @@ function setup() {
   };
   const report = vi.fn();
   const dispatch = createDispatch({
-    activeServices: { getOptional: () => service },
+    hostState: { activeServices: { getOptional: () => service } },
     reportHostSessionCreate: report,
     parentPort: {},
     IZCodeTaskService: Symbol("task-service"),

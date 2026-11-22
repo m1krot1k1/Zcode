@@ -35,7 +35,7 @@ import { buildSubagentViews, NODE_ROW_RUNNING } from "./dynamic-workflow-run-ros
 const ASK_NODE_KIND = "ask";
 
 /** 情势截面的取数入参。 */
-export interface WorkflowRunRosterInput {
+interface WorkflowRunRosterInput {
   /**
    * 本 run 的归约状态（journal 事件重放进 run 面板同一个 reducer 的结果）。
    * 一条事件都没有的 run（注册表间隙）传 `undefined`：那时阶段表缺席、花名册为空。
@@ -63,7 +63,7 @@ export interface WorkflowRunRosterInput {
 }
 
 /** 情势截面：详情面直接展开这三个键。 */
-export interface WorkflowRunRoster {
+interface WorkflowRunRoster {
   phases?: DynamicWorkflowRunPhaseView[];
   subagents: DynamicWorkflowRunSubagentView[];
   health: DynamicWorkflowRunHealth;

@@ -112,16 +112,16 @@ subscriptionId -> owning attachment port
 
 ## 4. 权威状态的归属
 
-| 状态                                    | 唯一权威位置                                         | 其他层职责                               |
-| --------------------------------------- | ---------------------------------------------------- | ---------------------------------------- |
-| session event log / projection          | CLI                                                  | host 仅路由与有界缓冲；UI apply          |
-| 已提交 busy/running 输入                | CLI `CommandInbox` / runtime queue                   | UI 仅保留 optimistic overlay             |
-| 未提交草稿、滚动位置                    | 当前客户端                                           | 不进入协议事实                           |
-| command 幂等结果                        | CLI LRU + transcript/marker/child + discarded ledger | UI 24h pending registry 用于对账         |
-| subscription buffer / fragment assembly | 每 connection/subscriber 易失状态                    | 关闭即丢，靠 resync 恢复                 |
-| owner / lease / stale-run               | host 路由层                                          | 保证单 owner、阻塞响应和跨 host 命令正确 |
+| 状态                                                                    | 唯一权威位置                                         | 其他层职责                                              |
+| ----------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| session event log / projection                                          | CLI                                                  | host 仅路由与有界缓冲；UI apply                         |
+| 已提交 busy/running 输入                                                | CLI `CommandInbox` / runtime queue                   | UI 仅保留 optimistic overlay                            |
+| 未提交草稿、滚动位置                                                    | 当前客户端                                           | 不进入协议事实                                          |
+| command 幂等结果                                                        | CLI LRU + transcript/marker/child + discarded ledger | UI 24h pending registry 用于对账                        |
+| subscription buffer / fragment assembly                                 | 每 connection/subscriber 易失状态                    | 关闭即丢，靠 resync 恢复                                |
+| session route（`SessionRouteAnnounce` / `SessionMessageSendRequested`） | main `TaskRealtimeBus` route registry                | 只投递跨 host session message，不持有 conversation 事实 |
 
-手机 V4 不再经过 host runtime command queue。所有已提交输入，无论来自桌面还是手机，都按 CLI 串行 admission 顺序进入同一个 `CommandInbox` FIFO。owner/lease 不能因 shared-host 主路径存在而删除：remote workspace、bot/proxy、跨 host fallback 和阻塞请求仍依赖它，但它不再拥有第二份 conversation queue。
+手机 V4 不再经过 host runtime command queue。所有已提交输入，无论来自桌面还是手机，都按 CLI 串行 admission 顺序进入同一个 `CommandInbox` FIFO。Host 的 owner/lease/mirror 层自 2026-11-12 起没有生产生产者，也不再注入 realtime port；恢复镜像前必须补齐消费者并验证 stale-run、跨端去重与手机 relay 恢复（见 `docs/specs/2026-11-11-owner-lease-mirror-decision.md`）。
 
 ## 5. Fork 的进程边界
 

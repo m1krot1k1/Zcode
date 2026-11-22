@@ -53,7 +53,7 @@ export function bindPluginUiPage(key: string, node: HTMLElement, sidebar: boolea
   };
 }
 
-export function notifyPluginUiPageCreated(key: string): void {
+function notifyPluginUiPageCreated(key: string): void {
   for (const listener of pageSubscribers.get(key) ?? []) listener();
 }
 

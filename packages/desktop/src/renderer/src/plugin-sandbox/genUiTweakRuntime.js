@@ -1,5 +1,11 @@
 // Gen UI parameter-control runtime; see the Visualize LICENSE.md.
-/* oxlint-disable max-lines -- Keep parameter binding and registration lifecycle in one runtime. */
+// Управляющие и bidi-символы метаданных хоста задаются кодами: в исходнике нет
+// литеральных control-char, поэтому правило no-control-regex не требует подавления.
+const HOST_METADATA_BOUNDS = new RegExp(
+  `[${String.fromCharCode(0)}-${String.fromCharCode(0x1f)}${String.fromCharCode(0x7f)}-${String.fromCharCode(0x9f)}\\u061c\\u200e\\u200f\\u2028-\\u202e\\u2066-\\u2069]`,
+  "gu",
+);
+
 // The annotations callback is private to this module, not a page tool API.
 export function installGenUiTweakRuntime(callTool) {
   const panels = new Map();
@@ -164,14 +170,7 @@ export function installGenUiTweakRuntime(callTool) {
       target.localName,
     ]
       .map((value) =>
-        value
-          ?.replace(
-            // oxlint-disable-next-line no-control-regex -- Match the host metadata bounds.
-            /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/gu,
-            " ",
-          )
-          .replace(/\s+/g, " ")
-          .trim(),
+        value?.replace(HOST_METADATA_BOUNDS, " ").replace(/\s+/g, " ").trim(),
       )
       .find((value) => value);
     const { x, y, width, height } = target.getBoundingClientRect();

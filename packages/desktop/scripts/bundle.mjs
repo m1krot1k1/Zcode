@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 
-/* eslint-disable max-lines */
-// 该脚本聚合了打包入口、重试策略、计时与产物校验逻辑，短期内拆文件会影响 CI 稳定性。
-// 先保留集中实现，后续再按“参数解析/构建执行/产物校验”拆分模块。
-
 import { spawn } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import process from "node:process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { collectRuntimeModuleClosureEntries } from "./runtime-dependency-closure.mjs";
+import {
+  collectExternalRuntimeModuleNames,
+  collectRuntimeModuleClosureEntries,
+} from "./runtime-dependency-closure.mjs";
 import { resolveDesktopProductIdentity } from "./desktop-product-identity.mjs";
 import {
   findDesktopNativePackageViolations,
@@ -32,6 +31,7 @@ const asarCliPath = resolve(
   "bin",
   "asar.js",
 );
+const extractAsarFile = requireFromBundle("@electron/asar").extractFile;
 const runtimeModuleLookupRoots = [
   desktopRoot,
   workspaceRoot,
@@ -86,6 +86,8 @@ const artifactArchHintsByArch = {
 };
 const commandStdoutMaxBuffer = 64 * 1024 * 1024;
 const requiredRuntimeModules = [
+  // 终端运行时必须同时进入 app.asar；仅校验 afterPack 的 native 资源会漏掉缺失的 JS 包。
+  "node-pty",
   "module-details-from-path",
   "pngjs",
   // Bugfix: telemetry 的 OTLP exporter 在启动阶段依赖 sdk-metrics；开发态 hoist 会掩盖
@@ -104,11 +106,22 @@ const requiredRuntimeModules = [
   // 如果这里只校验 pngjs/ssh2 依赖，打包链路就会放过“产物能生成但主进程启动即缺 undici”的坏包。
   // 这里把 undici 纳入机械校验，让 bundle 阶段就能把问题拦下来。
   "undici",
+  // Bugfix：yaml 被 main/host 外置；没有进入 app.asar 时应用会在启动期触发 ERR_MODULE_NOT_FOUND。
+  // 与 electron-builder.config.js 的 afterPack 注入名单同步，确保坏包在交付前被拦截。
+  "yaml",
+  // main entry 启动时会加载 ARMS ESM runtime；pnpm hoisted 下 electron-builder 可能漏拷它。
+  "@arms/rum-electron",
   // app 自签 CA 生成用 node-forge，它内部动态 require("crypto") 内联进 ESM main bundle 会崩，
   // 因此作为外部依赖保留；生产包必须显式校验 app.asar 中存在该包，避免漏打导致启动即崩。
   "node-forge",
   // 与 tsup external 对齐，保留 ZIP 解包器的 CommonJS 运行时边界。
   "yauzl",
+  // Code Intelligence использует TypeScript compiler API как runtime-зависимость main/host.
+  // Его CommonJS dynamic require нельзя встраивать в ESM bundle.
+  "typescript",
+  // 代码索引 worker 的 createRequire 动态加载链：漏包会导致 refs/edges 为 0。
+  "web-tree-sitter",
+  "tree-sitter-wasms",
   // Bugfix: 飞书 SDK 为了避开 Electron ESM 动态 require 崩溃会作为外部依赖保留，
   // 生产包必须显式校验 app.asar 中存在该 scoped 包。
   "@larksuiteoapi/node-sdk",
@@ -431,6 +444,107 @@ function runAndReadStdout(command, args) {
   });
 }
 
+function collectExternalRuntimeModulesFromBuiltBundles() {
+  const sources = [];
+  const roots = ["main", "host", "scheduler"].map((name) => resolve(desktopRoot, "out", name));
+  const visit = (directory) => {
+    if (!existsSync(directory)) return;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = resolve(directory, entry.name);
+      if (entry.isDirectory()) visit(entryPath);
+      else if (entry.isFile() && entry.name.endsWith(".js"))
+        sources.push(readFileSync(entryPath, "utf8"));
+    }
+  };
+  for (const root of roots) visit(root);
+  return collectExternalRuntimeModuleNames(sources);
+}
+
+// 根因：旧检查仍要求已移除的 OpenCode installer URL/WinGet ID，导致当前 pinned CLI 安装器的正确包被误判。
+const requiredOpenCodeHostMarkers = [
+  "opencode.cli-missing",
+  "github.com/anomalyco/opencode/releases/download",
+  "opencode.install-platform-unsupported",
+  "opencode.install-archive-invalid",
+];
+const requiredOpenCodeRendererMarkers = ["opencode-agent-settings", "settings.openCode.install"];
+
+function normalizeAsarEntryPath(entryPath) {
+  return `/${posix.normalize(entryPath.replaceAll("\\", "/").replace(/^\/+/, ""))}`;
+}
+
+function collectReachableJavascript(entryPath, rootPath, entries, readFile) {
+  const root = normalizeAsarEntryPath(rootPath);
+  const entry = normalizeAsarEntryPath(entryPath);
+  const seen = new Set();
+  const queue = [entry];
+  const contents = [];
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current || seen.has(current)) continue;
+    if (current !== root && !current.startsWith(`${root}/`)) {
+      throw new Error(`OpenCode bundle import escaped expected root: ${current}`);
+    }
+    if (!entries.has(current)) {
+      throw new Error(`打包产物缺少 OpenCode reachable asset: ${current}`);
+    }
+
+    seen.add(current);
+    const source = readFile(current).toString("utf8");
+    contents.push(source);
+    const importPattern = /(?:from\s*|import\s*(?:\(\s*)?)\s*["']([^"']+\.js(?:\?[^"']*)?)["']/gu;
+    for (const match of source.matchAll(importPattern)) {
+      const specifier = match[1].split(/[?#]/u, 1)[0];
+      if (!specifier.startsWith(".")) continue;
+      const dependencyPath = normalizeAsarEntryPath(
+        posix.join(posix.dirname(current.slice(1)), specifier),
+      );
+      if (dependencyPath.endsWith(".js")) queue.push(dependencyPath);
+    }
+  }
+
+  return contents.join("\n");
+}
+
+export function assertPackagedOpenCodeAssets(entryPaths, readFile) {
+  const entries = new Set(entryPaths.map(normalizeAsarEntryPath));
+  const hostEntry = "/out/host/index.js";
+  const rendererHtml = "/out/renderer/index.html";
+  if (!entries.has(hostEntry)) throw new Error(`打包产物缺少 OpenCode Host entry: ${hostEntry}`);
+  if (!entries.has(rendererHtml)) {
+    throw new Error(`打包产物缺少 OpenCode renderer entry: ${rendererHtml}`);
+  }
+
+  const hostContent = collectReachableJavascript(hostEntry, "/out/host", entries, readFile);
+  const htmlContent = readFile(rendererHtml).toString("utf8");
+  const rendererScript = /<script\b[^>]*\bsrc=["']([^"']+\.js)["'][^>]*>/iu.exec(htmlContent)?.[1];
+  if (!rendererScript) throw new Error("打包产物的 OpenCode renderer HTML 缺少 module entry");
+  const rendererEntry = posix.join(
+    "out/renderer",
+    rendererScript.replace(/^\.\//u, "").replace(/^\/+/, ""),
+  );
+  const rendererContent = collectReachableJavascript(
+    rendererEntry,
+    "/out/renderer",
+    entries,
+    readFile,
+  );
+  const missingHostMarkers = requiredOpenCodeHostMarkers.filter(
+    (marker) => !hostContent.includes(marker),
+  );
+  const missingRendererMarkers = requiredOpenCodeRendererMarkers.filter(
+    (marker) => !rendererContent.includes(marker),
+  );
+  if (missingHostMarkers.length > 0 || missingRendererMarkers.length > 0) {
+    const missing = [
+      ...missingHostMarkers.map((marker) => `host:${marker}`),
+      ...missingRendererMarkers.map((marker) => `renderer:${marker}`),
+    ];
+    throw new Error(`打包产物缺少 OpenCode ACP runtime/UI assets: ${missing.join(", ")}`);
+  }
+}
+
 function sleep(ms) {
   return new Promise((resolvePromise) => {
     setTimeout(resolvePromise, ms);
@@ -607,13 +721,17 @@ async function runElectronBuilderWithRetry(args, envPatch) {
   }
 }
 
-function resolveAppAsarPath(os, arch) {
+export function resolveAppAsarPath(
+  os,
+  arch,
+  { root = desktopRoot, distDir = desktopDistDir, productIdentity = desktopProductIdentity } = {},
+) {
   if (os === "mac") {
     return resolve(
-      desktopRoot,
-      desktopDistDir,
+      root,
+      distDir,
       arch === "arm64" ? "mac-arm64" : "mac",
-      `${desktopProductIdentity.productName}.app`,
+      `${productIdentity.macExecutableName}.app`,
       "Contents",
       "Resources",
       "app.asar",
@@ -622,8 +740,8 @@ function resolveAppAsarPath(os, arch) {
 
   if (os === "win") {
     return resolve(
-      desktopRoot,
-      desktopDistDir,
+      root,
+      distDir,
       arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked",
       "resources",
       "app.asar",
@@ -632,8 +750,8 @@ function resolveAppAsarPath(os, arch) {
 
   if (os === "linux") {
     return resolve(
-      desktopRoot,
-      desktopDistDir,
+      root,
+      distDir,
       arch === "arm64" ? "linux-arm64-unpacked" : "linux-unpacked",
       "resources",
       "app.asar",
@@ -643,7 +761,7 @@ function resolveAppAsarPath(os, arch) {
   throw new Error(`不支持的目标操作系统: ${os}`);
 }
 
-function verifyPackagedRuntimeDependencies(os, arch) {
+export function verifyPackagedRuntimeDependencies(os, arch) {
   const appAsarPath = resolveAppAsarPath(os, arch);
   if (!existsSync(appAsarPath)) {
     throw new Error(`打包产物缺少 app.asar: ${appAsarPath}`);
@@ -660,6 +778,9 @@ function verifyPackagedRuntimeDependencies(os, arch) {
     runAndReadStdout(process.execPath, [asarCliPath, "list", "--is-pack", appAsarPath]),
   );
   const asarEntries = asarEntriesWithPackState.map((entry) => entry.path);
+  assertPackagedOpenCodeAssets(asarEntries, (entryPath) =>
+    extractAsarFile(appAsarPath, entryPath.replace(/^\/+/, "")),
+  );
 
   const targetPlatformKey = `${os === "mac" ? "darwin" : os === "win" ? "win32" : os}-${arch}`;
   const nativePackageViolations = findDesktopNativePackageViolations(
@@ -673,7 +794,7 @@ function verifyPackagedRuntimeDependencies(os, arch) {
   }
 
   const runtimeModules = collectRuntimeModuleClosureEntries(
-    requiredRuntimeModules,
+    [...new Set([...requiredRuntimeModules, ...collectExternalRuntimeModulesFromBuiltBundles()])],
     runtimeModuleLookupRoots,
   );
   const resolvableRuntimeModules = runtimeModules.filter((entry) => {
@@ -708,14 +829,7 @@ function verifyPackagedRuntimeDependencies(os, arch) {
 
 async function main() {
   const { os, arch, skipPrepare, skipBuild, dryRun } = parseArgs(process.argv.slice(2));
-  const buildArgs = [
-    "exec",
-    "electron-builder",
-    "--config",
-    "electron-builder.config.js",
-    osBuilderFlagMap[os],
-    archBuilderFlagMap[arch],
-  ];
+  const buildArgs = createElectronBuilderArgs(os, arch);
 
   console.log(`[bundle] target=${os}/${arch}`);
   console.log(`[bundle] skipPrepare=${skipPrepare} skipBuild=${skipBuild}`);
@@ -734,6 +848,11 @@ async function main() {
 
   if (!skipPrepare) {
     run(pnpmCommand, ["prepare:runtime-assets"], buildEnv);
+    // Fork-local Source Server: upstream CDN не публикует наши версии, поэтому
+    // архив кладётся в resources/remote-assets и загружается на remote host.
+    if (process.env.ZCODE_SKIP_BUNDLED_REMOTE_ASSETS !== "1") {
+      run(process.execPath, ["scripts/prepare-bundled-remote-assets.mjs"], buildEnv);
+    }
   }
 
   if (!skipBuild) {
@@ -756,6 +875,20 @@ async function main() {
       artifactPath,
     ]),
   );
+}
+
+export function createElectronBuilderArgs(os, arch) {
+  return [
+    "exec",
+    "electron-builder",
+    "--config",
+    "electron-builder.config.js",
+    osBuilderFlagMap[os],
+    archBuilderFlagMap[arch],
+    // electron-builder сам включает публикацию при CI=true; локальные билды должны всегда отключать upload.
+    "--publish",
+    "never",
+  ];
 }
 
 const entryHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;

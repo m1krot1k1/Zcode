@@ -29,7 +29,7 @@ function buildKey(
   ]);
 }
 
-export function registerPluginUiResourceTarget(
+function registerPluginUiResourceTarget(
   sessionKey: string,
   pluginId: string,
   scopeId: string,
@@ -94,8 +94,4 @@ export function createPluginUiResourceNotificationRegistrar(
         instance,
       ),
   };
-}
-
-export function resetPluginUiResourceTargetsForTest(): void {
-  targets.clear();
 }

@@ -117,3 +117,18 @@ export function normalizeRemoteConnectionError(
   // 未识别的内层 cause 不是阶段失败事实，不能提前覆盖外层已确认的认证等领域码。
   return visit(error, true);
 }
+
+/**
+ * 公开码 `remote-host-unreachable` 由多个传输错误合并而来（拒绝、无路由、连接重置），
+ * 原因不同。这里只从**已脱敏的消息文本**再分一层展示线索，不改变公开码：
+ * - `ECONNREFUSED`：主机可达，但端口没有服务接受连接；
+ * - `EHOSTUNREACH` / `ENETUNREACH` / `no route to host`：本机没有到目标的路径；
+ * - `ECONNRESET` 等其余情况返回 `undefined`，由通用文案承载，不猜测原因。
+ */
+export function detectRemoteHostUnreachableTransportCause(
+  message: string,
+): "connection-refused" | "no-route" | undefined {
+  if (/\bECONNREFUSED\b|connection refused/i.test(message)) return "connection-refused";
+  if (/\b(?:EHOSTUNREACH|ENETUNREACH)\b|no route to host/i.test(message)) return "no-route";
+  return undefined;
+}

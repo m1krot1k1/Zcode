@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 设置导航意图集中管理 sessionStorage、事件桥接和解析校验，拆分会让一次性意图消费顺序更难保证。 */
 import { logger } from "@/logger.js";
 
 export type SettingsSectionId =
@@ -7,6 +6,7 @@ export type SettingsSectionId =
   | "migration"
   | "browser"
   | "modelProvider"
+  | "voice"
   | "remoteDevices"
   | "memory"
   | "plugin"
@@ -15,15 +15,17 @@ export type SettingsSectionId =
   | "plugins"
   | "archives"
   | "usage"
+  | "codeGraph"
   | "subagents"
   | "commands"
   | "hooks"
   | "workspaceFileSearch"
   | "computerUse"
   | "automations"
-  | "shortcuts";
+  | "shortcuts"
+  | "stage4";
 
-export type SettingsUsageTabTarget = "app" | "codingPlan";
+export type SettingsUsageTabTarget = "app" | "codeGraph" | "codingPlan";
 export type SettingsPluginTabTarget = "plugins" | "mcps" | "skills" | "commands";
 export type SettingsPluginNavigationOrigin = "plugin-store";
 
@@ -70,6 +72,7 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "migration" ||
     value === "browser" ||
     value === "modelProvider" ||
+    value === "voice" ||
     value === "remoteDevices" ||
     value === "memory" ||
     value === "plugin" ||
@@ -78,13 +81,15 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "plugins" ||
     value === "archives" ||
     value === "usage" ||
+    value === "codeGraph" ||
     value === "subagents" ||
     value === "commands" ||
     value === "hooks" ||
     value === "workspaceFileSearch" ||
     value === "computerUse" ||
     value === "automations" ||
-    value === "shortcuts"
+    value === "shortcuts" ||
+    value === "stage4"
   );
 }
 
@@ -195,6 +200,11 @@ export function setPendingSettingsUsageCodingPlanIntent(): void {
   // 剩余额度详情入口需要直达 Coding Plan 使用统计；
   // 头像菜单入口则只打开 Usage 分区，避免覆盖用户上次查看的统计 tab。
   setPendingSettingsSectionIntent("usage", { usageTab: "codingPlan" });
+}
+
+export function setPendingSettingsUsageCodeGraphIntent(): void {
+  // The full graph now has its own settings section next to Usage Stats.
+  setPendingSettingsSectionIntent("codeGraph");
 }
 
 export function setPendingSettingsPluginIntent(
@@ -418,7 +428,7 @@ export function consumePendingSettingsUsageTab(): SettingsUsageTabTarget | undef
     if (raw !== null) {
       window.sessionStorage.removeItem(SETTINGS_USAGE_TAB_INTENT_KEY);
     }
-    return raw === "app" || raw === "codingPlan" ? raw : undefined;
+    return raw === "app" || raw === "codeGraph" || raw === "codingPlan" ? raw : undefined;
   } catch {
     // 忽略浏览器存储异常，不影响主流程。
     return undefined;

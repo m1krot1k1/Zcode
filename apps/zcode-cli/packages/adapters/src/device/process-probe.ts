@@ -18,10 +18,7 @@ import { readWindowsProcessMemory } from "./process-probe-windows.js";
 
 export {
   PROCESS_PROBE_SAMPLE_TIMEOUT_MS,
-  type ProcessProbeCommandResult,
-  type ProcessProbeExecFile,
-  type ProcessProbeSample,
-} from "./process-probe-shared.js";
+  type ProcessProbeSample} from "./process-probe-shared.js";
 
 /** 进程树采样的实际口径：Windows 的 tasklist 没有 ppid，只能拿到直连进程。 */
 export type ProcessTreeScope = "direct_process" | "process_tree";
@@ -55,7 +52,7 @@ export interface ProcessProbe {
   readonly treeScope: ProcessTreeScope;
 }
 
-export interface CreateProcessProbeOptions {
+interface CreateProcessProbeOptions {
   execFile?: ProcessProbeExecFile;
   /** 列出 `/proc` 下的条目，仅 Linux 使用 */
   listProcDirectory?: () => Promise<readonly string[]>;

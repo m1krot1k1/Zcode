@@ -6,6 +6,7 @@ export const enUS: ZCodeCopy = {
     errors: {
       localeUnsupported: (value) =>
         `Unsupported --locale value: ${value}. Supported locales: en-US, zh-CN, auto.`,
+      noModelSelected: "Select a model before continuing.",
     },
     help: (version) => `zcode ${version}
 

@@ -4350,4 +4350,59 @@ describe("resolved MCP plugin usage", () => {
     expect(steps[0].eventExtraDetail).not.toHaveProperty("skill_plugin_id");
     supervisor.dispose();
   });
+
+  it("отдаёт live usage вложенного агента вместе с parent session", () => {
+    const { platform } = createPlatform();
+    const usageChanged = vi.fn();
+    const supervisor = new ConversationTelemetrySupervisor({
+      platform,
+      workspaceScopeKey: "nested-subagent-usage",
+      onSubagentUsageChanged: usageChanged,
+    });
+    // spawn пришёл из child-сессии start, поэтому lifecycle родителя в этом supervisor
+    // отсутствует — usage обязан всё равно попасть в дерево.
+    supervisor.handleFact({
+      ...commonFact("orchestrator-spawned", 1, "start-session"),
+      sourceCommandId: "start-command",
+      kind: "subagent.lifecycle",
+      phase: "spawned",
+      agentId: "orchestrator",
+      childSessionId: "orchestrator-session",
+      parentToolCallId: "orchestrator-tool",
+      background: false,
+      status: "running",
+    });
+    supervisor.handleFact({
+      ...commonFact("orchestrator-usage", 2, "orchestrator-session"),
+      sourceCommandId: "orchestrator-command",
+      turnId: "orchestrator-turn",
+      kind: "usage.delta",
+      requestId: "orchestrator-request",
+      providerId: "provider",
+      modelId: "model",
+      inputTokens: 10,
+      outputTokens: 2,
+      totalTokens: 12,
+      reasoningTokens: 1,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 4,
+    });
+
+    expect(usageChanged).toHaveBeenLastCalledWith(
+      "orchestrator-session",
+      expect.objectContaining({ totalTokens: 12, cachedInputTokens: 3 }),
+      "start-session",
+    );
+
+    supervisor.handleFact({
+      ...commonFact("orchestrator-terminal", 3, "orchestrator-session"),
+      sourceCommandId: "orchestrator-command",
+      turnId: "orchestrator-turn",
+      kind: "turn.terminal",
+      status: "completed",
+      resultType: "success",
+    });
+    expect(usageChanged).toHaveBeenLastCalledWith("orchestrator-session", null, "start-session");
+    supervisor.dispose();
+  });
 });

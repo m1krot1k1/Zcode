@@ -60,18 +60,23 @@ export const BashInputSchema = z
     run_in_background: semanticBoolean()
       .optional()
       .describe("Set to true to run this command in the background."),
-    /**
-     * Set this to true to dangerously override sandbox mode and run commands without sandboxing.
-     */
-    dangerouslyDisableSandbox: semanticBoolean()
-      .optional()
-      .describe(
-        "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
-      ),
   })
   .strict();
 
-export type BashInput = z.infer<typeof BashInputSchema>;
+/**
+ * R04 вариант B: у ZCode нет OS-sandbox для Bash, поэтому sandbox-поле не
+ * объявляется ни модели, ни runtime-входу. `BashInputSchema` остаётся
+ * `.strict()`, и legacy-аргумент отклоняется до handler-а.
+ *
+ * Поле сохранено только как deprecated-носитель типа: его читает
+ * `core/src/tool/handlers/bash-output.ts` при сборке BashOutput (этот модуль
+ * вне scope текущего изменения). В схему, provider JSON Schema, execution,
+ * telemetry и новый output оно не попадает.
+ */
+export type BashInput = z.infer<typeof BashInputSchema> & {
+  /** @deprecated Legacy carrier only; not part of `BashInputSchema`. */
+  dangerouslyDisableSandbox?: boolean;
+};
 
 export const BashInputJsonSchema = toToolJsonSchema(BashInputSchema);
 
@@ -223,6 +228,17 @@ export interface BashOutput {
    * gh 命令触发 GitHub API rate limit 时，追加给模型的 system-reminder。
    */
   ghRateLimitHint?: string;
+  /**
+   * Фактический режим песочницы этого запуска. `bwrap`/`seatbelt` означает
+   * реальную изоляцию ФС (и сети при `networkIsolated`), `degraded` — что
+   * механизм недоступен и защита слабее; `reason` объясняет, почему.
+   */
+  sandbox?: {
+    mode: "bwrap" | "seatbelt" | "degraded" | "none";
+    reason?: string;
+    filesystemIsolated: boolean;
+    networkIsolated: boolean;
+  };
 }
 
 export const BashOutputSchema = z
@@ -258,6 +274,14 @@ export const BashOutputSchema = z
     stderrPersistedOutputSize: z.number().int().nonnegative().optional(),
     staleReadFileStateHint: z.string().optional(),
     ghRateLimitHint: z.string().optional(),
+    sandbox: z
+      .object({
+        mode: z.enum(["bwrap", "seatbelt", "degraded", "none"]),
+        reason: z.string().optional(),
+        filesystemIsolated: z.boolean(),
+        networkIsolated: z.boolean(),
+      })
+      .optional(),
     perf: ToolExecutionTelemetrySchema.optional(),
   })
   .strict();

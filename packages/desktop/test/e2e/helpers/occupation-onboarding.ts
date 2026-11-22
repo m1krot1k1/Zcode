@@ -15,7 +15,10 @@ export async function skipOccupationOnboardingIfPresent() {
     step < 3 && (await $('[data-testid="onboarding-page"]').isExisting());
     step++
   ) {
-    const skip = $('//button[normalize-space(.)="Skip" or normalize-space(.)="跳过"]');
+    // 修复原因：隔离工作区继承系统语言；俄语引导页显示“Пропустить”，旧选择器会卡住测试。
+    const skip = $(
+      '//button[normalize-space(.)="Skip" or normalize-space(.)="Пропустить" or normalize-space(.)="跳过"]',
+    );
     await skip.waitForClickable({ timeout: 15000 });
     await skip.click();
   }

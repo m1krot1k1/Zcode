@@ -22,7 +22,7 @@ export const CHROMIUM_PROCESS_RESOURCE_ROLES = [
   "scheduler",
 ] as const satisfies readonly ProcessResourceRole[];
 
-export type ChromiumProcessResourceRole = (typeof CHROMIUM_PROCESS_RESOURCE_ROLES)[number];
+type ChromiumProcessResourceRole = (typeof CHROMIUM_PROCESS_RESOURCE_ROLES)[number];
 
 /** 规整后的单进程采样：CPU 已归一化到整机口径，内存单位 KB。 */
 export interface ChromiumProcessMetricSample {
@@ -46,7 +46,7 @@ export interface ChromiumProcessRolePids {
   schedulerPids: ReadonlySet<number>;
 }
 
-export interface ChromiumRoleAggregate {
+interface ChromiumRoleAggregate {
   role: ChromiumProcessResourceRole;
   /** 角色内全部进程的 CPU 之和（整机归一化百分比）。 */
   cpuPercent: number;

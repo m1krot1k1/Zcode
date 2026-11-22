@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- final payload 的归一化、关系验证和结构化 diff 必须共享同一字段表，拆文件会让白名单与 invariant 漂移。 */
 // 纯数据比较器：可由 Vitest、WDIO 或独立 Node runner 复用，不依赖测试框架全局变量。
 
 export const CONVERSATION_TELEMETRY_DIFF_CATEGORIES = [
@@ -553,9 +552,7 @@ function collectTimingInvariantIssues(capture) {
       const post = numericValue(detail.post_compact_tokens);
       const truePost = numericValue(detail.true_post_compact_tokens);
       const ratio = numericValue(detail.compact_ratio);
-      if (
-        [pre, post, truePost].some((value) => value !== null && value < 0)
-      ) {
+      if ([pre, post, truePost].some((value) => value !== null && value < 0)) {
         issues.report.push(`report[${index}] compaction token watermarks>=0`);
       }
       if (

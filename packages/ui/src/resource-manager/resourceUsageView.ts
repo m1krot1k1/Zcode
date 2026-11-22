@@ -1,7 +1,7 @@
 import type { ResourceUsageCategory, ResourceUsageProcess } from "@zcode/shared";
 
 /** 三组固定顺序：基础服务 / 内置插件 / 社区插件 */
-export const RESOURCE_USAGE_CATEGORY_ORDER: readonly ResourceUsageCategory[] = [
+const RESOURCE_USAGE_CATEGORY_ORDER: readonly ResourceUsageCategory[] = [
   "base",
   "builtin-plugin",
   "community-plugin",
@@ -41,7 +41,7 @@ export function groupResourceUsage(
   });
 }
 
-export function roundPercent(value: number): number {
+function roundPercent(value: number): number {
   return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
 }
 

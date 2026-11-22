@@ -12,7 +12,7 @@ let connectionGeneration = 0;
 let activeReload: (() => Promise<void>) | null = null;
 const listeners = new Set<ProviderSettingsSnapshotListener>();
 
-export interface ProviderSettingsSnapshotConnection {
+interface ProviderSettingsSnapshotConnection {
   readonly ready: Promise<void>;
   reload(): Promise<void>;
   dispose(): void;

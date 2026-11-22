@@ -455,6 +455,22 @@ describe("createMcpAdapter", () => {
     });
   });
 
+  it("advances the tool-list revision and exposes a live snapshot after direct connect", async () => {
+    clientListToolsMock.mockResolvedValue({
+      tools: [{ name: "echo", inputSchema: { type: "object", properties: {} } }],
+    });
+    const adapter = createMcpAdapter();
+    const revisionBefore = adapter.toolListRevision();
+
+    await adapter.connectServer("late", { command: "node", type: "stdio" });
+
+    expect(adapter.toolListRevision()).toBe(revisionBefore + 1);
+    await expect(adapter.currentSnapshot()).resolves.toMatchObject({
+      statuses: { late: { status: "connected", toolCount: 1 } },
+      tools: [{ serverName: "late", toolName: "echo" }],
+    });
+  });
+
   it("projects server timeout onto listed MCP tool descriptors", async () => {
     clientListToolsMock.mockResolvedValue({
       tools: [

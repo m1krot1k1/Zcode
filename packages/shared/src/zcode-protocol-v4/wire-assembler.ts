@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- physical assembly 的 ordinal、预算、校验与释放必须保持单一原子状态机。 */
 // V4 incremental physical assembler：ownership 过滤后逐片接纳，只在
 // checksum/UTF-8/JSON/schema 全部通过后产出一个 logical frame。
 import { z } from "zod";
@@ -192,10 +191,7 @@ export class TopicWireFrameAssembler<F> {
   accept(wire: TopicWireFrameCandidate, now = Date.now()): TopicWireAssemblyEvent<F>[] {
     const events = this.expire(now);
     const key = routeKey(wire.topic, wire.subscriptionId);
-    if (
-      !Number.isSafeInteger(wire.logicalFrameOrdinal) ||
-      wire.logicalFrameOrdinal < 1
-    ) {
+    if (!Number.isSafeInteger(wire.logicalFrameOrdinal) || wire.logicalFrameOrdinal < 1) {
       events.push(this.fault(wire, "proto.frameAssemblyMetadataMismatch"));
       return events;
     }

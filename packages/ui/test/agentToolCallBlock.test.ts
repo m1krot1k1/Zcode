@@ -8,6 +8,7 @@ import { ServiceProvider } from "@/hooks/useServices.js";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { StoreProvider } from "@/store/StoreProvider.js";
 import { useSubagentsStore } from "@/store/subagentsStore.js";
+import { getAgentGraphType } from "../src/ToolCallBlocks/renderers/agentHelpers.js";
 import { AgentToolCallBlock } from "../src/ToolCallBlocks/renderers/agent.js";
 
 const localStorageState = new Map<string, string>();
@@ -59,6 +60,95 @@ const mockServices = {
 describe("AgentToolCallBlock", () => {
   afterEach(() => {
     useSubagentsStore.setState({ agents: [] });
+  });
+
+  type UsageRowFields = {
+    totalTokens?: number;
+    subtreeTotalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    subtreeInputTokens?: number;
+    subtreeOutputTokens?: number;
+    subtreeCacheReadTokens?: number;
+  };
+
+  function renderAgentUsageRow(
+    locale: "ru-RU" | "en-US",
+    authoritativeSubagentUsage: UsageRowFields,
+  ): string {
+    return renderToStaticMarkup(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: locale },
+        createElement(
+          ServiceProvider,
+          { services: mockServices },
+          createElement(
+            StoreProvider,
+            { broadcastService: mockBroadcastService },
+            createElement(AgentToolCallBlock, {
+              toolCallNode: {
+                toolCall: {
+                  toolId: "tool-agent-token-format",
+                  kind: "Agent",
+                  title: "start",
+                  input: { prompt: "audit repository", subagent_type: "start" },
+                  output: [],
+                  status: "running",
+                  raw: { _meta: { zcode: { toolName: "Agent" } } },
+                },
+                childToolCalls: [],
+              },
+              workspacePath: "/workspace",
+              displayModel: {
+                inlinePreview: { type: "none" },
+                planResult: null,
+                viewerSource: null,
+                viewerLabelId: "codeViewer.viewCode",
+                showSummaryFileLink: false,
+                showInput: false,
+                showOutput: false,
+                showKind: false,
+              },
+              viewerSource: null,
+              rawFileSummaries: [],
+              isRunning: true,
+              statusLabel: "Running",
+              errorText: undefined,
+              childToolList: null,
+              showIcon: true,
+              forceOpen: false,
+              authoritativeAgentType: "start",
+              authoritativeSubagentUsage,
+              onOpenCodeViewer: undefined,
+              onOpenBrowserUrl: undefined,
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
+  it("uses the authoritative role and nested tool metadata in agent graph nodes", () => {
+    const taskCall = {
+      toolId: "tool-task",
+      toolName: "Task",
+      kind: "Task",
+      title: "Task",
+      input: { description: "delegate work", prompt: "inspect" },
+      output: undefined,
+      status: "completed",
+      raw: { inputPreviewComplete: true },
+    } as Parameters<typeof getAgentGraphType>[0];
+
+    expect(getAgentGraphType(taskCall, "SubAgent", "orchestrator")).toBe("orchestrator");
+    expect(
+      getAgentGraphType({ ...taskCall, input: { subagent_type: "researcher" } }, "SubAgent"),
+    ).toBe("researcher");
+    expect(getAgentGraphType({ ...taskCall, input: { prompt: "unknown role" } }, "SubAgent")).toBe(
+      "SubAgent",
+    );
   });
 
   it("keeps an Agent without a persisted child as a static one-line summary", () => {
@@ -402,7 +492,7 @@ describe("AgentToolCallBlock", () => {
     expect(html).not.toContain("general-purpose");
   });
 
-  it("falls back to the default general-purpose agent type only after complete input omits subagent_type", () => {
+  it("uses a neutral SubAgent label only after complete input omits subagent_type", () => {
     const html = renderToStaticMarkup(
       createElement(
         ZCodeIntlProvider,
@@ -464,7 +554,8 @@ describe("AgentToolCallBlock", () => {
       ),
     );
 
-    expect(html).toContain("general-purpose");
+    expect(html).toContain("子智能体");
+    expect(html).not.toContain("general-purpose");
   });
 
   it("uses the latest child tool summary for a collapsed running subagent", () => {
@@ -1326,5 +1417,165 @@ describe("AgentToolCallBlock", () => {
 
     expect(html).not.toContain("All files are created and the project builds successfully.");
     expect(html).not.toContain("raw transcript");
+  });
+
+  it("shows subtree usage and its breakdown for a parent agent", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        ZCodeIntlProvider,
+        { initialLocale: "en-US" },
+        createElement(
+          ServiceProvider,
+          { services: mockServices },
+          createElement(
+            StoreProvider,
+            { broadcastService: mockBroadcastService },
+            createElement(AgentToolCallBlock, {
+              toolCallNode: {
+                toolCall: {
+                  toolId: "tool-agent-subtree-usage",
+                  kind: "Agent",
+                  title: "start",
+                  input: { prompt: "audit repository", subagent_type: "start" },
+                  output: [],
+                  status: "running",
+                  raw: { _meta: { zcode: { toolName: "Agent" } } },
+                },
+                childToolCalls: [],
+              },
+              workspacePath: "/workspace",
+              displayModel: {
+                inlinePreview: { type: "none" },
+                planResult: null,
+                viewerSource: null,
+                viewerLabelId: "codeViewer.viewCode",
+                showSummaryFileLink: false,
+                showInput: false,
+                showOutput: false,
+                showKind: false,
+              },
+              viewerSource: null,
+              rawFileSummaries: [],
+              isRunning: true,
+              statusLabel: "Running",
+              errorText: undefined,
+              childToolList: null,
+              showIcon: true,
+              forceOpen: false,
+              authoritativeAgentType: "start",
+              authoritativeSubagentUsage: {
+                totalTokens: 100,
+                subtreeTotalTokens: 1_000,
+                inputTokens: 80,
+                outputTokens: 20,
+                cacheReadTokens: 60,
+                subtreeInputTokens: 800,
+                subtreeOutputTokens: 100,
+                subtreeCacheReadTokens: 700,
+              },
+              onOpenCodeViewer: undefined,
+              onOpenBrowserUrl: undefined,
+            }),
+          ),
+        ),
+      ),
+    );
+
+    expect(html).toContain("100 tok / 1.0k tok");
+    expect(html).toContain("in 800");
+    expect(html).toContain("out 100");
+    expect(html).toContain("cache 700");
+  });
+
+  it("formats million-scale token counts with one decimal and locale separator", () => {
+    const cases = [
+      [1_000_000, "1,0M"],
+      [3_000_000, "3,0M"],
+      [3_100_000, "3,1M"],
+      [3_200_000, "3,2M"],
+      [3_942_000, "3,9M"],
+    ] as const;
+
+    for (const [totalTokens, expected] of cases) {
+      const html = renderAgentUsageRow("ru-RU", { totalTokens });
+      expect(html).toContain(`${expected} tok`);
+    }
+  });
+
+  it("does not fall back to thousands form for million-scale values", () => {
+    const html = renderAgentUsageRow("ru-RU", {
+      totalTokens: 100,
+      subtreeTotalTokens: 3_942_000,
+    });
+
+    expect(html).toContain("100 tok / 3,9M tok");
+    expect(html).not.toContain("3942");
+    expect(html).not.toContain("3942к");
+  });
+
+  it("keeps thousands form below one million", () => {
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 34_000 })).toContain("34k tok");
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 55_000 })).toContain("55k tok");
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 999_999 })).toContain("1000k tok");
+  });
+
+  it("formats million-scale breakdown and uses dot for en-US", () => {
+    const ruHtml = renderAgentUsageRow("ru-RU", {
+      totalTokens: 100,
+      subtreeTotalTokens: 3_942_000,
+      subtreeInputTokens: 3_600_000,
+      subtreeOutputTokens: 300_000,
+      subtreeCacheReadTokens: 42_000,
+    });
+
+    expect(ruHtml).toContain("вход 3,6M");
+    expect(ruHtml).toContain("выход 300k");
+    expect(ruHtml).toContain("кэш 42k");
+    expect(renderAgentUsageRow("en-US", { totalTokens: 3_942_000 })).toContain("3.9M tok");
+  });
+
+  it("rounds at the M/B boundary from the raw value without grouping", () => {
+    // 999 999 999 仍在 M 档：阈值按原始值判断，先选单位再四舍五入，
+    // 因此得到 1000,0M，而不是提前跳到 1,0B。
+    const nearBillionRu = renderAgentUsageRow("ru-RU", { totalTokens: 999_999_999 });
+    expect(nearBillionRu).toContain("1000,0M tok");
+    expect(nearBillionRu).not.toContain("1\u00a0000,0");
+    expect(nearBillionRu).not.toContain("1 000,0");
+    expect(nearBillionRu).not.toContain("1,0B");
+
+    const nearBillionEn = renderAgentUsageRow("en-US", { totalTokens: 999_999_999 });
+    expect(nearBillionEn).toContain("1000.0M tok");
+    expect(nearBillionEn).not.toContain("1,000.0");
+    expect(nearBillionEn).not.toContain("1.0B");
+
+    expect(renderAgentUsageRow("ru-RU", { totalTokens: 1_000_000_000 })).toContain("1,0B tok");
+    expect(renderAgentUsageRow("en-US", { totalTokens: 1_000_000_000 })).toContain("1.0B tok");
+  });
+
+  it("formats billion and trillion scale token counts with one decimal", () => {
+    const cases = [
+      ["ru-RU", 3_942_000_000, "3,9B"],
+      ["ru-RU", 1_000_000_000_000, "1,0T"],
+      ["ru-RU", 1_500_000_000_000, "1,5T"],
+      ["en-US", 3_942_000_000, "3.9B"],
+      ["en-US", 1_000_000_000_000, "1.0T"],
+      ["en-US", 1_500_000_000_000, "1.5T"],
+    ] as const;
+
+    for (const [locale, totalTokens, expected] of cases) {
+      expect(renderAgentUsageRow(locale, { totalTokens })).toContain(`${expected} tok`);
+    }
+  });
+
+  it("stops at T and keeps 1e15 grouped-free as 1000,0T", () => {
+    const htmlRu = renderAgentUsageRow("ru-RU", { totalTokens: 1_000_000_000_000_000 });
+    expect(htmlRu).toContain("1000,0T tok");
+    expect(htmlRu).not.toContain("1\u00a0000,0T");
+    expect(htmlRu).not.toMatch(/\d[PB] tok/u);
+
+    const htmlEn = renderAgentUsageRow("en-US", { totalTokens: 1_000_000_000_000_000 });
+    expect(htmlEn).toContain("1000.0T tok");
+    expect(htmlEn).not.toContain("1,000.0T");
+    expect(htmlEn).not.toMatch(/\d[PB] tok/u);
   });
 });

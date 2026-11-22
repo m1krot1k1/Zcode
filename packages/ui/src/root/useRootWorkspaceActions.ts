@@ -1,6 +1,5 @@
 import { stageV4ComposerDraftAttachments } from "@/v4/composer/composerDraftWorkspaceTransfer.js";
 import { readProjectSidebarView } from "@/project-sidebar/index.js";
-/* eslint-disable max-lines -- Root workspace action hook 集中编排项目、远程和 conversation 入口；合并期保持动作边界完整，后续按领域拆分。 */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   DesktopCommandIds,
@@ -10,7 +9,7 @@ import {
   type UserInfo,
   type ZCodeTaskClientMode,
 } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type {
   CreateTaskOptions,
   CreateTaskRequest,
@@ -36,11 +35,7 @@ import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { notifyTaskNavigationCommitted } from "@/store/zcodeSessionStoreNavigation.js";
 import { type TabStore, type TabStoreState } from "@/store/tabStore.js";
 import type { RootProps } from "@/root/types.js";
-import {
-  hadPersistedPaneLayoutAtModuleLoad,
-  INITIAL_PANE_LAYOUT,
-  usePaneLayoutStore,
-} from "@/v4/paneLayoutStore.js";
+import { hadPersistedPaneLayoutAtModuleLoad, usePaneLayoutStore } from "@/v4/paneLayoutStore.js";
 import { resolveWorkbenchNewTaskTarget } from "@/conversation-workspace-target/workbenchTarget.js";
 import type { WorkbenchNewTaskTarget } from "@/conversation-workspace-target/workbenchTarget.js";
 import { useWorkbenchGroupStore } from "@/v4/workbenchGroupStore.js";
@@ -51,7 +46,7 @@ import {
 } from "@/v4/composer/composerDraftStore.js";
 
 /** 新任务落点：identity 缺省一律归一化为 null，供只读校验、focus/addTab 统一消费。 */
-export interface NewTaskTargetResolution {
+interface NewTaskTargetResolution {
   workspacePath: string;
   workspaceIdentity: string | null;
 }

@@ -6,7 +6,7 @@ import { logger } from "@/logger.js";
 const PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-export interface SessionSubagentsViewState {
+interface SessionSubagentsViewState {
   revision: number;
   ended: ZCodeSessionSubagentsResult["ended"];
   error: string | null;
@@ -37,9 +37,7 @@ export function resolveEndedSubagentRefreshTargetCount(options: {
   requestedCount: number;
 }): number {
   if (options.loadedItemCount === 0) return options.requestedCount;
-  return (
-    options.requestedCount + Math.max(0, options.nextTotal - options.previousTotal)
-  );
+  return options.requestedCount + Math.max(0, options.nextTotal - options.previousTotal);
 }
 
 export function useSessionSubagents(options: {

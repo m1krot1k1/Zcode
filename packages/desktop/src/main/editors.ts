@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 编辑器检测需要集中维护跨平台路径、图标解析和缓存逻辑。 */
 /**
  * 编辑器检测与打开 —— 检测系统中已安装的编辑器/终端，获取图标，打开路径
  *
@@ -16,7 +15,8 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { join, win32 as pathWin32 } from "node:path";
+import { homedir } from "node:os";
+import { basename, join, win32 as pathWin32 } from "node:path";
 import { app, nativeImage } from "electron";
 import type { EditorInfo } from "@zcode/shared";
 import { getZCodeDataRootDir } from "@zcode/services/node";
@@ -165,11 +165,10 @@ function getWindowsProgramFilesRoots(): string[] {
 }
 
 function getWindowsLocalProgramsRoot(): string {
-  const systemDrive = process.env.SystemDrive || "C:";
-  return pathWin32.join(
-    process.env.LOCALAPPDATA || `${systemDrive}\\Users\\Default\\AppData\\Local`,
-    "Programs",
-  );
+  // Без LOCALAPPDATA общий профиль Default указывал не на установку текущего пользователя.
+  // homedir() учитывает USERPROFILE/HOMEDRIVE на Windows и сохраняет поиск в его профиле.
+  const localAppData = process.env.LOCALAPPDATA || pathWin32.join(homedir(), "AppData", "Local");
+  return pathWin32.join(localAppData, "Programs");
 }
 
 function windowsLocalProgramCandidate(...segments: string[]): string {
@@ -343,6 +342,10 @@ export function getEditorDefsForCurrentPlatform(): EditorDef[] {
 
 /** 缓存检测结果，避免重复 IO */
 export function resolveEditorDefAppPath(def: EditorDef): string | null {
+  const macOSUserApplicationsPath =
+    process.platform === "darwin" && def.appPath.startsWith("/Applications/")
+      ? join(homedir(), "Applications", basename(def.appPath))
+      : undefined;
   const commandAppPaths =
     def.command && def.windowsCommandAppNames?.length
       ? deriveWindowsAppPathsFromCommand(def.command, def.windowsCommandAppNames)
@@ -356,6 +359,7 @@ export function resolveEditorDefAppPath(def: EditorDef): string | null {
   const candidatePaths = uniquePaths([
     def.appPath,
     ...(def.appPathCandidates ?? []),
+    macOSUserApplicationsPath,
     ...commandAppPaths,
     ...commandPaths,
   ]);

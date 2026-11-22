@@ -19,7 +19,7 @@ export interface PaneWorkspaceBadge {
   remote: boolean;
 }
 
-export interface ConversationHeaderProps {
+interface ConversationHeaderProps {
   /** meta.title；仅作为测试/可观测投影，不渲染占位 header。 */
   title: string;
   /** 关闭本窗格（仅非 primary pane 下发；关 pane ≠ 停 session）。 */

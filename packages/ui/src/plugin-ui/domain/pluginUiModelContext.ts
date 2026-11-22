@@ -19,9 +19,9 @@ export interface PluginUiModelContext {
   images?: readonly PluginUiImageBlock[];
 }
 
-export const PLUGIN_UI_MODEL_CONTEXT_BLOCK_TITLE = "# Plugin context:";
+const PLUGIN_UI_MODEL_CONTEXT_BLOCK_TITLE = "# Plugin context:";
 /** 单条上下文文本上限；超出截断并追加省略号，避免插件把整页塞进 prompt。 */
-export const PLUGIN_UI_MODEL_CONTEXT_MAX_CHARS = 16 * 1024;
+const PLUGIN_UI_MODEL_CONTEXT_MAX_CHARS = 16 * 1024;
 
 const ITEM_HEADER = /^## Plugin (\S+) \(([^)]+)\)\s*$/m;
 
@@ -53,7 +53,7 @@ export function buildPromptWithPluginUiContexts(
   return `${content}${content ? "\n\n" : ""}${block}`.trim();
 }
 
-export interface ParsedPluginUiContextPrompt {
+interface ParsedPluginUiContextPrompt {
   visibleContent: string;
   pluginUiContexts: PluginUiModelContext[];
 }

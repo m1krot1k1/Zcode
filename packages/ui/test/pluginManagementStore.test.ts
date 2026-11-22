@@ -99,6 +99,8 @@ beforeEach(() => {
     error: null,
     togglingPluginId: null,
     activeOperations: [],
+    cancelRequestOperationIds: [],
+    cancellingOperationIds: [],
     describeCache: {},
   });
 });
@@ -670,6 +672,7 @@ describe("pluginManagementStore", () => {
       pluginName: "fixture",
       marketplace: "personal",
       scope: "workspace",
+      operationId: expect.any(String),
     });
   });
 
@@ -1088,7 +1091,9 @@ it("keeps a same-name operation busy when its overlapping call fails", async () 
   completions[1]!.reject();
   await expect(second).resolves.toBe(false);
   expect(store.getState().error).toBe("install failed");
-  expect(store.getState().activeOperations).toEqual([{ id: "plugin:install:same@personal" }]);
+  expect(store.getState().activeOperations).toEqual([
+    expect.objectContaining({ id: "plugin:install:same@personal" }),
+  ]);
   completions[0]!.resolve();
   await expect(first).resolves.toBe(true);
   expect(store.getState().activeOperations).toEqual([]);
@@ -1118,7 +1123,9 @@ it("finishing source validation cannot unlock a pending installation", async () 
   const validate = store.getState().validateSource("/workspace/source", service);
   finishValidation();
   await validate;
-  expect(store.getState().activeOperations).toEqual([{ id: "plugin:install:first@personal" }]);
+  expect(store.getState().activeOperations).toEqual([
+    expect.objectContaining({ id: "plugin:install:first@personal" }),
+  ]);
   finishInstall();
   await install;
   expect(store.getState().activeOperations).toEqual([]);

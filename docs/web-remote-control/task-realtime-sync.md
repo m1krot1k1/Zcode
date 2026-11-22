@@ -3,8 +3,9 @@
 > 状态：V4 wire v3 当前有效说明。
 >
 > 桌面和手机 attach 到同一个 host/service/CLI runtime，但连接、订阅和 delivery profile 相互隔离。
-> `TaskRealtimeBus` 继续承担 owner lease、stale-run 与跨 host 命令路由；它不保存第二份
-> conversation queue、projection 或 replayable 业务状态。
+> `TaskRealtimeBus` 当前只承担跨 host session route；owner/lease/mirror 分支自 2026-11-12 起
+> 没有生产生产者，shared schema 仅作 wire 兼容。它不保存第二份 conversation queue、projection 或
+> replayable 业务状态。
 
 本文描述 ZCode task/session 的实时订阅、snapshot/resync、跨端输入和断线恢复边界。
 
@@ -16,7 +17,8 @@
 - 每个 connection 有独立 subscription registry、buffer、fragment assembly 与 resync lifecycle。
 - 所有端已提交的 busy/running 输入按 CLI 串行 admission 顺序进入一个 `CommandInbox` FIFO。
 - relay/main 只做鉴权、配对、心跳、`rpc-frame`/app payload 与连接级流控信号透传。
-- owner/lease/stale-run 继续保证单 owner、阻塞请求和跨 host command 正确，但不拥有 conversation 事实。
+- 跨 host session message 由 main 的 route registry 投递；owner/lease/stale-run 目前没有生产路由层，
+  恢复前必须新增消费者与 stale-run/去重验证。
 
 最终输入不变量：每条已提交输入必须且只能处于 `queue / guided row / transcript /
 explicit rejected|failed|discarded` 之一。
@@ -33,7 +35,7 @@ Desktop attachment A                       Mobile /remote attachment B
                     one Window Host owning local/remote workspace scopes
                     ├─ connection facade A -> sub-a*
                     ├─ connection facade B -> sub-b*
-                    ├─ owner / lease / stale-run routing
+                    ├─ session route registry (main <-> host)
                     └─ services -> one CLI runtime
                                       ├─ event log / projection
                                       └─ CommandInbox FIFO
@@ -123,16 +125,14 @@ re-subscribe；真正 workspace teardown 才释放 emitter。
 permission、elicitation、terminal 和 snapshot invalidation 会阻塞 runtime 或决定 UI 收口，必须通过
 owned subscription 对同 task 的在线连接可见，或触发 snapshot 对齐，不能被普通 owner-only 内容过滤吞掉。
 
-需要路由给 runtime owner 的命令包括：
+`stop_generation`、`respond_permission`、`respond_elicitation` 和 conversation command 当前由
+V4 命令面/同一 Host 的 runtime 处理，不经过 Host owner/lease/mirror。Host 不再创建 realtime bridge，
+也不向 task service 注入 realtime port；`TaskRealtimeBus` 的 owner-command request/result 分支没有
+生产者或消费者，只有 shared schema 为了 wire 兼容保留。
 
-- `stop_generation`
-- `respond_permission`
-- `respond_elicitation`
-- remote workspace / bot / proxy fallback 的 conversation command
-
-owner command 必须携带 `workspacePath`、可选 `workspaceIdentity`、`workspaceKey`、`taskId` 和当前
-`runId`。main 按 `workspaceKey + taskId` 找 lease 并拒绝 stale run。shared-host 主路径通常直接命中同一
-host manager，但不能因此删除 owner/lease；remote workspace proxy、跨 host owner、bot/proxy 和阻塞响应仍依赖它。
+如果未来恢复 owner-command 路由，命令必须携带 `workspacePath`、可选 `workspaceIdentity`、
+`workspaceKey`、`taskId` 和当前 `runId`，main 按 `workspaceKey + taskId` 找 lease 并拒绝 stale run；
+同时必须证明 remote workspace、bot/proxy、跨 host fallback 和阻塞响应都有真实消费者。
 
 ## Canonical Input Queue
 

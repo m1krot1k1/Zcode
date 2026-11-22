@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable max-lines -- Windows E2E 父 runner 需要集中维护构建、分片、取消和 summary 完整性门禁。 */
 
 import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -9,10 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { spawnCancellableStep, startStepExecution } from "./e2e-step-process.mjs";
-import {
-  hasRequiredSshE2EEnvironment,
-  isSshFormalSpec,
-} from "./e2e-formal-spec-selection.mjs";
+import { hasRequiredSshE2EEnvironment, isSshFormalSpec } from "./e2e-formal-spec-selection.mjs";
 
 const RUNNER_SHARD_ARG_PREFIX = "--shards=";
 const DEFAULT_SPEC_DURATION_PROFILE_PATH = "test/e2e/spec-duration-weights.json";

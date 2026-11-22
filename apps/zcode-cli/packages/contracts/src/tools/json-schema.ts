@@ -50,15 +50,23 @@ function normalizeSchemaNode(value: unknown): void {
   for (const key of STRIPPED_SCHEMA_KEYS) {
     delete value[key];
   }
+  // OpenCode Go Responses 的严格工具编译器拒绝 propertyNames；Record 的值约束由 additionalProperties 保留。
+  delete value.propertyNames;
 
-  if (isRecord(value.properties)) {
-    for (const child of Object.values(value.properties)) {
-      normalizeSchemaNode(child);
-    }
-  }
-
+  normalizeSchemaMap(value.properties);
+  normalizeSchemaMap(value.patternProperties);
+  normalizeSchemaMap(value.dependentSchemas);
   normalizeSchemaNode(value.items);
+  normalizeSchemaNode(value.prefixItems);
   normalizeSchemaNode(value.additionalProperties);
+  normalizeSchemaNode(value.additionalItems);
+  normalizeSchemaNode(value.unevaluatedProperties);
+  normalizeSchemaNode(value.unevaluatedItems);
+  normalizeSchemaNode(value.contains);
+  normalizeSchemaNode(value.not);
+  normalizeSchemaNode(value.if);
+  normalizeSchemaNode(value.then);
+  normalizeSchemaNode(value.else);
   normalizeSchemaNode(value.oneOf);
   normalizeSchemaNode(value.anyOf);
   normalizeSchemaNode(value.allOf);
@@ -79,20 +87,19 @@ function normalizeSchemaNode(value: unknown): void {
   if (
     typeValues.includes("object") &&
     !isRecord(value.properties) &&
-    isRecord(value.additionalProperties) &&
-    value.propertyNames === undefined
-  ) {
-    value.propertyNames = { type: "string" };
-  }
-  if (
-    typeValues.includes("object") &&
-    !isRecord(value.properties) &&
     value.additionalProperties === undefined
   ) {
     value.properties = {};
   }
   if (typeValues.includes("array") && value.items === undefined) {
     value.items = {};
+  }
+}
+
+function normalizeSchemaMap(value: unknown): void {
+  if (!isRecord(value)) return;
+  for (const child of Object.values(value)) {
+    normalizeSchemaNode(child);
   }
 }
 

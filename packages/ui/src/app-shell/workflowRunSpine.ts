@@ -62,7 +62,7 @@ export interface SpineSection {
   merge?: SpineJoint;
 }
 
-export interface SpineLayout {
+interface SpineLayout {
   /** 相邻两条轨道的间距。 */
   pitch: number;
   /** 文字列比没有带时多让出的宽度：`pitch·(T − 1)`；没有带时 0。 */

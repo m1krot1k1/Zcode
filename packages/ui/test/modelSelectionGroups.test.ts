@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/services";
-import { buildRegistryModelSelectGroups } from "../src/lib/modelSelectionGroups.js";
+import {
+  buildRegistryModelSelectGroups,
+  formatContextWindowLabel,
+} from "../src/lib/modelSelectionGroups.js";
 
 describe("model selection groups", () => {
   it.each([
@@ -40,7 +43,38 @@ describe("model selection groups", () => {
     expect(items[2]!.supportsVisionInput).toBe(true);
     expect(view.providers[0]!.models[0]!.config.properties?.inputFormat?.supportsImage).toBe(true);
   });
+  it("模型选择显示 Provider 目录的 displayName，未提供时回退 modelId", () => {
+    const view: ModelSelectionView = {
+      revision: 1,
+      providers: [
+        {
+          providerId: "opencode-go",
+          providerName: "OpenCode Go",
+          config: {
+            access: { type: "api-key" },
+            api: {
+              type: "openai-chat-completions",
+              baseUrl: "https://opencode.ai/zen/go/v1",
+            },
+          },
+          models: [
+            {
+              modelId: "deepseek-v4.1-flash",
+              config: { properties: { displayName: "DeepSeek V4.1 Flash 1017" } },
+            },
+            { modelId: "deepseek-v4-pro", config: {} },
+          ],
+        },
+      ],
+    };
+
+    const items = buildRegistryModelSelectGroups("glm", view)[0]!.items;
+    expect(items[0]?.name).toBe("DeepSeek V4.1 Flash 1017");
+    expect(items[1]?.name).toBe("deepseek-v4-pro");
+  });
+
   it("保留带前缀和多段斜杠的精确模型 ID；不从名称推断视觉能力", () => {
+
     const modelId = "upstream/family/vision-preview";
     const view: ModelSelectionView = {
       revision: 1,
@@ -138,6 +172,39 @@ describe("model selection groups", () => {
     ]);
   });
 
+  it("把 OpenCode CLI 的原始 provider/model ID 加入普通 Composer 模型列表", () => {
+    const modelId = "deepseek/deepseek-v4.1-flash-free";
+    const selectionView: ModelSelectionView = {
+      revision: 10,
+      providers: [
+        {
+          providerId: "opencode",
+          providerName: "OpenCode CLI",
+          config: {
+            access: { type: "local-auth" },
+            api: { type: "opencode-sdk" },
+          },
+          models: [{ modelId, config: {} }],
+        },
+      ],
+    };
+
+    expect(buildRegistryModelSelectGroups("glm", selectionView)).toEqual([
+      {
+        key: "registry-provider:opencode",
+        label: "OpenCode CLI",
+        labelBadge: "CLI",
+        items: [
+          {
+            key: `registry-provider:opencode:${modelId}`,
+            value: `custom:opencode:${encodeURIComponent(modelId)}`,
+            name: modelId,
+          },
+        ],
+      },
+    ]);
+  });
+
   it("直接把 Registry Account Provider 投影为已选连接，不重新裁决 Family", () => {
     const providerId = BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan;
     const selectionView: ModelSelectionView = {
@@ -179,5 +246,43 @@ describe("model selection groups", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("formatContextWindowLabel", () => {
+  it.each([
+    [1_000_000, "1M"],
+    [1_048_576, "1M"],
+    [200_000, "200K"],
+    [128_000, "128K"],
+    [undefined, ""],
+    [0, ""],
+  ])("把 %s 格式化为 %j", (contextWindow, expected) => {
+    expect(formatContextWindowLabel(contextWindow)).toBe(expected);
+  });
+});
+
+describe("registry 模型上下文徽标", () => {
+  it("有 contextWindow 的模型带 badgeLabel，缺失时不渲染徽标", () => {
+    const view: ModelSelectionView = {
+      revision: 3,
+      providers: [
+        {
+          providerId: "fixture",
+          config: {
+            access: { type: "api-key", apiKey: "sk-test" },
+            api: { type: "anthropic-messages" },
+          },
+          models: [
+            { modelId: "with-context", config: { properties: { contextWindow: 128_000 } } },
+            { modelId: "without-context", config: {} },
+          ],
+        },
+      ],
+    };
+
+    const items = buildRegistryModelSelectGroups("glm", view)[0]!.items;
+    expect(items[0]!.badgeLabel).toBe("128K");
+    expect(items[1]!.badgeLabel).toBeUndefined();
   });
 });

@@ -23,6 +23,8 @@ import {
   emitStreamRecoveryRetryEvents,
   emitStreamRecoveryStarted,
   hasStreamRecoveryBudget,
+  isOpenCodeRateLimitFailure,
+  isOpenCodeSignInFailure,
   recoverPartialAssistantOutputFailure,
 } from "./streaming-recovery.js";
 import { executeToolCallsForModelStep } from "./turn-tools.js";
@@ -197,6 +199,19 @@ export function createStreamingToolCoordinator(
       recoveryOptions: { failedRequestId?: string } = {},
     ) {
       if (state.turnAbortSignal.aborted || !hasStreamRecoveryBudget(state)) return false;
+      // OpenCode 429 和登录失败停在当前请求：重开同一流或换模型都会绕过这次失败。
+      if (
+        isOpenCodeRateLimitFailure({
+          error,
+          providerId: String(options.model.providerId),
+        }) ||
+        isOpenCodeSignInFailure({
+          error,
+          providerId: String(options.model.providerId),
+        })
+      ) {
+        return false;
+      }
       const recoveryEventOptions = {
         ...options,
         ...(recoveryOptions.failedRequestId

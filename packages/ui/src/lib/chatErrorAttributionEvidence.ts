@@ -4,7 +4,7 @@ import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
  * transcript 和 custom provider 的安全 code/message 证据集中在这里判定：
  * 低基数 allowlist，每条规则原子返回同一份证据决定的 source/reason。
  */
-export interface TelemetryEvidenceAttribution {
+interface TelemetryEvidenceAttribution {
   errorSource: "provider" | "runtime" | "network";
   failureReason: string;
 }

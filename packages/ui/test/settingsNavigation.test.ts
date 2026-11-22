@@ -205,6 +205,29 @@ describe("settingsNavigation", () => {
     expect(navigation.consumePendingSettingsUsageTab()).toBe("codingPlan");
   });
 
+  it("代码索引入口直达独立的 Code Graph 设置分区", async () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("window", {
+      dispatchEvent: vi.fn(),
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+      localStorage: {
+        getItem: () => null,
+        removeItem: () => undefined,
+        setItem: () => undefined,
+      },
+    });
+    const navigation = await loadSettingsNavigation("test");
+
+    navigation.setPendingSettingsUsageCodeGraphIntent();
+
+    expect(navigation.consumeInitialSettingsSection("general")).toBe("codeGraph");
+    expect(storage.has("zcode-settings-usage-tab-intent")).toBe(false);
+  });
+
   it("provider loading 期间保留 coding plan 使用统计 tab 意图", async () => {
     const navigation = await loadSettingsNavigation("test");
 

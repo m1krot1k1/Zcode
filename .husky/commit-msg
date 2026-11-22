@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+
+# 提交主题必须包含西里尔字母（俄语）。执行代理有时会用中文或英文写主题，
+# 在 commit-msg 阶段拦截；正文不检查。
+# grep 在 C locale 下按字节匹配多字节字符，会把中文误判为含西里尔字母，
+# 因此先探测可用的 UTF-8 locale。
+for loc in C.UTF-8 en_US.UTF-8 ru_RU.UTF-8; do
+  # Одного charmap недостаточно: в C.UTF-8 GNU grep отвергает диапазон
+  # [А-Яа-яЁё] («Invalid collation character») и русский коммит блокируется.
+  # Проверяем именно ту операцию, которой пользуется hook.
+  if [ "$(LC_ALL=$loc locale charmap 2>/dev/null)" = UTF-8 ] &&
+     printf 'А\n' | LC_ALL=$loc grep -q '[А-Яа-яЁё]' 2>/dev/null; then
+    LC_ALL=$loc
+    export LC_ALL
+    break
+  fi
+done
+
+msg_file=$1
+
+# 取第一条非空且非注释行作为主题。
+subject=$(awk '!/^[[:space:]]*#/ && !/^[[:space:]]*$/ { print; exit }' "$msg_file")
+
+# 合并、回滚、rebase 修正和发布提交豁免。
+case "$subject" in
+  Merge* | Revert* | fixup!* | squash!* | Release*) exit 0 ;;
+esac
+
+if ! printf '%s\n' "$subject" | grep -q '[А-Яа-яЁё]'; then
+  echo 'Тема коммита должна быть на русском (нужна кириллица). Пример: “Исправить разбор плана роя”' >&2
+  exit 1
+fi

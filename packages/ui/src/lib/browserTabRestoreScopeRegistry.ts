@@ -1,4 +1,4 @@
-export type BrowserTabRestoreAttempt = symbol;
+type BrowserTabRestoreAttempt = symbol;
 
 interface BrowserTabRestoreScopeState {
   attempt: BrowserTabRestoreAttempt;

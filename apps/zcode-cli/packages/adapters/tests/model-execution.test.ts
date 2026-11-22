@@ -10,6 +10,28 @@ import {
 import { TestProviderConfigFixture } from "./test-provider-config.js";
 
 describe("AI SDK Provider execution", () => {
+  it.each([
+    ["anthropic-messages", "anthropic"],
+    ["openai-chat-completions", "openai-compatible"],
+    ["openai-responses", "openai"],
+  ] as const)("routes a single OpenCode Go provider through the model's %s API", (type, kind) => {
+    const registry = new TestProviderConfigFixture({
+      env: {},
+      providers: {
+        opencodeGo: { kind: "custom", baseURL: "https://opencode.ai/zen/go/v1" },
+      },
+    });
+
+    const resolved = registry.resolve(
+      "opencodeGo/deepseek-v4.1-flash-free",
+      { maxOutputTokens: 1024, reasoningLevel: "disabled" },
+      { type, baseUrl: "https://opencode.ai/zen/go/v1" },
+    );
+
+    expect(resolved.baseURL).toBe("https://opencode.ai/zen/go/v1");
+    expect(resolved.providerKind).toBe(kind);
+  });
+
   it("adds Authorization alongside x-api-key for Anthropic provider requests", async () => {
     const receivedHeaders: http.IncomingHttpHeaders[] = [];
     const endpointRoutingPort = {

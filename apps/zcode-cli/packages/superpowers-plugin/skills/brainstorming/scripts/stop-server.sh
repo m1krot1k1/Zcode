@@ -3,10 +3,12 @@
 # Usage: stop-server.sh <session_dir>
 #
 # Kills the server process. Only deletes session directory if it's
-# under /tmp (ephemeral). Persistent directories (.superpowers/) are
+# under the OS temporary directory (ephemeral). Persistent directories (.superpowers/) are
 # kept so mockups can be reviewed later.
 
 SESSION_DIR="$1"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/resolve-system-temp-dir.sh"
 
 if [[ -z "$SESSION_DIR" ]]; then
   echo '{"error": "Usage: stop-server.sh <session_dir>"}'
@@ -45,9 +47,22 @@ if [[ -f "$PID_FILE" ]]; then
 
   rm -f "$PID_FILE" "${STATE_DIR}/server.log"
 
-  # Only delete ephemeral /tmp directories
-  if [[ "$SESSION_DIR" == /tmp/* ]]; then
-    rm -rf "$SESSION_DIR"
+  # Удаляем только помеченную сессию непосредственно в системном temp-каталоге.
+  if [[ -d "$SESSION_DIR" ]]; then
+    SYSTEM_TEMP_DIR="$(resolve_system_temp_dir)" || SYSTEM_TEMP_DIR=""
+    TEMP_ROOT=""
+    SESSION_REAL=""
+    SESSION_PARENT=""
+    if [[ -n "$SYSTEM_TEMP_DIR" ]]; then
+      TEMP_ROOT="$(cd "$SYSTEM_TEMP_DIR" 2>/dev/null && pwd -P)"
+      SESSION_REAL="$(cd "$SESSION_DIR" 2>/dev/null && pwd -P)"
+      SESSION_PARENT="$(cd "$(dirname "$SESSION_REAL")" 2>/dev/null && pwd -P)"
+    fi
+    SESSION_NAME="${SESSION_REAL##*/}"
+    EPHEMERAL_MARKER="${SESSION_REAL}/.brainstorm-ephemeral"
+    if [[ -n "$SESSION_REAL" && "$SESSION_PARENT" == "$TEMP_ROOT" && "$SESSION_NAME" == brainstorm-* && -f "$EPHEMERAL_MARKER" && ! -L "$EPHEMERAL_MARKER" ]]; then
+      rm -rf "$SESSION_REAL"
+    fi
   fi
 
   echo '{"status": "stopped"}'

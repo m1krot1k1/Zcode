@@ -309,8 +309,16 @@ export function ToastMessageView({
   const displayTitle = title ?? fallbackTitle;
   const displayBody = body ?? fallbackBodyLines.join("\n").trim();
 
+  // 无障碍：toast 是异步插入的浮动提示，必须由自身 live region 宣告；
+  // warning 用 alert/assertive 打断朗读，其余（含进度更新）用 status/polite，避免连续操作互相打断。
+  // 不把 aria-live 放共享容器：容器挂载早于文案、且同容器多条消息会整段重复朗读。
+  const isAssertive = item.variant === "warning";
   return (
     <div
+      role={isAssertive ? "alert" : "status"}
+      aria-live={isAssertive ? "assertive" : "polite"}
+      aria-atomic="true"
+      data-slot="toast"
       className={cn(
         "rounded-2xl border bg-toast/60 text-ui-base shadow-lg backdrop-blur-xl transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.77,0,0.175,1)] motion-reduce:transform-none motion-reduce:transition-opacity",
         isSourceServerUpdate

@@ -1,8 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { appSettingsPatchSchema, appSettingsSchema } from "#src/validationAppSettings.js";
+import { toLegacyBilingualLocale } from "#src/protocol.js";
 
 describe("app settings", () => {
+  it("accepts Russian as a persisted locale and language preference", () => {
+    expect(appSettingsSchema.parse({ locale: "ru-RU" }).locale).toBe("ru-RU");
+    expect(appSettingsPatchSchema.parse({ localePreference: "ru-RU" }).localePreference).toBe(
+      "ru-RU",
+    );
+  });
+
+  it.each([
+    ["zh-CN", "zh-CN"],
+    ["en-US", "en-US"],
+    ["ru-RU", "en-US"],
+  ] as const)("maps legacy bilingual integration locale %s to %s", (locale, expected) => {
+    expect(toLegacyBilingualLocale(locale)).toBe(expected);
+  });
+
   it("自动归档默认关闭并保留 30 天，已有天数不覆盖", () => {
     expect(appSettingsSchema.parse({})).toMatchObject({
       taskAutoArchiveEnabled: false,
@@ -35,16 +51,53 @@ describe("app settings", () => {
     expect(appSettingsSchema.parse(reopened)).toEqual(reopened);
   });
 
-  it("defaults ToolSearch off and accepts only the three App modes", () => {
-    expect(appSettingsSchema.parse({}).toolSearchMode).toBe("off");
+  it("defaults ToolSearch off for fresh settings and upgrades an existing explicit off once", () => {
+    const fresh = appSettingsSchema.parse({});
+    expect(fresh).toMatchObject({
+      toolSearchMode: "off",
+      toolSearchModeMigrationVersion: 1,
+    });
+    const migrated = appSettingsSchema.parse({ toolSearchMode: "off" });
+    expect(migrated).toMatchObject({
+      toolSearchMode: "auto",
+      toolSearchModeMigrationVersion: 1,
+    });
+    expect(appSettingsSchema.parse(migrated)).toEqual(migrated);
+    const optedOut = appSettingsSchema.parse({
+      ...migrated,
+      ...appSettingsPatchSchema.parse({ toolSearchMode: "off" }),
+    });
+    expect(optedOut.toolSearchMode).toBe("off");
+    expect(appSettingsSchema.parse(optedOut).toolSearchMode).toBe("off");
     expect(appSettingsPatchSchema.parse({})).not.toHaveProperty("toolSearchMode");
     for (const mode of ["auto", "local", "off"]) {
-      expect(appSettingsSchema.parse({ toolSearchMode: mode }).toolSearchMode).toBe(mode);
+      expect(
+        appSettingsSchema.parse({ toolSearchMode: mode, toolSearchModeMigrationVersion: 1 })
+          .toolSearchMode,
+      ).toBe(mode);
       expect(appSettingsPatchSchema.parse({ toolSearchMode: mode }).toolSearchMode).toBe(mode);
     }
     for (const mode of ["native", "invalid", true, null]) {
       expect(appSettingsPatchSchema.safeParse({ toolSearchMode: mode }).success).toBe(false);
     }
+  });
+
+  it("migrates the old 120k working context default once and preserves custom values", () => {
+    const migrated = appSettingsSchema.parse({
+      agentCoreAdvanced: { workingContextCeilingTokens: 120_000 },
+    });
+    expect(migrated.agentCoreAdvanced.workingContextCeilingTokens).toBe(80_000);
+    expect(migrated.workingContextCeilingMigrationVersion).toBe(1);
+
+    const custom = appSettingsSchema.parse({
+      agentCoreAdvanced: { workingContextCeilingTokens: 180_000 },
+      workingContextCeilingMigrationVersion: 1,
+    });
+    expect(custom.agentCoreAdvanced.workingContextCeilingTokens).toBe(180_000);
+
+    const fresh = appSettingsSchema.parse({});
+    expect(fresh.agentCoreAdvanced.workingContextCeilingTokens).toBe(80_000);
+    expect(fresh.workingContextCeilingMigrationVersion).toBe(1);
   });
 
   it("preserves an explicit startup reconnect preference while keeping old settings optional", () => {
@@ -410,6 +463,40 @@ describe("dynamicWorkflowMode 设置（DWG-19）", () => {
     expect(appSettingsSchema.parse({ dynamicWorkflowMode: "future" }).dynamicWorkflowMode).toBe(
       undefined,
     );
+  });
+});
+
+describe("subagent resource settings", () => {
+  it("persists adaptive parallelism preferences and bounded timeout overrides", () => {
+    expect(
+      appSettingsPatchSchema.parse({
+        subagentMaxParallel: 0,
+        subagentTaskTimeoutMinutes: 0,
+        spawnBudget: 128,
+      }),
+    ).toEqual({
+      subagentMaxParallel: 0,
+      subagentTaskTimeoutMinutes: 0,
+      spawnBudget: 128,
+    });
+    expect(
+      appSettingsSchema.parse({
+        subagentMaxParallel: Number.MAX_SAFE_INTEGER,
+        subagentTaskTimeoutMinutes: 180,
+      }),
+    ).toMatchObject({
+      subagentMaxParallel: Number.MAX_SAFE_INTEGER,
+      subagentTaskTimeoutMinutes: 180,
+    });
+    expect(appSettingsPatchSchema.safeParse({ subagentMaxParallel: 129 }).success).toBe(true);
+    expect(
+      appSettingsPatchSchema.safeParse({ subagentMaxParallel: Number.MAX_SAFE_INTEGER + 1 })
+        .success,
+    ).toBe(false);
+    expect(appSettingsPatchSchema.safeParse({ subagentTaskTimeoutMinutes: 181 }).success).toBe(
+      false,
+    );
+    expect(appSettingsPatchSchema.safeParse({ subagentMaxParallel: -1 }).success).toBe(false);
   });
 });
 

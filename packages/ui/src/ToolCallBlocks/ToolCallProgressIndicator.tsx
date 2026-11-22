@@ -1,7 +1,7 @@
 import type { ToolProgress } from "@zcode/shared/zcode-protocol-v4";
 import { toolProgressSchema } from "@zcode/shared/zcode-protocol-v4";
 
-export const TID_TOOL_CALL_PROGRESS = "tool-call-progress";
+const TID_TOOL_CALL_PROGRESS = "tool-call-progress";
 
 /** 从 legacy raw 读出投影的运行中进度（toolCallRowAdapter 透传 ToolCallRow.progress）。 */
 export function readToolCallProgress(raw: unknown): ToolProgress | null {

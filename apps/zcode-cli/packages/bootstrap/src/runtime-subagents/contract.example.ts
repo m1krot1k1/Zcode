@@ -7,6 +7,11 @@ export const exampleSubagentConfiguration: RuntimeSubagentConfiguration = {
       namespace: "tools",
       content: "---\nname: review\ndescription: Review\n---\nReview the code",
     },
+    {
+      path: "/project/.zcode/agents/researcher.md",
+      source: "project",
+      content: "---\nname: researcher\ndescription: Research\n---\nResearch the workspace",
+    },
   ],
   state: {
     disabledAgentIds: [],

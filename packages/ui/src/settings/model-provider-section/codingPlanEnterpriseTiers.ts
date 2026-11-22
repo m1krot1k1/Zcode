@@ -1,4 +1,4 @@
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import "@/i18n/IntlProvider.js";
 import type { EnterpriseCodingPlanProductDisplay } from "@/settings/model-provider-section/enterpriseCodingPlanProducts.js";
 
 // 2026-09: 原生购买面板（CodingPlanPurchasePanel）整体下线，购买流程切换为内嵌官网
@@ -13,14 +13,14 @@ export interface EnterpriseCodingPlanProductGroup {
   products: EnterpriseCodingPlanProductDisplay[];
 }
 
-export interface EnterpriseTierFormatOptions {
+interface EnterpriseTierFormatOptions {
   locale: string;
   formatMessage?: EnterpriseTierMessageFormatter;
 }
 
-export type EnterpriseTierMessageFormatter = (id: string, fallback: string) => string;
+type EnterpriseTierMessageFormatter = (id: string, fallback: string) => string;
 
-export function formatEnterpriseTier(
+function formatEnterpriseTier(
   tier: string,
   options: EnterpriseTierFormatOptions | string = "en-US",
 ): string {
@@ -40,7 +40,7 @@ export function formatEnterpriseTier(
   return fallback;
 }
 
-export function resolveEnterpriseTierMessageId(normalizedTier: string): string | null {
+function resolveEnterpriseTierMessageId(normalizedTier: string): string | null {
   const key = normalizedTier.trim().toLowerCase();
   if (key === "lite" || key === "pro" || key === "max") {
     return `settings.modelProvider.codingPlan.enterprise.tier.${key}`;
@@ -52,18 +52,7 @@ function normalizeEnterpriseTierFormatOptions(
   options: EnterpriseTierFormatOptions | string,
 ): EnterpriseTierFormatOptions {
   return typeof options === "string" ? { locale: options } : options;
-}
-
-export function createEnterpriseTierMessageFormatter(
-  intl: ReturnType<typeof useZCodeIntl>["intl"],
-): EnterpriseTierMessageFormatter {
-  return (id, fallback) => {
-    const message = intl.formatMessage({ id });
-    return message === id ? fallback : message;
-  };
-}
-
-function resolveEnterpriseTierRank(tier: string): number {
+}function resolveEnterpriseTierRank(tier: string): number {
   const normalized = tier.trim().toLowerCase();
   if (normalized === "lite") {
     return 0;

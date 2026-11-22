@@ -19,9 +19,10 @@ import { buildEnvInfoSection, buildGitSystemContextSection } from "./sections/en
 import { buildSkillsSection } from "./sections/skills.js";
 import { buildRequestUserContextSection } from "./sections/request-user-context.js";
 import { buildCurrentDateSection } from "./sections/current-date.js";
-import { buildMemorySection } from "./sections/memory.js";
+import { buildContextLedgerSection, buildMemorySection } from "./sections/memory.js";
 import { ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH } from "../memory/project-memory-retrieval-branch.js";
 import { buildDesktopContextSection } from "./sections/desktop.js";
+import { buildWorkspaceFactsSection } from "./sections/workspace-facts.js";
 import {
   buildContextManagementSection,
   buildDynamicBehaviorSection,
@@ -119,7 +120,9 @@ export class ContextBuilder {
     } else if (workflowActor !== undefined) {
       sections.push(buildWorkflowActorIdentitySection(workflowActor));
     } else {
-      sections.push(buildIdentitySection(activeOutputStyle));
+      sections.push(
+        buildIdentitySection(activeOutputStyle, this.config.promptProfile, this.config.promptDepth),
+      );
     }
 
     // 3. Dynamic system context
@@ -144,6 +147,7 @@ export class ContextBuilder {
         : buildSessionGuidanceSection(
             this.config.guidanceToolNames ?? [],
             (this.config.skills?.skills.length ?? 0) > 0,
+            this.config.taskDagAvailable === true,
           );
       if (sessionGuidanceSection) {
         sections.push(sessionGuidanceSection);
@@ -159,6 +163,10 @@ export class ContextBuilder {
           sections.push(memorySection);
         }
       }
+      const contextLedgerSection = buildContextLedgerSection(this.config.contextLedger);
+      if (contextLedgerSection) {
+        sections.push(contextLedgerSection);
+      }
       sections.push(
         buildEnvInfoSection(
           this.config.envInfo,
@@ -166,6 +174,13 @@ export class ContextBuilder {
           this.config.additionalDirectories,
         ),
       );
+
+      // Явно управляемая секция: только enriched facts из cache-пути.
+      // Legacy projectContext без workspaceFacts остаётся невидимым в промпте.
+      const workspaceFactsSection = buildWorkspaceFactsSection(this.config.projectContext);
+      if (workspaceFactsSection) {
+        sections.push(workspaceFactsSection);
+      }
 
       // Output Style
       const outputStyleSection = buildOutputStyleSection(activeOutputStyle);
@@ -199,6 +214,8 @@ export class ContextBuilder {
     // 5. Meta user context: workspace instructions/project memory first, date second.
     const requestUserContextSection = buildRequestUserContextSection({
       userInstructions: this.config.userInstructions,
+      bundledHarnessRules: this.config.bundledHarnessRules,
+      workspaceRules: this.config.workspaceRules,
       memoryIndexContent: this.config.memoryIndexContent,
       memoryRoot: this.config.memoryRoot,
     });

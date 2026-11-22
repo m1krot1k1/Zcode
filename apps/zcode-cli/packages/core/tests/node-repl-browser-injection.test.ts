@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { fileURLToPath } from "node:url";
 import { jsToolEntry, disposeNodeReplSession } from "../src/tool/handlers/node-repl.js";
 import type { ToolExecutionContext } from "../src/tool/types.js";
 import type {
@@ -56,7 +57,11 @@ describe("node_repl browser injection", () => {
     );
     const c = {
       ...ctx("bs-docs", port),
-      browserDocumentationRoot: new URL("../../browser-use-plugin/docs", import.meta.url).pathname,
+      // URL.pathname оставляет percent-encoded пробелы (%20), и existsSync не находит
+      // docs в путях вроде «Zcode Fork». fileURLToPath декодирует путь.
+      browserDocumentationRoot: fileURLToPath(
+        new URL("../../browser-use-plugin/docs", import.meta.url),
+      ),
     };
     const out = (await jsToolEntry.handler(
       {

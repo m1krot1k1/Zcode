@@ -9,7 +9,8 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 import { commandAdmissionOf } from "./executor.js";
 
-export interface CanonicalCommandIntent {
+interface CanonicalCommandIntent {
+  executionRoute?: TurnInputIntentMetadata["executionRoute"];
   inputOrigin?: "desktop" | "mobile";
   conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
   botGroupSource?: TurnInputIntentMetadata["botGroupSource"];
@@ -18,6 +19,7 @@ export interface CanonicalCommandIntent {
   modelSelection?: ModelSelection;
   mode?: SubmissionMode;
   planEnabled?: boolean;
+  orchestrationMode?: TurnInputIntentMetadata["orchestrationMode"];
   sourceCommandId?: string;
   clientId?: string;
   queueItemId?: string;
@@ -44,6 +46,7 @@ export function inputIntentMetadata(
     modelSelection?: ModelSelection;
     mode?: SubmissionMode;
     planEnabled?: boolean;
+    orchestrationMode?: TurnInputIntentMetadata["orchestrationMode"];
     sharedContextRefs?: TurnInputIntentMetadata["sharedContextRefs"];
     source?: TurnInputIntentMetadata["source"];
   },
@@ -53,7 +56,16 @@ export function inputIntentMetadata(
     envelope.type === "sendText"
       ? (envelope.payload as CommandPayloadMap["sendText"]).highspeedMeta
       : undefined;
+  const orchestrationMode =
+    options.orchestrationMode ??
+    (envelope.type === "sendText"
+      ? (envelope.payload as CommandPayloadMap["sendText"]).orchestrationMode
+      : undefined);
   return {
+    executionRoute:
+      envelope.type === "sendText"
+        ? ((envelope.payload as CommandPayloadMap["sendText"]).executionRoute ?? { kind: "zcode" })
+        : { kind: "zcode" },
     ...(options.inputOrigin ? { inputOrigin: options.inputOrigin } : {}),
     ...(options.conversationQuotes ? { conversationQuotes: options.conversationQuotes } : {}),
     ...(options.botGroupSource ? { botGroupSource: options.botGroupSource } : {}),
@@ -72,6 +84,7 @@ export function inputIntentMetadata(
     ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
     ...(options.mode ? { mode: options.mode } : {}),
     ...(options.planEnabled !== undefined ? { planEnabled: options.planEnabled } : {}),
+    ...(orchestrationMode ? { orchestrationMode } : {}),
     admissionSeq: admission.admissionSeq,
     admittedAt: admission.admittedAt,
     requestedDelivery: options.requestedDelivery,
@@ -100,6 +113,7 @@ export function inputIntentMetadataFromCanonical(
   const originalSourceCommandId =
     canonical.provenance?.sourceCommandId ?? canonical.sourceCommandId;
   return {
+    executionRoute: canonical.executionRoute ?? { kind: "zcode" },
     ...(canonical.inputOrigin ? { inputOrigin: canonical.inputOrigin } : {}),
     ...(canonical.conversationQuotes ? { conversationQuotes: canonical.conversationQuotes } : {}),
     ...(canonical.botGroupSource ? { botGroupSource: canonical.botGroupSource } : {}),
@@ -111,6 +125,7 @@ export function inputIntentMetadataFromCanonical(
     ...(canonical.modelSelection ? { modelSelection: canonical.modelSelection } : {}),
     ...(canonical.mode ? { mode: canonical.mode } : {}),
     ...(canonical.planEnabled !== undefined ? { planEnabled: canonical.planEnabled } : {}),
+    ...(canonical.orchestrationMode ? { orchestrationMode: canonical.orchestrationMode } : {}),
     admissionSeq: admission.admissionSeq,
     admittedAt: admission.admittedAt,
     requestedDelivery: canonical.requestedDelivery ?? "startNow",
@@ -137,6 +152,7 @@ export function inputIntentMetadataFromQueueItem(
   canonicalText: string,
 ): TurnInputIntentMetadata {
   return {
+    executionRoute: { kind: "zcode" },
     ...(item.inputOrigin ? { inputOrigin: item.inputOrigin } : {}),
     ...(item.conversationQuotes ? { conversationQuotes: item.conversationQuotes } : {}),
     ...(item.botGroupSource ? { botGroupSource: item.botGroupSource } : {}),
@@ -148,6 +164,7 @@ export function inputIntentMetadataFromQueueItem(
     ...(item.modelSelection ? { modelSelection: item.modelSelection } : {}),
     ...(item.mode ? { mode: item.mode } : {}),
     ...(item.planEnabled !== undefined ? { planEnabled: item.planEnabled } : {}),
+    ...(item.orchestrationMode ? { orchestrationMode: item.orchestrationMode } : {}),
     admissionSeq: item.order.admissionSeq,
     admittedAt: item.admittedAt,
     requestedDelivery: item.delivery.requested,

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Treemapping 需要在同一视图里组合活动树、矩形布局和详情区；等交互稳定后再拆分子组件。 */
 import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { FolderIcon, Loader2Icon } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";

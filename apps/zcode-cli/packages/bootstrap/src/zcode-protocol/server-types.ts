@@ -13,23 +13,8 @@ import {
 import type { McpTelemetryTracker } from "@zcode/adapters";
 import type { WorkspaceHookPolicyProvider } from "@zcode/core";
 import type { AccountProviderConfigSnapshot } from "@zcode/provider";
-import {
-  zcodeProtocolErrorCodes,
-  type AppToolSearchMode,
-  type ZCodeAutomationBotDeliveryTarget,
-  type ZCodeDeliveryKind,
-  type ModelSelection,
-  type ZCodeModelContextBudgetStrategy,
-  type ZCodeProtocolMessage,
-  type ZCodeProtocolMethod,
-  type ZCodeProtocolNotification,
-  type ZCodeProtocolRequest,
-  type ZCodeProtocolRequestId,
-  type ZCodeProtocolTrace,
-  type ZCodeSessionMode,
-  type ZCodeSessionPersistence,
-  type ZCodeWorkspaceRef,
-} from "@zcode/shared";
+import type { RuntimeProviderCatalogSnapshot } from "@zcode/provider";
+import {zcodeProtocolErrorCodes, type AppToolSearchMode, type ZCodeAutomationBotDeliveryTarget, type ZCodeDeliveryKind, type ModelSelection, type ZCodeModelContextBudgetStrategy, type ZCodeProtocolMessage, type ZCodeProtocolMethod, type ZCodeProtocolNotification, type ZCodeProtocolRequest, type ZCodeProtocolRequestId, type ZCodeProtocolTrace, type ZCodeSessionPersistence, type ZCodeWorkspaceRef} from "@zcode/shared";
 import type { ZCodeApp, ZCodeAppOptions } from "../app/types.js";
 import type { V4InteractionRegistry } from "../zcode-protocol-v4/interaction-registry.js";
 import type { ConversationV4Gateway } from "../zcode-protocol-v4/v4-gateway.js";
@@ -38,6 +23,30 @@ import type { DynamicWorkflowMode } from "@zcode/shared";
 
 export interface ParamsSchema<T> {
   parse(input: unknown): T;
+}
+
+export type ZCodeProtocolOutboundMessage = ZCodeProtocolNotification | ZCodeProtocolRequest;
+
+/**
+ * subscribe/resync 的 initial frame 批次：messages 只在该 request 的 response line 写完后
+ * 才允许写出，全部 write 成功后才 commit（transport 负责顺序，server 只持有引用）。
+ */
+export interface ZCodeProtocolPostResponseBatch {
+  readonly messages: readonly ZCodeProtocolOutboundMessage[];
+  commit(): boolean;
+}
+
+/** server → client 反向请求的挂起项；应答/取消/超时都经同一条 cleanup 路径注销。 */
+export interface PendingClientRequest<T> {
+  method: string;
+  reject: (error: Error) => void;
+  resolve: (value: T) => void;
+  resultSchema: ParamsSchema<T>;
+  requestKeys: Set<string>;
+  signal?: AbortSignal;
+  timeout?: ReturnType<typeof setTimeout>;
+  reannounceTimer?: ReturnType<typeof setTimeout>;
+  abortHandler?: () => void;
 }
 
 export interface ZCodeProtocolAgentDependencies {
@@ -64,6 +73,10 @@ export interface ZCodeProtocolAgentDependencies {
   workspaceHookPolicyProvider?: WorkspaceHookPolicyProvider;
   /** 把 Host 账号状态形成的第三层 Config Overlay 同步给进程 Registry。 */
   syncAccountProviderConfig?: (snapshot: AccountProviderConfigSnapshot) => Promise<boolean>;
+  /** Host-authoritative OpenCode CLI catalog; runtime-only and never written to provider config. */
+  syncRuntimeProviderCatalog?: (
+    snapshot: RuntimeProviderCatalogSnapshot,
+  ) => Promise<boolean>;
   /** 连接测试前主动重读当前进程的 Config Source 并等待 Registry 发布。 */
   refreshProviderRegistry?: (reason: string) => Promise<void>;
 }
@@ -88,6 +101,11 @@ export interface ZCodeProtocolSessionRecord {
   memoryEnabled: boolean;
   nativeSearchEnhancementsEnabled: boolean;
   toolSearchMode: AppToolSearchMode;
+  /** Снимок workspace boundary на момент создания; дочерние сессии наследуют его. */
+  workspaceBoundary: "strict" | "ask" | "allow";
+  /** Снимок sandbox-настроек на момент создания; дочерние сессии наследуют его. */
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  sandboxAllowNetwork?: boolean;
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   createdAt: number;
   deliveryKind?: ZCodeDeliveryKind;
@@ -290,7 +308,7 @@ export function toProtocolError(error: unknown): {
   };
 }
 
-export function createProtocolTraceId(_sessionId: SessionId): TraceContext["traceId"] {
+function createProtocolTraceId(_sessionId: SessionId): TraceContext["traceId"] {
   // Bugfix: traceId 是 session 之上的观测链路，不应由 sessionId 拼出来。
   // 这里复用 agent/contracts 的 UUID 算法，保证 app 和 agent 两端 trace 格式一致。
   return createTraceId();

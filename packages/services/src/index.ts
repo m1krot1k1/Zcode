@@ -4,10 +4,15 @@ export { ServiceCollection, type ServiceExposurePolicy } from "./collection.js";
 export {
   IModelSelectionService,
   IProviderSettingsService,
+  type DiscoveredModel,
   type ModelSelectionView,
   type ModelSelectionViewInput,
   type ProviderSettingsProviderView,
   type ProviderSettingsView,
+  type ApiFormatDetectionAttempt,
+  type ApiFormatDetectionResult,
+  type DetectApiFormatInput,
+  type ProviderApiWireFormat,
 } from "./model-provider/providerFacadeServices.js";
 export {
   createAccountRequestAuthService,
@@ -144,8 +149,11 @@ export {
   ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE,
 } from "./zcode-agent/zcodeAgent.js";
 export {
+  isZCodeAgentMcpConnectUnsupportedError,
   isZCodeAgentMcpStatusModeUnsupportedError,
+  ZCODE_AGENT_MCP_CONNECT_UNSUPPORTED_ERROR_CODE,
   ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED_ERROR_CODE,
+  ZCodeAgentMcpConnectUnsupportedError,
   ZCodeAgentMcpStatusModeUnsupportedError,
 } from "./zcode-agent/zcodeAgentErrors.js";
 export {
@@ -226,7 +234,6 @@ export type { ProjectMemoryFileSummary, ProjectMemoryWorkspaceSummary } from "./
 
 // OutputStyle service — IOutputStyleService is both a type (interface) and value (descriptor).
 export { IOutputStyleService } from "./output-style/outputStyle.js";
-export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 
 // FileWatcher service — IFileWatcherService is both a type (interface) and value (descriptor)
 export { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
@@ -286,6 +293,61 @@ export { IPluginManagementService, withPluginTelemetry } from "./plugins/pluginM
 
 // Subagents service — ISubagentsService is both a type (interface) and value (descriptor)
 export { ISubagentsService } from "./subagents/subagents.js";
+export {
+  ICodeIntelligenceService,
+  type CodeIntelligenceService,
+  type CodeGraphEdge,
+  type CodeGraphNode,
+  type CodeGraphOverview,
+  type CodeWorkspaceRef,
+  type CodeImpactResult,
+  type CodeIndexStatus,
+  type EmbeddingProvider,
+  type CodeSearchResult,
+  type CodeSymbolContext,
+  type CodeTraceResult,
+  type EmbeddingPhase,
+  type EmbeddingTestResult,
+} from "./code-intelligence/contract.js";
+export { IPromptEnhancerService, type PromptEnhancerService } from "./prompt-enhancer/contract.js";
+// Bug 原因: баррель реэкспортировал значения/типы через `./chat-autocomplete/index.js`,
+// а тот реэкспортирует `user-lexicon-store.ts` → `../paths.js` → `node:fs`. Renderer
+// (Vite) подхватывал весь модуль и падал на "node:fs externalized for browser
+// compatibility". Контрактный вход чистый: дескриптор канала + типы, без Node IO.
+export {
+  IChatAutocompleteService,
+  type ChatAutocompleteService,
+} from "./chat-autocomplete/contract.js";
+export type {
+  ChatAutocompleteTextGenerator,
+  ChatAutocompleteModelResolver,
+  ChatAutocompleteContextPorts,
+} from "./chat-autocomplete/service.js";
+export {
+  IProactiveSuggestionService,
+  ProactiveSuggestionError,
+  type ProactiveSuggestionService,
+} from "./proactive-suggestion/contract.js";
+export { createProactiveSuggestionService } from "./proactive-suggestion/service.js";
+export type {
+  ProactiveSuggestionModelResolver,
+  ProactiveSuggestionPorts,
+  ProactiveSuggestionTextGenerator,
+} from "./proactive-suggestion/ports.js";
+export { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/index.js";
+export type {
+  OpenCodeAcpConfigOption,
+  OpenCodeAcpPermissionEvent,
+  OpenCodeAcpPermissionOptionKind,
+  OpenCodeAcpPermissionRequest,
+  OpenCodeAcpPromptResult,
+  OpenCodeAcpSession,
+  OpenCodeAcpSessionUpdate,
+  OpenCodeCliModelCatalog,
+  OpenCodeCliModelDescriptor,
+  OpenCodeCliStatus,
+  OpenCodeInstallResult,
+} from "./opencode-acp-runtime/index.js";
 
 // Commands service — ICommandsService is both a type (interface) and value (descriptor)
 export { ICommandsService } from "./commands/commands.js";

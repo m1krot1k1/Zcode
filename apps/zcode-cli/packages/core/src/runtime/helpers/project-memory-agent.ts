@@ -14,6 +14,7 @@ import { getSessionShellSelectionFromConfig } from "../methods/session-shell-env
 import { prepareRuntimeProviderRequest } from "./runtime-provider-request-messages.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "../methods/model-runtime-headers.js";
 import { createRuntimeModel, withModelInvocationContext } from "../methods/runtime-model.js";
+import { modelSelectionFromActiveModel } from "../methods/subagent/model-factory.js";
 
 export interface ProjectMemoryAgentContext {
   causation?: AgentTelemetryCausation;
@@ -39,11 +40,15 @@ export function captureProjectMemoryAgentContext(
     traceContext: TraceContext;
   },
 ): ProjectMemoryAgentContext {
-  const baseModel =
-    input.model ??
-    createRuntimeModel(runtime, {
-      selection: runtime.getSessionModelSelection(),
-    });
+  const baseModel = createRuntimeModel(runtime, {
+    // Memory extraction/dream run after the turn; use the low-priority queue even
+    // when the turn model is inherited. A fresh handle also avoids carrying the
+    // main turn's admission (observer) into a background sidecar.
+    selection: input.model
+      ? modelSelectionFromActiveModel(input.model)
+      : runtime.getSessionModelSelection(),
+    admissionPriority: "background",
+  });
   const model = withModelInvocationContext(baseModel, (request) => ({
     // Extraction 是 transcript 的消费者；不把它自己的请求写回同一 model-io 目录，
     // 避免后台链路占用 rollout 槽位并在后续 Extraction 中自反馈。
@@ -70,7 +75,8 @@ export function captureProjectMemoryAgentContext(
     midConversationSystem: runtime.config.midConversationSystem,
     model,
     operation: input.operation,
-    readFileState: new Map(runtime.readFileState),
+    // Тот же workspace: карта диапазонов общая, отдельное хранилище не заводим.
+    readFileState: runtime.readFileState,
     // Memory 的既有执行策略不允许 ToolSearch；历史引用只在此请求投影中降级。
     tools: runtime
       .getTools(model)
@@ -122,7 +128,7 @@ export function createProjectMemoryAgentToolExecutor(
     permissionService: new PermissionService(defaultPermissionConfig),
     // Memory agent 必须继承 Main 已完成的 Read；否则 provider context 说文件已读，
     // Edit 执行边界却会拒绝同一文件，和基线的 cloned tool context 不一致。
-    readFileState: new Map(context.readFileState),
+    readFileState: context.readFileState,
     registry: runtime.registry,
     runtimeScope: "main",
     sessionId: runtime.sessionId,

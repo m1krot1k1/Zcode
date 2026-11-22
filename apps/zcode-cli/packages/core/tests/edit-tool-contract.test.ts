@@ -344,16 +344,18 @@ describe("Edit tool contract", () => {
         readFileState: createReadFileState(file, "available content"),
       }),
     );
-    expect(failure).toEqual({
-      result: false,
-      errorCode: 8,
-      message: rawMessage,
-    });
     if (!isToolHandlerFailure(failure)) throw new Error("Expected Edit handler to fail");
+    // Инкремент 4.2: к исходному тексту ошибки добавляется BestMatchDiagnostic,
+    // поэтому проверяем сохранность raw-текста и наличие диагностического блока.
+    expect(failure.result).toBe(false);
+    expect(failure.errorCode).toBe(8);
+    expect(failure.message.startsWith(rawMessage)).toBe(true);
+    expect(failure.message).toContain("Reason:");
     const result = createErrorResult(toolCall, createToolHandlerFailureError(toolCall, failure));
 
     expect(result.error?.message).not.toBe(rawMessage);
-    expect(result.modelContent).toBe(`<tool_use_error>${rawMessage}</tool_use_error>`);
+    expect(result.modelContent).toBe(`<tool_use_error>${failure.message}</tool_use_error>`);
+    expect(result.modelContent).toContain(rawMessage);
   });
 
   it("does not misclassify unexpected Edit exceptions as tool-owned failures", () => {
@@ -636,7 +638,7 @@ describe("Edit tool contract", () => {
     ).resolves.toMatchObject({
       result: false,
       errorCode: 8,
-      message: "String to replace not found in file.\nString: not present",
+      message: expect.stringContaining("String to replace not found in file.\nString: not present"),
     });
 
     await expect(
@@ -647,8 +649,10 @@ describe("Edit tool contract", () => {
     ).resolves.toMatchObject({
       result: false,
       errorCode: 9,
-      message:
+      // Инкремент 4.2: прежний текст ошибки сохранён, диагностика добавляется ниже.
+      message: expect.stringContaining(
         "Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: name",
+      ),
     });
   });
 

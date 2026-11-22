@@ -95,15 +95,20 @@ vi.mock("@/feedback/feedbackStore.js", () => ({
     }),
 }));
 
+const captionMenuPlatform = {
+  canOpenCommunity: vi.fn(async () => false),
+  captureWindowScreenshot: capturedWindowsCaptionMenu.captureWindowScreenshot,
+  executeDesktopCommand: capturedWindowsCaptionMenu.executeDesktopCommand,
+  exportLogs: capturedWindowsCaptionMenu.exportLogs,
+  openExternal: capturedWindowsCaptionMenu.openExternal,
+  openInFileManager: vi.fn(async () => ({ success: true })),
+};
+
+// Причина: `useSettings` берёт платформу через `useOptionalPlatform`, поэтому мок
+// обязан экспортировать оба хука реального модуля.
 vi.mock("@/hooks/usePlatform.js", () => ({
-  usePlatform: () => ({
-    canOpenCommunity: vi.fn(async () => false),
-    captureWindowScreenshot: capturedWindowsCaptionMenu.captureWindowScreenshot,
-    executeDesktopCommand: capturedWindowsCaptionMenu.executeDesktopCommand,
-    exportLogs: capturedWindowsCaptionMenu.exportLogs,
-    openExternal: capturedWindowsCaptionMenu.openExternal,
-    openInFileManager: vi.fn(async () => ({ success: true })),
-  }),
+  usePlatform: () => captionMenuPlatform,
+  useOptionalPlatform: () => captionMenuPlatform,
 }));
 
 describe("WindowsCaptionMenuButton", () => {

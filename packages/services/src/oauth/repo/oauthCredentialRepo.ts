@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- OAuth 凭据仓储集中维护 ZAI/BigModel 登录镜像 key 边界，拆分会让鉴权事实源更难追踪。 */
 import { Buffer } from "node:buffer";
 import type {
   OAuthLoginAttribution,

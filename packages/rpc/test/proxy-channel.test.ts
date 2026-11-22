@@ -21,7 +21,15 @@ function createServicePair<T extends object>(service: unknown) {
   const ch = client.getChannel("svc");
   const proxy = ProxyChannel.toService<T>(ch);
 
-  return { proxy, server, client, dispose: () => { server.dispose(); client.dispose(); } };
+  return {
+    proxy,
+    server,
+    client,
+    dispose: () => {
+      server.dispose();
+      client.dispose();
+    },
+  };
 }
 
 describe("ProxyChannel", () => {
@@ -65,6 +73,24 @@ describe("ProxyChannel", () => {
 
     await received;
     expect(values).toEqual(["change1", "change2"]);
+    dispose();
+  });
+
+  it("should release function-style event subscriptions without throwing", async () => {
+    let releaseCalls = 0;
+    const service = {
+      onDidChange: (_listener: (value: string) => void) => () => {
+        releaseCalls += 1;
+      },
+    };
+
+    const { proxy, dispose } = createServicePair<{ onDidChange: Event<string> }>(service);
+    const subscription = proxy.onDidChange(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(() => subscription.dispose()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(releaseCalls).toBe(1);
     dispose();
   });
 
@@ -137,9 +163,9 @@ describe("ProxyChannel", () => {
     expect(exported.archive).toBeInstanceOf(Uint8Array);
     expect([...exported.archive]).toEqual([31, 139, 8, 0]);
 
-    await expect(
-      proxy.importArchive({ archive: new Uint8Array([1, 2, 3]) }),
-    ).resolves.toEqual([1, 2, 3]);
+    await expect(proxy.importArchive({ archive: new Uint8Array([1, 2, 3]) })).resolves.toEqual([
+      1, 2, 3,
+    ]);
     expect(received).toEqual([true]);
     dispose();
   });

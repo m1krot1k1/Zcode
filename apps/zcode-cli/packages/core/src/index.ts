@@ -20,6 +20,9 @@ export type { ToolSchedule, ToolScheduleItem, ToolDependency } from "./tool/sche
 export { createToolRegistry, ToolRegistry, ToolRegistryImpl } from "./tool/registry.js";
 export { createToolExecutor, ToolExecutor, ToolExecutorImpl } from "./tool/executor.js";
 export { builtInTools, registerBuiltInTools } from "./tool/handlers/index.js";
+// Порт интерактивных PTY-сессий: контракт, который обязан реализовать хост,
+// чтобы инструмент `PtySession` вообще появился в списке инструментов хода.
+export type { PtySessionPort } from "./tool/handlers/pty-session.js";
 // dwf driver 的 submit profile 运行时守卫要把 typed 声明换回通用声明。
 export {
   createSubmitResultToolEntry,
@@ -184,6 +187,21 @@ export { color, formatJson, supportsColor } from "./output.js";
 // Environment helpers
 export { getRuntimeInfo } from "./environment.js";
 export type { RuntimeInfo } from "./environment.js";
+
+// Provider quota fallback
+export {
+  PROVIDER_QUOTA_FALLBACK_EXHAUSTED_CODE,
+  createProviderQuotaFallbackModel,
+  isProviderQuotaExhaustedFailure,
+  resolveProviderQuotaReason,
+  selectProviderFallbackCandidates,
+} from "./runtime/methods/provider-quota-fallback.js";
+export type {
+  ProviderFallbackAttempt,
+  ProviderFallbackEvent,
+  ProviderFallbackModelInput,
+  ProviderModelClassFacts,
+} from "./runtime/methods/provider-quota-fallback.js";
 
 export type {
   Logger,

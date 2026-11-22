@@ -56,6 +56,7 @@ export const DEFAULT_E2E_DESKTOP_BUILD_INPUTS = [
   "packages/provider-node/src/zcode-builtin-release.ts",
   "packages/desktop/scripts/run-production-build.mjs",
   "packages/desktop/tsconfig.json",
+  "packages/desktop/tsconfig.desktop-shared.json",
   "packages/desktop/tsconfig.host.json",
   "packages/desktop/tsconfig.main.json",
   "packages/desktop/tsconfig.preload.json",
@@ -86,6 +87,13 @@ export const E2E_DESKTOP_BUILD_ENV_NAMES = [
   "ZAI_BUSINESS_LOGIN_URL",
   "ZAI_OAUTH_CLIENT_ID",
   "ZAI_OAUTH_ORIGIN",
+  // Bugfix: 以下变量由 tsup/vite 通过 helper 读取后编译进 define，读取点不在入口配置里，
+  // 旧正则与指纹都漏掉了它们：ZCODE_PREVIEW_IDENTITY 决定 __ZCODE_PRODUCT_FLAVOR__，
+  // ZCODE_ARMS_RUM_ENDPOINT / ZCODE_TELEMETRY_REPORT_ENDPOINT / ZCODE_AUTO_UPDATE 决定
+  // __ZCODE_ARMS_RUM_ENDPOINT__ 等 build-time defines。不纳入指纹会让身份或上报配置
+  // 不同的构建互相复用产物。
+  "ZCODE_ARMS_RUM_ENDPOINT",
+  "ZCODE_AUTO_UPDATE",
   "ZCODE_BASE_URL",
   "ZCODE_COMMIT",
   "ZCODE_CUA_HELPER_BUILD_ID",
@@ -93,10 +101,15 @@ export const E2E_DESKTOP_BUILD_ENV_NAMES = [
   "ZCODE_ENV",
   "ZCODE_E2E_COVERAGE",
   "ZCODE_E2E_KEEP_BUILD_CACHE",
+  // Bugfix: tsup.config.ts 在第 74、217 行按 ZCODE_OFFLINE_PREVIEW 切换 endpoint 并写入
+  // __ZCODE_OFFLINE_PREVIEW__，不纳入指纹会让离线预览构建复用在线构建的产物。
+  "ZCODE_OFFLINE_PREVIEW",
   "ZCODE_PACKAGED_AGENT_OTEL_ENDPOINT",
   "ZCODE_PACKAGED_AGENT_OTEL_HEADERS",
   "ZCODE_PACKAGED_AGENT_OTEL_SERVICE_NAME",
+  "ZCODE_PREVIEW_IDENTITY",
   "ZCODE_PRODUCTION_BASE_URL",
+  "ZCODE_TELEMETRY_REPORT_ENDPOINT",
   "ZCODE_TEST_BASE_URL",
 ];
 

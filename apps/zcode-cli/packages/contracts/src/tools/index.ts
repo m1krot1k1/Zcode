@@ -4,18 +4,22 @@
 
 // Re-export all tool types
 export * from "./contract.js";
+export * from "./capability-install.js";
 export * from "./json-schema.js";
 export * from "./read.js";
 export * from "./write.js";
 export * from "./edit.js";
 export * from "./apply-patch.js";
+export * from "./multi-edit.js";
 export * from "./bash.js";
 export * from "./node-repl.js";
+export * from "./pty-session.js";
 export * from "./glob.js";
 export * from "./grep.js";
 export * from "./webfetch.js";
 export * from "./agent.js";
 export * from "./skill.js";
+export * from "./skill-marketplace.js";
 export * from "./todo.js";
 export * from "./automation.js";
 export * from "./off-peak.js";

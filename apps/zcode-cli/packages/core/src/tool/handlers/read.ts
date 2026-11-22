@@ -31,7 +31,7 @@ import {
   type FileSystemStatResult,
   type TraceContext,
 } from "@zcode/contracts";
-import { resolveWorkspacePath } from "../path-policy.js";
+import { resolveWorkspacePath, workspaceBoundaryOptions } from "../path-policy.js";
 import { createReadFileStateKey, normalizeReadFileStateMtimeMs } from "../read-file-state.js";
 import { createReadFileStateMetadata } from "../read-file-state-metadata.js";
 import { inferImageMimeFromPath, readImageFile } from "./read-image.js";
@@ -59,7 +59,9 @@ const READ_PROVIDER_DESCRIPTION = [
   "",
   "- `file_path` must be an absolute path.",
   `- Reads up to ${READ_DEFAULT_MAX_LINES} lines by default.`,
-  "- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters",
+  "- Prefer a targeted range: pass offset and limit when a CodeIndex/Grep hit already shows the lines you need. Reading a whole large file keeps costing context on every later step of the turn and is the main reason turns get slow.",
+  "- A ranged result states the full Read line count; never treat the number of displayed lines as the file's total. Use a full-file count when the exact count matters.",
+  "- Read the whole file only when you must edit it and no narrower range suffices. When several ranges are needed, issue the Reads in one parallel batch instead of widening one of them.",
   "- Results are returned using cat -n format, with line numbers starting at 1",
   "- Reads images (PNG, JPG, …) and presents them visually.",
   "- Reads videos (MP4, MOV, WEBM, …) and presents them as video input (subject to ZCode's video input limit).",
@@ -161,6 +163,7 @@ export const readHandler: ToolHandler = async (input, context) => {
     operation: "read",
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
+    ...workspaceBoundaryOptions(context),
   });
 
   try {
@@ -475,6 +478,11 @@ export const readToolEntry: ToolEntry = {
     sideEffectScope: "none",
     riskLevel: "low",
     needsApproval: false,
+  },
+  // ask 模式预审批：只声明路径，边界判定仍在 path-policy。
+  resolveWorkspaceBoundaryPaths: (input) => {
+    const parsed = ReadInputSchema.safeParse(input);
+    return parsed.success ? [{ path: parsed.data.file_path, operation: "read" }] : [];
   },
   handler: readHandler,
   validateInput: validateReadInput,

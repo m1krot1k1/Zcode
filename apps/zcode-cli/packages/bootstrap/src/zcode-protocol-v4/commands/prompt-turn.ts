@@ -11,7 +11,7 @@ import type { SendInputOptions, SendInputResult } from "../../app/types.js";
 import { runWithSessionResidencyFinalization } from "../../session-execution/index.js";
 import type { V4CommandCoreHost, V4SessionRecordView } from "./types.js";
 
-export interface StartPromptTurnParamsBase {
+interface StartPromptTurnParamsBase {
   content: string;
   /** v4 锚点：inputId=queryId=commandId（权威数据 sourceCommandId 对账）。 */
   inputId: string;
@@ -32,9 +32,9 @@ export interface StartPromptTurnParamsBase {
   botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
 }
 
-export type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
+type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
 
-export interface PromptTurnStartResult {
+interface PromptTurnStartResult {
   /** Core admission 已完成；不等待 TurnStarted 或 projection commit。 */
   turnStarted: Promise<void>;
   /** Core 真实完成 promise，仅供生命周期清理使用，不属于 ACK 边界。 */
@@ -54,11 +54,6 @@ export class V4PromptRejectedError extends Error {
     super(message);
     this.name = "V4PromptRejectedError";
   }
-}
-
-/** 旧 queue promotion 兼容谓词：新的 Core admission 不再产生 projection authority 不确定态。 */
-export function isPromptTurnStartUncertainFailure(_error: unknown): boolean {
-  return false;
 }
 
 /**

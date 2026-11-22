@@ -8,6 +8,8 @@ import {
   ModelConfigRules,
   ProviderConfig,
   ProviderConfigMap,
+  type ProviderSource,
+  type RuntimeProviderCatalogSnapshot,
   type ProviderConfigLayerUpdate,
 } from "@zcode/provider";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -36,12 +38,49 @@ afterEach(async () => {
       .splice(0)
       // Windows 上 runtime 句柄异步关闭，rm 立刻删会撞 EBUSY；带重试兜住句柄释放延迟
       .map((directory) =>
-        rm(directory, { force: true, recursive: true, maxRetries: 10, retryDelay: 200 }),
+        rm(directory, {
+          force: true,
+          recursive: true,
+          maxRetries: 10,
+          retryDelay: 200,
+        }),
       ),
   );
 });
 
 describe("@zcode/provider-node", () => {
+  it("injects a runtime provider catalog into the Node registry lifecycle", async () => {
+    const directory = await temporaryDirectory();
+    const runtimeCatalog: RuntimeProviderCatalogSnapshot = {
+      revision: "opencode-models-1",
+      providers: [],
+    };
+    const listeners = new Set<(reason: string) => void>();
+    const runtimeProviderSource: ProviderSource<RuntimeProviderCatalogSnapshot> = {
+      read: async () => runtimeCatalog,
+      onDidChange(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const runtime = new NodeProviderRegistryRuntime({
+      zcodeBuiltinFilePath: zcodeBuiltinProviderConfigFilePath,
+      personalFilePath: join(directory, "personal.json"),
+      watch: false,
+      runtimeProviderSource,
+    });
+
+    await runtime.start();
+    expect(runtime.registryService.getSnapshot()?.sourceRevisions.runtimeProviders).toBe(
+      "opencode-models-1",
+    );
+    expect(runtime.registryService.getSnapshot()?.runtimeProviders?.providers).toEqual([]);
+    expect(listeners.size).toBe(1);
+
+    runtime.dispose();
+    expect(listeners.size).toBe(0);
+  });
+
   it("从 Built-in Model Config Rules 解析 ox-alpha 同策略别名和 API-specific reasoning", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
@@ -69,7 +108,10 @@ describe("@zcode/provider-node", () => {
           anthropic.optionSpecs!.reasoningLevel!.map!,
           "reasoningLevel",
         ).evaluate("max"),
-      ).toEqual({ thinking: { type: "adaptive" }, output_config: { effort: "max" } });
+      ).toEqual({
+        thinking: { type: "adaptive" },
+        output_config: { effort: "max" },
+      });
 
       const openAiCompatible = snapshot.models.resolve({
         providerId: "custom",
@@ -287,7 +329,9 @@ describe("@zcode/provider-node", () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "zcodeBuiltin.json");
     await writeZCodeBuiltin(filePath, "model-a");
-    const source = new NodeZCodeBuiltinProviderConfigSource({ bundledFilePath: filePath });
+    const source = new NodeZCodeBuiltinProviderConfigSource({
+      bundledFilePath: filePath,
+    });
     const reasons: string[] = [];
     source.onDidChange((reason) => reasons.push(reason));
     await source.read();
@@ -297,7 +341,9 @@ describe("@zcode/provider-node", () => {
     expect(reasons).toEqual([]);
 
     await writeZCodeBuiltin(filePath, "model-b");
-    await vi.waitFor(() => expect(reasons).toContain("file-changed"), { timeout: 10_000 });
+    await vi.waitFor(() => expect(reasons).toContain("file-changed"), {
+      timeout: 10_000,
+    });
     await settleFileWatcher();
 
     expect(reasons).toEqual(["file-changed"]);
@@ -311,8 +357,14 @@ describe("@zcode/provider-node", () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
     await writeFile(filePath, JSON.stringify(storedConfig(emptyUpdate())), "utf8");
-    const first = new NodePersonalProviderConfigRepository({ filePath, watch: false });
-    const second = new NodePersonalProviderConfigRepository({ filePath, watch: false });
+    const first = new NodePersonalProviderConfigRepository({
+      filePath,
+      watch: false,
+    });
+    const second = new NodePersonalProviderConfigRepository({
+      filePath,
+      watch: false,
+    });
 
     await Promise.all([
       first.update((current) => ({
@@ -372,7 +424,9 @@ describe("@zcode/provider-node", () => {
       providers: new ProviderConfigMap([["external", personalProviderConfig(false)]]),
       models: ModelConfigRules.empty(),
     }));
-    await vi.waitFor(() => expect(reasons).toContain("poll-changed"), { timeout: 10_000 });
+    await vi.waitFor(() => expect(reasons).toContain("poll-changed"), {
+      timeout: 10_000,
+    });
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     expect(reasons).toEqual(["poll-changed"]);
@@ -397,7 +451,9 @@ describe("@zcode/provider-node", () => {
     repository.onDidChange((reason) => reasons.push(reason));
     await repository.read();
 
-    await vi.waitFor(() => expect(pollingErrors).toHaveLength(1), { timeout: 10_000 });
+    await vi.waitFor(() => expect(pollingErrors).toHaveLength(1), {
+      timeout: 10_000,
+    });
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(pollingErrors).toHaveLength(1);
 
@@ -412,7 +468,9 @@ describe("@zcode/provider-node", () => {
       ),
       "utf8",
     );
-    await vi.waitFor(() => expect(reasons).toContain("poll-changed"), { timeout: 10_000 });
+    await vi.waitFor(() => expect(reasons).toContain("poll-changed"), {
+      timeout: 10_000,
+    });
     expect((await repository.read()).providers.keys()).toEqual(["recovered"]);
     repository.dispose();
   });

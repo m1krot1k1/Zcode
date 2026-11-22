@@ -1,7 +1,7 @@
 import type { RemoteTarget } from "@zcode/shared";
 import { isRemoteWorkspaceIdentity } from "@zcode/shared";
 
-export type ComputerUseAvailabilityKind =
+type ComputerUseAvailabilityKind =
   | "local-macos"
   | "local-windows"
   | "local-linux"
@@ -11,15 +11,16 @@ export type ComputerUseAvailabilityKind =
   | "remote-server"
   | "web";
 
-export interface ComputerUseAvailability {
+interface ComputerUseAvailability {
   kind: ComputerUseAvailabilityKind;
   supported: boolean;
 }
 
-export interface ComputerUseAvailabilityInput {
+interface ComputerUseAvailabilityInput {
   isDesktop?: boolean;
   isMacDesktop?: boolean;
   isWindowsDesktop?: boolean;
+  isLinuxDesktop?: boolean;
   remoteSessionId?: string | null;
   remoteTarget?: RemoteTarget | null;
   workspaceIdentity?: string | null;
@@ -29,6 +30,7 @@ export function resolveComputerUseAvailability({
   isDesktop = false,
   isMacDesktop = false,
   isWindowsDesktop = false,
+  isLinuxDesktop = false,
   remoteSessionId,
   remoteTarget,
   workspaceIdentity,
@@ -55,6 +57,10 @@ export function resolveComputerUseAvailability({
   if (!isDesktop) return { kind: "web", supported: false };
   if (isMacDesktop) return { kind: "local-macos", supported: true };
   if (isWindowsDesktop) return { kind: "local-windows", supported: true };
+  // 4.5b: Linux поддержан нативным `services-cua-linux-host` (X11 XTest через koffi,
+  // Wayland через портал RemoteDesktop). Реальную доступность подтверждает probe():
+  // headless-машина вернёт cua_unavailable с причиной, а не «платформа не поддерживается».
+  if (isLinuxDesktop) return { kind: "local-linux", supported: true };
   return { kind: "local-linux", supported: false };
 }
 

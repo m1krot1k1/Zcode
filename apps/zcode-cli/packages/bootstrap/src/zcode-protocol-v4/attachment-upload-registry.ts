@@ -39,7 +39,7 @@ interface CommittedUpload {
   expiresAt: number;
 }
 
-export interface AttachmentUploadRegistryOptions {
+interface AttachmentUploadRegistryOptions {
   now: () => number;
   putSessionAttachment: (
     sessionId: string,

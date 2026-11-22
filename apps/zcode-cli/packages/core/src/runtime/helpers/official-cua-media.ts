@@ -1,7 +1,7 @@
 import type { ModelMessageContentBlock } from "../deps.js";
 import { containsOfficialCuaImageRefCredentialText } from "@zcode/zcode-cua/frame-contract";
 
-export const OFFICIAL_CUA_RASTER_UNAVAILABLE_TEXT =
+const OFFICIAL_CUA_RASTER_UNAVAILABLE_TEXT =
   "This CUA raster is not visible in this request. " +
   "Do not send a coordinate target; capture a new raster first.";
 

@@ -1,5 +1,6 @@
 import { type McpServerStatus, type ZCodeMcpServer } from "@zcode/shared";
 import {
+  TID_MCP_CONNECT_PROJECT_SERVER_BUTTON,
   TID_MCP_OPEN_AUTHORIZATION_BUTTON,
   TID_MCP_SERVER_ROW,
   testId,
@@ -35,11 +36,13 @@ export function McpStatusDot({
       ? "text-green-500"
       : status === "connecting"
         ? "text-yellow-500"
-        : status === "error"
-          ? "text-red-500"
-          : attention
-            ? "text-yellow-500"
-            : "text-foreground-subtlest";
+        : status === "requires_approval"
+          ? "text-yellow-500"
+          : status === "error"
+            ? "text-red-500"
+            : attention
+              ? "text-yellow-500"
+              : "text-foreground-subtlest";
 
   const icon =
     !disabled && status === "connecting" ? (
@@ -65,12 +68,14 @@ function McpServerItem({
   onEdit,
   onToggle,
   onOpenAuthorization,
+  onConnectProjectServer,
   hideMetadata,
 }: {
   server: ZCodeMcpServer;
   onEdit: (server: ZCodeMcpServer) => void;
   onToggle: (id: string, enabled: boolean) => void;
   onOpenAuthorization?: (server: ZCodeMcpServer) => void;
+  onConnectProjectServer?: (server: ZCodeMcpServer) => void;
   hideMetadata: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -79,8 +84,12 @@ function McpServerItem({
     : (server.config.type ?? (server.config.url ? "http" : "?"));
   const canEdit = !server.location || server.location.source === "zcode";
   const canOpenAuthorization = Boolean(server.authorization?.authorizationUrl);
+  const canConnectProjectServer = server.status === "requires_approval";
   const openAuthorizationLabel = intl.formatMessage({
     id: "settings.mcp.oauth.openAuthorization",
+  });
+  const connectProjectServerLabel = intl.formatMessage({
+    id: "settings.mcp.projectApproval.connect",
   });
   const statusReason = intl.formatMessage({
     id:
@@ -90,9 +99,11 @@ function McpServerItem({
           ? "settings.mcp.status.connectedReason"
           : server.status === "connecting"
             ? "settings.mcp.status.connectingReason"
-            : server.status === "disconnected"
-              ? "settings.mcp.status.disconnectedReason"
-              : "settings.mcp.status.unknownReason",
+            : server.status === "requires_approval"
+              ? "settings.mcp.status.requiresApprovalReason"
+              : server.status === "disconnected"
+                ? "settings.mcp.status.disconnectedReason"
+                : "settings.mcp.status.unknownReason",
   });
 
   const description = server.config.url
@@ -115,7 +126,11 @@ function McpServerItem({
       >
         <Cable className="size-4" aria-hidden="true" />
         <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-background">
-          <McpStatusDot status={server.status} reason={statusReason} />
+          <McpStatusDot
+            status={server.status}
+            attention={canConnectProjectServer}
+            reason={statusReason}
+          />
         </span>
       </div>
       <div className="min-w-0">
@@ -137,6 +152,27 @@ function McpServerItem({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        {canConnectProjectServer && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid={testId(TID_MCP_CONNECT_PROJECT_SERVER_BUTTON, server.name)}
+            onClick={() =>
+              runUserAction({
+                input: {
+                  featureId: "extension.mcp",
+                  action: "connect_project_server",
+                  trigger: "button",
+                },
+                operation: () => onConnectProjectServer?.(server),
+                completed: { resultSource: "platform_result" },
+                failureStage: "mcp_connect",
+              })
+            }
+          >
+            {connectProjectServerLabel}
+          </Button>
+        )}
         {canOpenAuthorization && (
           <Button
             variant="link"
@@ -170,6 +206,7 @@ export function McpServerList({
   onEdit,
   onToggle,
   onOpenAuthorization,
+  onConnectProjectServer,
   emptyTitle,
   emptyDescription,
   hideMetadata = false,
@@ -179,6 +216,7 @@ export function McpServerList({
   onEdit: (server: ZCodeMcpServer) => void;
   onToggle: (id: string, enabled: boolean) => void;
   onOpenAuthorization?: (server: ZCodeMcpServer) => void;
+  onConnectProjectServer?: (server: ZCodeMcpServer) => void;
   emptyTitle: string;
   emptyDescription: string;
   hideMetadata?: boolean;
@@ -212,6 +250,7 @@ export function McpServerList({
           onEdit={onEdit}
           onToggle={onToggle}
           onOpenAuthorization={onOpenAuthorization}
+          onConnectProjectServer={onConnectProjectServer}
           hideMetadata={hideMetadata}
         />
       )}

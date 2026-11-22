@@ -7,6 +7,8 @@ import type { WorkspacePurpose } from "./workspacePurpose.js";
 import type { DynamicWorkflowMode } from "./dynamic-workflow-feature.js";
 import type { EmbeddedBrowserViewportPreference } from "./browser-use/command-metadata.js";
 import type { AppToolSearchMode } from "./app-runtime-preferences.js";
+import type { Stage4Settings } from "./stage4-settings/settings.js";
+import type { PromptDepthProfile } from "./prompt-depth.js";
 
 // ── Domain types ──
 
@@ -74,7 +76,17 @@ export interface SystemInfo {
 }
 
 /** 支持的语言 */
-export type Locale = "zh-CN" | "en-US";
+export type Locale = "zh-CN" | "en-US" | "ru-RU";
+
+/**
+ * 部分尚未支持俄语的第三方页面和服务仍只接受中英语言标记。
+ * 只在这些集成边界调用，避免把应用自身的俄语 locale 降级。
+ */
+export type LegacyBilingualLocale = "zh-CN" | "en-US";
+
+export function toLegacyBilingualLocale(locale: Locale): LegacyBilingualLocale {
+  return locale === "zh-CN" ? "zh-CN" : "en-US";
+}
 
 /** 界面语言偏好；system 表示跟随当前运行端系统语言。 */
 export type LocalePreference = "system" | Locale;
@@ -273,10 +285,18 @@ export interface AppSettings {
   integratedTerminalShell?: IntegratedTerminalShellSelection;
   /** HTTP/HTTPS 出口代理，例如 http://127.0.0.1:7890；为空时直连。下次启动 app/agent 生效。 */
   httpProxy?: string;
+  /** 设置页中按行保存的代理地址清单；实际流量仍只使用 httpProxy 指向的活动地址。 */
+  httpProxyList?: string;
   /** 代理绕过规则，例如 localhost,127.0.0.1,.example.com；只在 httpProxy 存在时影响 renderer，agent/tool 仍按显式环境使用。 */
   httpProxyNoProxy?: string;
   /** 自定义 PEM 根证书路径；下次启动 app/agent 时用于 renderer 校验与 agent NODE_EXTRA_CA_CERTS。 */
   httpProxyCaCertPath?: string;
+  /** @deprecated Legacy persisted setting. Retained for compatibility; runtime ignores it. */
+  spawnBudget?: number;
+  /** 每个 root run 的并行偏好上限；0/未设置表示由 CPU 和 Host 实际容量自适应。 */
+  subagentMaxParallel?: number;
+  /** 所有 subagent 的最短执行分钟数；0/未设置表示按角色默认值。 */
+  subagentTaskTimeoutMinutes?: number;
   /**
    * 内置浏览器忽略 HTTPS 证书校验错误（自签名、过期、域名不匹配等），用于访问内网测试站点。
    * 只影响内置浏览器出口，不影响 ZCode 自身对后端与模型 API 的请求。默认关闭，重启后生效。
@@ -318,6 +338,10 @@ export interface AppSettings {
   };
   /** 桌面端 Chromium 硬件加速开关；只在下次启动 main 进程早期生效，Web/手机端忽略。 */
   desktopChromiumHardwareAccelerationEnabled?: boolean;
+  /** 是否允许发送产品遥测；undefined 视为默认开启，DO_NOT_TRACK 仍然强制关闭。 */
+  telemetryEnabled?: boolean;
+  /** Workspace boundary для file-tools: strict | ask | allow (default allow). */
+  workspaceBoundary?: "strict" | "ask" | "allow";
   /** 是否在消息流中展示模型思考过程 */
   messageStreamShowReasoning?: boolean;
   // TODO(settings-schema-version): 能证明所有受支持升级路径都已执行本次迁移后，改用统一 settings schema version，并一起删除此 marker、迁移函数和持久化判断。
@@ -331,6 +355,8 @@ export interface AppSettings {
   toolGroupingTerminalEnabled?: boolean;
   /** 是否把连续的 Write/Edit/ApplyPatch 工具调用聚合成 Changes。 */
   toolGroupingChangesEnabled?: boolean;
+  /** Одноразовая миграция старого default false → true. */
+  toolGroupingChangesMigrationVersion?: 1;
   /** ZCode 运行中继续输入时，是排队到下一轮，还是引导到下一次工具调用后运行 */
   zcodeInteractionBehavior?: ZCodeInteractionBehavior;
   /** Agent 提问五分钟无人回答时是否允许自动继续；缺失按开启兼容旧配置。 */
@@ -344,6 +370,8 @@ export interface AppSettings {
   dynamicWorkflowMode?: DynamicWorkflowMode;
   /** 已启用的内置 Agent CLI；UI 对外仍展示为“Install”，底层语义保持为启用内置能力。 */
   enabledBuiltinAgentCliProviders?: ZCodeProvider[];
+  /** Controls whether the local OpenCode CLI appears as a selectable Composer provider. */
+  openCodeCliEnabled?: boolean;
   /** 设置页中每个 Provider Family 当前唯一的结构化连接选择。 */
   providerFamilyConnectionSelections?: ProviderFamilyConnectionSelectionSettings;
   /** 用户通过 WelcomeScreen 成功连接后确认的 ZAI / BigModel provider family 运行域。 */
@@ -440,4 +468,21 @@ export interface AppSettings {
   };
   /** 设置页里的临时 endpoint override；正式/测试默认 base url 由 ZCODE_BASE_URL env 管理。 */
   zcodeEndpointOrigin?: string;
+  /**
+   * Настройки подсистем Этапа 4 (4.1–4.6). Единственный владелец — `settingService`;
+   * схемы и дефолты живут в `shared-stage4-settings`, runtime-проекция — в его `host-runtime`.
+   */
+  agentCoreAdvanced?: Stage4Settings["agentCoreAdvanced"];
+  promptEnhancerSettings?: Stage4Settings["promptEnhancerSettings"];
+  chatAutocompleteSettings?: Stage4Settings["chatAutocompleteSettings"];
+  proactiveSuggestionSettings?: Stage4Settings["proactiveSuggestionSettings"];
+  parallelJobsSettings?: Stage4Settings["parallelJobsSettings"];
+  codeIndexSettings?: Stage4Settings["codeIndexSettings"];
+  sandboxSettings?: Stage4Settings["sandboxSettings"];
+  browserAssistantSettings?: Stage4Settings["browserAssistantSettings"];
+  /**
+   * Глубина рассуждений (4.4): читается рантаймом промпта и экраном настроек 4.6.
+   * Тип берётся из `prompt-depth`, чтобы UI и рантайм не расходились в значениях.
+   */
+  promptDepth?: PromptDepthProfile;
 }

@@ -14,10 +14,17 @@ export function createBashProviderDescription(input: {
     `- IMPORTANT: Avoid using this tool to run ${avoidCommands} commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.`,
     `- \`timeout\` is in milliseconds: default ${input.defaultTimeoutMs}, max ${input.maxTimeoutMs}.`,
     "- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.",
+    "- Independent read-only Bash commands in the same batch run concurrently; commands with side effects are serialized as a safety barrier.",
     "",
     "# Git",
     "- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.",
     "- Use the `gh` CLI for GitHub operations (PRs, issues, API).",
     "- Commit or push only when the user asks. If on the default branch, branch first.",
+    "",
+    "# Sandbox",
+    "- The result reports the actual `sandbox.mode` and whether filesystem/network isolation was applied. The user configures the session policy; do not assume isolation is always active.",
+    "- `bwrap` (Linux) or `seatbelt` (macOS) means the workspace is writable and other paths are read-only. `degraded` means the mechanism is unavailable: the workspace is still enforced, but filesystem writes outside it are not blocked — check `sandbox.reason`.",
+    "- `none` means the user disabled the sandbox: commands run with normal user permissions, and `GH_CONFIG_DIR`, `SSH_AUTH_SOCK` and other environment variables are inherited.",
+    "- When a sandbox is active, do not try to escape it. If a command legitimately needs a path outside the workspace under an active sandbox, ask the user.",
   ].join("\n");
 }

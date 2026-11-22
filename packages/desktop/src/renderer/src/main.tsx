@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Desktop renderer bridge 聚合平台、远端 attachment 与启动编排契约。 */
 import { DatabaseStartupAdmission } from "./databaseStartupAdmission.js";
 import { initializeDesktopLocalTtft } from "./localTtftBootstrap.js";
 import { createRoot } from "react-dom/client";
@@ -21,6 +20,7 @@ import "@zcode/ui/styles.css";
 import { connectViaMessagePort, createMessagePortServiceConnection } from "@zcode/client";
 import {
   InternalChannels,
+  HOST_PROCESS_EXITED_DOM_EVENT,
   databaseStartupStateSchema,
   type DatabaseStartupControl,
   collectTelemetryRendererContext,
@@ -273,6 +273,17 @@ function StartupReadyNotifier() {
 }
 
 function handleServicePortMessage(event: MessageEvent): void {
+  if (event.source === window && event.data?.type === InternalChannels.HostProcessExited) {
+    // Host 已退出/respawn；转成 DOM 事件，由 Root 的平台效果层决定提示方式。
+    // 不能复用 DatabaseStartupState：appInitialized 后该通道会被忽略，界面会继续挂起。
+    window.dispatchEvent(
+      new CustomEvent(HOST_PROCESS_EXITED_DOM_EVENT, {
+        detail: event.data.notification,
+      }),
+    );
+    return;
+  }
+
   if (event.source === window && event.data?.type === InternalChannels.DatabaseStartupState) {
     const result = databaseStartupStateSchema.safeParse(event.data.state);
     if (!result.success || appInitialized) return;
@@ -320,6 +331,8 @@ function initializeBusinessRoot(port: MessagePort): void {
   appInitialized = true;
   const services = connectViaMessagePort(port, {
     sourceServerManagementService: true,
+    openCodeAcpRuntime: true,
+    codeIntelligenceService: true,
   });
   baseServicesForRemoteSessions = services;
   registerBaseWorkspaceServices(services);

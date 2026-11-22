@@ -129,13 +129,24 @@ if (process.platform === "darwin" && existsSync(electronBinary)) {
   console.log(`[dev] Prepared macOS ZCode Dev bundle: ${devBundle.appPath}`);
 }
 
-const electron = spawn(electronCommand, ["."], {
+const electron = spawn(electronCommand, [".", ...resolveDevMediaArgs()], {
   cwd: root,
   stdio: "inherit",
   env: { ...process.env, ELECTRON_RENDERER_URL: rendererUrl },
   windowsHide: true,
   detached: process.platform !== "win32",
 });
+
+function resolveDevMediaArgs() {
+  // Dev-only fake microphone for voice UI verification; production never sets this.
+  const file = process.env.ZCODE_DEV_FAKE_MIC_FILE?.trim();
+  if (!file) return [];
+  return [
+    "--use-fake-device-for-media-stream",
+    "--use-fake-ui-for-media-stream",
+    `--use-file-for-fake-audio-capture=${file}`,
+  ];
+}
 
 let electronClosed = false;
 let shuttingDown = false;

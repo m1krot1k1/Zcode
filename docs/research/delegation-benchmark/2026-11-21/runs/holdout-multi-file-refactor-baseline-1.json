@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-multi-file-refactor",
+  "family": "multi-file-refactor",
+  "arm": "baseline",
+  "repeat": 1,
+  "startedAt": "2026-11-21T07:56:19.358Z",
+  "durationMs": 26350,
+  "tokens": 202115,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "clamp refactor acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "The duplicated helper is gone and both modules now share one implementation.\n\nWhat changed:\n- Created `src/clamp.mjs` exporting `clamp(n, min, max)`.\n- `src/a.mjs` imports `clamp` from `./clamp.mjs` and re-exports it, so its existing public surface (`percent` plus `clamp`) is unchanged, then uses it in `percent`.\n- `src/b.mjs` imports `clamp` from `./clamp.mjs`; its local declaration is deleted.\n\nVerification: I ran the modules with Node rather than inspecting them by eye. All acceptance checks passed — `percent(120)` is `'100%'`, `percent(-5)` is `'0%'`, `volume(12)` is `11`, `volume(-1)` is `0`, plus `percent(50)` and `volume(5)` unchanged. `a.mjs` and `b.mjs` now resolve to the exact same function object as `clamp.mjs`, which confirms there is a single implementation, and a grep shows no remaining local `function clamp` outside `src/clamp.mjs`.\n\nOne judgement call worth flagging: I kept `export { clamp }` in `a.mjs` because the original file exported `clamp` directly, and dropping i",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

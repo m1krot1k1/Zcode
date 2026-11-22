@@ -9,7 +9,7 @@ import { redactFeedbackText, ZCODE_VERSION, ZCODE_COMMIT } from "@zcode/shared";
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
 
-export interface FeedbackLogSource {
+interface FeedbackLogSource {
   directory: string;
   archivePrefix: string;
   exitLogsOnly?: boolean;

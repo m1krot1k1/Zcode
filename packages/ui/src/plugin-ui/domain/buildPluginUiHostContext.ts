@@ -7,7 +7,7 @@ import type {
 import type { McpAppsHostTitleBar, McpAppsStyleVariables } from "@zcode/shared/mcp-apps";
 import { PLUGIN_UI_CARD_MAX_HEIGHT_PX } from "../contract.js";
 
-export interface PluginUiHostContextInput {
+interface PluginUiHostContextInput {
   theme: "light" | "dark";
   locale: string;
   displayMode: McpUiDisplayMode;

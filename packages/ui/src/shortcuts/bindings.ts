@@ -220,7 +220,7 @@ function eventMatchesKey(event: Pick<ShortcutBindingEvent, "key" | "code">, key:
 // 录制器
 // ============================================================================
 
-export type ShortcutRecordResult =
+type ShortcutRecordResult =
   | { kind: "pending" }
   | { kind: "binding"; binding: string }
   | { kind: "invalid"; reason: "no-modifier" | "unsupported-key" };

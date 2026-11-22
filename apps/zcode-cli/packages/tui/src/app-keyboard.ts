@@ -47,11 +47,9 @@ export {
   completeModelCommand,
   completeSlashCommand,
   createCtrlCExitGuard,
-  isModeSwitchKey,
   resetCtrlCExitGuard,
   resolveCtrlCExitIntent,
-  shouldHandleInputHistoryNavigation,
-} from "./app-keyboard-helpers.js";
+  shouldHandleInputHistoryNavigation} from "./app-keyboard-helpers.js";
 
 type UseTuiKeyboardControlsOptions = {
   readOnlyView?: { back(): void };

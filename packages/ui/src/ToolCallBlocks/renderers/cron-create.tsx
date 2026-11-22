@@ -6,7 +6,7 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { describeAutomationCardSchedule } from "@/settings/automationCardSchedule.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
-import { FallbackToolCallBlock } from "@/ToolCallBlocks/renderers/fallback.js";
+import "@/ToolCallBlocks/renderers/fallback.js";
 
 export interface CronCreateAutomationSummary {
   automationId?: string;
@@ -18,14 +18,7 @@ export interface CronCreateAutomationSummary {
   maxRuns?: number;
 }
 
-const SCHEDULE_RULE_UNITS = new Set([
-  "minute",
-  "hourly",
-  "daily",
-  "weekly",
-  "monthly",
-  "yearly",
-]);
+const SCHEDULE_RULE_UNITS = new Set(["minute", "hourly", "daily", "weekly", "monthly", "yearly"]);
 
 function isScheduleRule(value: unknown): value is ZCodeAutomationScheduleRule {
   // 宽松结构校验：输出可能来自协议或历史工具结果，字段宽松地放行后由 describe 层兜底。
@@ -38,24 +31,12 @@ function isScheduleRule(value: unknown): value is ZCodeAutomationScheduleRule {
 }
 
 function normalizeToolName(value: unknown): string {
-  return typeof value === "string"
-    ? value.toLowerCase().replace(/[^a-z0-9]/gu, "")
-    : "";
+  return typeof value === "string" ? value.toLowerCase().replace(/[^a-z0-9]/gu, "") : "";
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function isCronCreateToolCall(
-  toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
-): boolean {
-  return [toolCall.toolName, toolCall.kind, toolCall.title].some(
-    (value) => normalizeToolName(value) === "croncreate",
-  );
-}
-
-export function isCronAutomationCardToolCall(
+}export function isCronAutomationCardToolCall(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): boolean {
   return [toolCall.toolName, toolCall.kind, toolCall.title].some((value) => {
@@ -116,8 +97,7 @@ export function readCronCreateAutomationOutputSummary(
   const scheduleRule = isScheduleRule(automation.scheduleRule)
     ? (automation.scheduleRule as ZCodeAutomationScheduleRule)
     : undefined;
-  const recurring =
-    typeof automation.recurring === "boolean" ? automation.recurring : undefined;
+  const recurring = typeof automation.recurring === "boolean" ? automation.recurring : undefined;
   const maxRuns =
     typeof automation.maxRuns === "number" && Number.isFinite(automation.maxRuns)
       ? automation.maxRuns
@@ -213,21 +193,5 @@ export function CronCreateAutomationCard({
         </Button>
       </div>
     </div>
-  );
-}
-
-export function CronCreateToolCallBlock(context: ToolCallBlockRenderContext) {
-  const { toolCall } = context.toolCallNode;
-  const automation = readCronCreateAutomationSummary(toolCall);
-
-  if (toolCall.status === "failed" || !automation) {
-    return <FallbackToolCallBlock {...context} />;
-  }
-
-  return (
-    <CronCreateAutomationCard
-      automation={automation}
-      onOpenAutomationsMain={context.onOpenAutomationsMain}
-    />
   );
 }

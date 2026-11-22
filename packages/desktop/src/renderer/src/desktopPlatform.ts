@@ -10,12 +10,16 @@ export function createDesktopPlatform(options: {
   return {
     canSelectFilePath: true,
     canOpenLocalFiles: true,
+    voiceDictation: window.zcode.voice,
     pluginSandbox: createDesktopPluginSandboxPlatform(),
     createLocalMediaPreviewUrl: buildLocalMediaPreviewUrl,
     isLocalDevelopmentRuntime: options.isLocalDevelopmentRuntime,
     selectDirectory: () => window.zcode.selectDirectory(),
     selectDirectories: () => window.zcode.selectDirectories(),
     selectFile: () => window.zcode.selectFile(),
+    testProxyConnectivity: (proxyEndpoint) =>
+      window.zcode.testProxyConnectivity?.(proxyEndpoint) ??
+      Promise.resolve({ ok: false, reason: "connection_failed" }),
     selectFiles: () => window.zcode.selectFiles?.() ?? Promise.resolve([]),
     createTempTextAttachment: (payload) => window.zcode.createTempTextAttachment(payload),
     materializeWorkflowArtifactFile: (payload) =>
@@ -196,7 +200,13 @@ export function createDesktopPlatform(options: {
     setApplicationLocale: (locale) => window.zcode.setApplicationLocale(locale),
     getSystemLocale: () =>
       window.zcode.getSystemLocale?.() ??
-      Promise.resolve(navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"),
+      Promise.resolve(
+        navigator.language.toLowerCase().startsWith("zh")
+          ? "zh-CN"
+          : navigator.language.toLowerCase().startsWith("ru")
+            ? "ru-RU"
+            : "en-US",
+      ),
     setTitleBarTheme: (theme) => window.zcode.setTitleBarTheme(theme),
     getDeviceId: () =>
       (window as Window & { __ZCODE_DEVICE_ID__?: string }).__ZCODE_DEVICE_ID__ ?? "",

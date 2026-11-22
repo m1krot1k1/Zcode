@@ -1,15 +1,8 @@
 import type { FeedbackComment, FeedbackTicketStatus } from "@zcode/shared";
 
-type MessageFormatter = (
-  descriptor: { id: string },
-  values?: Record<string, string>,
-) => string;
+type MessageFormatter = (descriptor: { id: string }, values?: Record<string, string>) => string;
 
-const TOP_DESCRIPTION_SECTIONS = new Set([
-  "结构化反馈",
-  "开发复现信息",
-  "用户原始描述",
-]);
+const TOP_DESCRIPTION_SECTIONS = new Set(["结构化反馈", "开发复现信息", "用户原始描述"]);
 const REPRO_DESCRIPTION_SECTIONS = new Set([
   "问题概述",
   "复现步骤",
@@ -33,7 +26,7 @@ export const STATUS_USER_HINT: Record<FeedbackTicketStatus, string> = {
   已上线: "相关修复或改进已上线，感谢你的反馈。",
 };
 
-export const STATUS_USER_HINT_MESSAGE_IDS: Record<FeedbackTicketStatus, string> = {
+const STATUS_USER_HINT_MESSAGE_IDS: Record<FeedbackTicketStatus, string> = {
   已提交: "feedback.statusHint.pendingReview",
   信息不足: "feedback.statusHint.needInfo",
   已采纳: "feedback.statusHint.accepted",
@@ -108,12 +101,11 @@ export function getUserFacingDescription(description: string) {
 
 function parseTicketDescription(description: string) {
   const topSections = splitSections(description, TOP_DESCRIPTION_SECTIONS);
-  const reproBody =
-    topSections.find((item) => item.title === "开发复现信息")?.body ?? null;
+  const reproBody = topSections.find((item) => item.title === "开发复现信息")?.body ?? null;
   const reproOverview = reproBody
-    ? splitSections(reproBody, REPRO_DESCRIPTION_SECTIONS).find(
+    ? (splitSections(reproBody, REPRO_DESCRIPTION_SECTIONS).find(
         (item) => item.title === "问题概述",
-      )?.body ?? null
+      )?.body ?? null)
     : null;
   return {
     raw: topSections.find((item) => item.title === "用户原始描述")?.body ?? null,

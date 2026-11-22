@@ -46,7 +46,7 @@ export function shouldOpenExistingFeedbackTicket(
   return Boolean(ticketId) && (status === "success" || status === "error");
 }
 
-export type FeedbackBackgroundOpenTarget =
+type FeedbackBackgroundOpenTarget =
   | { kind: "submission"; jobId: string }
   | { kind: "ticket"; ticketId: string };
 

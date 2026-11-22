@@ -1190,7 +1190,10 @@ describe("ZCode plugins", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  });
+    // 该用例要 seed 官方插件缓存并逐文件写盘；全量套件并行时墙钟会超过 5s（实测 5.5s 起），
+    // 而 Vitest 缺省超时就是 5s。断言与产品行为无关，给足与同包其它重 I/O 用例一致的
+    // 预算（30s），不让机器负载把绿变红。
+  }, 30_000);
 
   // Finding #3: the in-session plugin facade caches config at construction time. Before the
   // fix it only refreshed enabledPlugins on uninstall, keeping the startup-time

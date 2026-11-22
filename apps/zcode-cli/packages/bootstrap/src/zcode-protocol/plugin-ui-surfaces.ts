@@ -9,7 +9,7 @@ import type { PluginMetadata } from "@zcode/contracts";
 import { resolveZCodePlugins } from "../plugins.js";
 import { parseParams, type ZCodeProtocolAgentServerContext } from "./server-types.js";
 
-export function listPluginUiSurfacesFromPlugins(
+function listPluginUiSurfacesFromPlugins(
   plugins: readonly PluginMetadata[],
 ): ZCodePluginUiSurface[] {
   const surfaces: ZCodePluginUiSurface[] = [];

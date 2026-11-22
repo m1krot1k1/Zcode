@@ -6,7 +6,9 @@ import type { ZCodeToolExecResource } from "@zcode/shared";
 import { describe, expect, it, vi } from "vitest";
 import { NodeExecutionAdapter } from "../src/exec/node-execution-adapter.js";
 
-describe("Bash 执行适配器资源生命周期", () => {
+// Реальные spawn/ps замеры чувствительны к нагрузке: под 32-пакетным turbo
+// редкий delayed start даёт ложный таймаут. Retry не ослабляет проверки.
+describe("Bash 执行适配器资源生命周期", { retry: 1 }, () => {
   it("真实 Bash 退出保留输出和 exit code，资源耗时从 spawn 起算", async () => {
     const root = await mkdtemp(join(tmpdir(), "bash-resource-"));
     const onToolExecResource = vi.fn();
@@ -32,6 +34,11 @@ describe("Bash 执行适配器资源生命周期", () => {
       );
       expect(result.stdout.text).toContain("telemetry-output");
       expect(result.exitCode).toBe(7);
+      // Отчёт о ресурсах публикуется после завершения процесса, а не синхронно с run():
+      // под нагрузкой колбэк приходит следующим тиком. Ждём его детерминированно.
+      await vi.waitFor(() => expect(onToolExecResource).toHaveBeenCalledOnce(), {
+        timeout: 10_000,
+      });
       expect(onToolExecResource).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ durationMs: 40000, exitKind: "completed", toolName: "bash" }),
       );
@@ -120,6 +127,11 @@ it.each(["timeout", "cancel", "output_limit", "signal"] as const)(
       expect(result.status).toBe(
         kind === "timeout" ? "timed_out" : kind === "signal" ? "failed" : "cancelled",
       );
+      // Отчёт о ресурсах публикуется после выхода процесса, отдельным тиком:
+      // под нагрузкой он приходит позже run(), поэтому ждём его явно.
+      await vi.waitFor(() => expect(onToolExecResource).toHaveBeenCalledOnce(), {
+        timeout: 10_000,
+      });
       expect(onToolExecResource).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
           durationMs: 40000,

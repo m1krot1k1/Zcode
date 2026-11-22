@@ -13,7 +13,7 @@ const APP_CA_KEY_FILE = "zcode-network-ca.key";
 const CA_VALIDITY_YEARS = 10;
 const CA_KEY_BITS = 2048;
 
-export interface AppCaCertPaths {
+interface AppCaCertPaths {
   certPath: string;
   keyPath: string;
 }

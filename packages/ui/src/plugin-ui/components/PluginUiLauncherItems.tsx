@@ -15,7 +15,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { OpenPluginUiSideTabRequest } from "@/plugin-ui/contract.js";
 import { resolvePluginUiSurfaceTitle } from "@/plugin-ui/adapters/usePluginUiSurfaces.js";
 
-export interface PluginUiLauncherItemsProps {
+interface PluginUiLauncherItemsProps {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
@@ -26,7 +26,7 @@ export interface PluginUiLauncherItemsProps {
   variant?: "launcher" | "menu";
 }
 
-export function buildPluginUiLauncherItemId(pluginId: string, surfaceId: string): string {
+function buildPluginUiLauncherItemId(pluginId: string, surfaceId: string): string {
   return `plugin-ui:${pluginId}/${surfaceId}`;
 }
 

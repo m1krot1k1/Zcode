@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Coding Plan 套餐需要集中处理静态套餐、远端试算、缓存与登录态回退，避免把共享状态拆散。 */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
@@ -29,7 +28,7 @@ type CodingPlanProductsSnapshot = Omit<CodingPlanBatchPreviewResponse, "productL
 };
 
 const CODING_PLAN_OAUTH_REQUIRED_ERROR = "coding_plan_oauth_required";
-export const ZAI_START_FREE_PRODUCT_ID = "zai-start-free";
+const ZAI_START_FREE_PRODUCT_ID = "zai-start-free";
 const ZAI_START_FREE_PRODUCT_IDS = {
   month: `${ZAI_START_FREE_PRODUCT_ID}-monthly`,
   quarter: `${ZAI_START_FREE_PRODUCT_ID}-quarterly`,
@@ -336,7 +335,7 @@ function formatStartPlanPreviewEntitlement(
   return [amount, unit, period].filter(Boolean).join(" ");
 }
 
-export function isZaiStartFreeProductId(productId: string | null | undefined) {
+function isZaiStartFreeProductId(productId: string | null | undefined) {
   if (!productId) {
     return false;
   }
@@ -523,22 +522,7 @@ export function normalizeErrorMessage(error: unknown): string {
     return CODING_PLAN_OAUTH_REQUIRED_ERROR;
   }
   return message;
-}
-
-export function isCodingPlanOAuthRequiredError(error: string): boolean {
-  return (
-    error === CODING_PLAN_OAUTH_REQUIRED_ERROR ||
-    error === "bigmodel_oauth_required" ||
-    error === "zai_oauth_required" ||
-    isCodingPlanOAuthRequiredMessage(error)
-  );
-}
-
-export function isCodingPlanSystemBusyError(error: string): boolean {
-  return error === CODING_PLAN_SYSTEM_BUSY || isCodingPlanSystemBusyMessage(error);
-}
-
-function readErrorMessage(error: unknown): string {
+}function readErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message || error.name;
   }

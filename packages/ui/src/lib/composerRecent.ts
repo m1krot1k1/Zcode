@@ -204,7 +204,7 @@ export function resolveDraftInitialModelSelection(
   };
 }
 
-export function isSelectionInView(view: ModelSelectionView, selection: ModelSelection): boolean {
+function isSelectionInView(view: ModelSelectionView, selection: ModelSelection): boolean {
   const model = findModel(view, selection);
   if (!model) return false;
   const reasoning = selection.options?.reasoningLevel;

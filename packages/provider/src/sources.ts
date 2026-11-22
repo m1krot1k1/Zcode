@@ -6,10 +6,23 @@ import {
   type ModelConfigRules,
 } from "./config/index.js";
 import type { AccountProviderStates } from "./account-provider-state.js";
+import type { Provider } from "./resolver.js";
 
 export interface ProviderSource<TSnapshot> {
   read(): Promise<TSnapshot>;
   onDidChange(listener: (reason: string) => void): () => void;
+}
+
+/**
+ * Runtime-discovered Providers that are not backed by personal/account config.
+ * The revision and models are published together so ModelSelection never sees a
+ * catalog revision paired with an older provider list.
+ */
+export interface RuntimeProviderCatalogSnapshot {
+  readonly revision: string;
+  readonly providers: readonly Provider[];
+  /** Host-local executable needed by a CLI-backed SDK that spawns the bare command name. */
+  readonly cliExecutablePath?: string;
 }
 
 export interface ProviderConfigSnapshot {

@@ -15,7 +15,7 @@ import type { AgentTelemetryCausation, ModelRequestDependencies } from "@zcode/c
 import type { AgentRuntimeInternal } from "../internal.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { recordModelUsageFact } from "./usage-observability.js";
-import { createRuntimeModel } from "./runtime-model.js";
+import { createRuntimeModel, getLatestCompletedModelRequestId } from "./runtime-model.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 import { getOffPeakExecution } from "../off-peak/runtime.js";
@@ -130,6 +130,7 @@ async function generateTitleCandidateImpl(
   const baseModel = createRuntimeModel(this, {
     selection: requestedModelSelection,
     requestDependencies: context.requestDependencies,
+    admissionPriority: "background",
   });
   const model = baseModel.bind(auxiliaryModelOptions(baseModel));
   const modelSelection = cloneModelSelection(requestedModelSelection);
@@ -200,10 +201,12 @@ async function generateTitleCandidateImpl(
     throw error;
   });
   const toolCalls = this.extractToolCallsFromResult(result);
+  const completedRequestId = getLatestCompletedModelRequestId(events);
   const modelCompleteEvent = this.createEvent(
     SessionEventType.ModelComplete,
     {
       content: result.text,
+      ...(completedRequestId ? { requestId: completedRequestId } : {}),
       querySource: options.querySource,
       stopReason: result.finishReason,
       toolCallCount: toolCalls.length,

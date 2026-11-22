@@ -31,4 +31,3 @@ export const workerMessageSchema = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
-export type TasksStorageWorkerMessage = z.infer<typeof workerMessageSchema>;

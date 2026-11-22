@@ -45,7 +45,7 @@ interface CrashArchiveCleanupResult {
   failedFiles: string[];
 }
 
-export interface ArchivedCrashDumpRecord {
+interface ArchivedCrashDumpRecord {
   dumpPath: string;
   archivedDumpPath: string;
   /** dump 里没有 V8 OOM 注解（例如 GPU / native 崩溃）时为 null。 */
@@ -387,7 +387,7 @@ export function initializeCrashCapture(
   return paths;
 }
 
-export interface CrashEventMonitorHooks {
+interface CrashEventMonitorHooks {
   onRenderProcessGone?: (
     webContents: WebContents,
     details: { reason: string; exitCode: number },

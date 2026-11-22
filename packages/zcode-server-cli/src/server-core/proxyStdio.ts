@@ -15,7 +15,7 @@ export class ProxyStdioError extends Error {
   }
 }
 
-export interface ProxyStdioOptions {
+interface ProxyStdioOptions {
   layout: ServerLayout;
   input: Readable;
   output: Writable;

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { uiSourcePath } from "./uiSourcePath.js";
 
 import { readFileSync } from "node:fs";
 import { createElement, type ReactNode } from "react";
@@ -92,7 +93,7 @@ vi.mock("@/logger.js", () => ({
 function readWebRemoteControlDialogSource() {
   // Bugfix: WebRemoteControlDialog 经过 React.memo 包装后，组件 toString() 只会返回 [object Object]。
   // 源码结构守卫需要读取真实文件，才能继续校验复用顺序和确认弹窗保护没有被性能优化绕开。
-  return readFileSync("packages/ui/src/web-remote-control/WebRemoteControlDialog.tsx", "utf8");
+  return readFileSync(uiSourcePath("src", "web-remote-control", "WebRemoteControlDialog.tsx"), "utf8");
 }
 
 describe("WebRemoteControlDialog layout", () => {

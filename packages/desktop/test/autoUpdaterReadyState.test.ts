@@ -14,10 +14,7 @@ const { loggerErrorMock, loggerInfoMock, loggerWarnMock, readFileMock, spawnMock
   },
 );
 
-const originalPlatform = process.platform;
-
-const ONE_HOUR_MS = 60 * 60 * 1000;
-const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+const originalPlatform = process.platform;const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 const TWO_MINUTES_MS = 2 * 60 * 1000;
 
 const TEST_LOCALE = "en-US" as const;
@@ -762,8 +759,7 @@ describe("autoUpdater ready state sync", () => {
     expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "custom",
-        manifestUrl:
-          "https://zcode.z.ai/api/v1/releases/electron/manifest?platform=old&channel=1",
+        manifestUrl: "https://zcode.z.ai/api/v1/releases/electron/manifest?platform=old&channel=1",
         releasePlatform: "darwin-aarch64",
       }),
     );

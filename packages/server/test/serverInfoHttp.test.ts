@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { once } from "node:events";
+import type { Server } from "node:http";
 import { AddressInfo } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -7,8 +9,14 @@ import { ServiceCollection } from "@zcode/services";
 import { SERVER_REMOTE_PROTOCOL_VERSION } from "@zcode/shared";
 import { createHttpServer } from "../src/http.js";
 
+async function waitForListening(server: Server): Promise<AddressInfo> {
+  // 指定 hostname 后 Node 会异步解析/绑定地址；listen 返回时 address() 仍可能是 null。
+  if (!server.listening) await once(server, "listening");
+  return server.address() as AddressInfo;
+}
+
 describe("server info HTTP endpoint", () => {
-  const servers: Array<{ close(callback?: (err?: Error) => void): void }> = [];
+  const servers: Server[] = [];
   const tempDirs: string[] = [];
 
   afterEach(async () => {
@@ -43,7 +51,7 @@ describe("server info HTTP endpoint", () => {
       ],
     });
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/server-info`);
 
@@ -82,7 +90,7 @@ describe("server info HTTP endpoint", () => {
       migrationFailedPathCount: 2,
     });
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
     const response = await fetch(`http://127.0.0.1:${address.port}/api/server-info`);
     expect(await response.json()).toMatchObject({
       serverId: "owner",
@@ -96,7 +104,7 @@ describe("server info HTTP endpoint", () => {
       authToken: "secret-token",
     });
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
     const rejected = await fetch(`${baseUrl}/api/server-info`);
@@ -105,6 +113,7 @@ describe("server info HTTP endpoint", () => {
     const accepted = await fetch(`${baseUrl}/api/server-info?token=secret-token`);
     expect(accepted.status).toBe(200);
     expect(accepted.headers.get("set-cookie")).toContain("zcode_lite_token=");
+    await expect(accepted.json()).resolves.toMatchObject({ authRequired: true });
 
     const cookieAccepted = await fetch(`${baseUrl}/api/server-info`, {
       headers: {
@@ -128,10 +137,16 @@ describe("server info HTTP endpoint", () => {
     });
   });
 
+  it("refuses to listen on a non-loopback host without authentication", () => {
+    expect(() => createHttpServer(new ServiceCollection(), 0, { host: "0.0.0.0" })).toThrow(
+      /requires authentication/,
+    );
+  });
+
   it("does not expose either retired remote-connect route", async () => {
     const server = createHttpServer(new ServiceCollection(), 0);
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/connect-remote`, {
       method: "POST",
@@ -157,7 +172,7 @@ describe("server info HTTP endpoint", () => {
       spaFallback: true,
     });
     servers.push(server);
-    const address = server.address() as AddressInfo;
+    const address = await waitForListening(server);
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
     const asset = await fetch(`${baseUrl}/app.js`);

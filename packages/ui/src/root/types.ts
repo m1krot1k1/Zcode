@@ -7,7 +7,7 @@ import type {
   WebRemoteControlWorkspaceListResult,
   WebRemoteControlWorkspaceSwitchOptions,
 } from "@zcode/shared";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type { ReactNode } from "react";
 import type { CreateTaskOptions, CreateTaskRequest } from "@/app-shell/types.js";
 

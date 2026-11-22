@@ -1,7 +1,57 @@
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
+
+type ProcessIdentity = {
+  startId?: string;
+  commandLine?: string;
+  zombie: boolean;
+};
+
+function readProcessIdentity(pid: number): ProcessIdentity | undefined {
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      // comm может содержать пробелы и скобки, поэтому поля ищем после последней ')'.
+      const fieldsStart = stat.lastIndexOf(")");
+      if (fieldsStart < 0) return undefined;
+      const fields = stat.slice(fieldsStart + 2).split(" ");
+      const state = fields[0];
+      const startId = fields[19];
+      if (state === "Z" || state === "X") return { zombie: true };
+      const commandLine = readFileSync(`/proc/${pid}/cmdline`, "utf8")
+        .split("\0")
+        .filter((part) => part.length > 0)
+        .join(" ");
+      return { startId: startId || undefined, commandLine, zombie: false };
+    } catch {
+      return undefined;
+    }
+  }
+  if (process.platform === "darwin") {
+    try {
+      const startId = execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
+        encoding: "utf8",
+        timeout: 1_000,
+      }).trim();
+      const commandLine = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+        encoding: "utf8",
+        timeout: 1_000,
+      }).trim();
+      return { startId: startId || undefined, commandLine, zombie: false };
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function looksLikeZcodeServer(commandLine: string | undefined): boolean {
+  return commandLine === undefined || /zcode|server-(?:cli|core)/i.test(commandLine);
+}
 
 export type DataRootLockInspection =
   | { state: "missing" }
@@ -41,7 +91,16 @@ export class DataRootLock {
         ? parsed.pid
         : undefined;
     if (pid === undefined) return { state: "invalid" };
-    return this.isHolderAlive(pid) ? { state: "active", pid } : { state: "stale", pid };
+    const processStartId =
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "processStartId" in parsed &&
+      typeof parsed.processStartId === "string"
+        ? parsed.processStartId
+        : undefined;
+    return this.isHolderAlive(pid, processStartId)
+      ? { state: "active", pid }
+      : { state: "stale", pid };
   }
 
   public async acquire(): Promise<void> {
@@ -50,7 +109,7 @@ export class DataRootLock {
     const recoveryPath = `${this.path}.recovery`;
     for (let attempt = 0; attempt < 100; attempt++) {
       const observed = await this.readOwner(this.path);
-      if (observed && this.isHolderAlive(observed.record.pid)) {
+      if (observed && this.isHolderAlive(observed.record.pid, observed.record.processStartId)) {
         throw new Error("Another ZCode Server instance is already running");
       }
       const recoveryToken = await this.tryAcquireRecoveryGate(recoveryPath);
@@ -60,7 +119,7 @@ export class DataRootLock {
       }
       try {
         const current = await this.readOwner(this.path);
-        if (current && this.isHolderAlive(current.record.pid)) {
+        if (current && this.isHolderAlive(current.record.pid, current.record.processStartId)) {
           throw new Error("Another ZCode Server instance is already running");
         }
         if (current) {
@@ -88,8 +147,9 @@ export class DataRootLock {
     let handle: FileHandle | undefined;
     try {
       handle = await open(this.path, "wx", 0o600);
+      const processStartId = readProcessIdentity(process.pid)?.startId;
       await handle.writeFile(
-        `${JSON.stringify({ pid: process.pid, acquiredAt: Date.now(), ownerToken })}\n`,
+        `${JSON.stringify({ pid: process.pid, processStartId, acquiredAt: Date.now(), ownerToken })}\n`,
       );
       this.handle = handle;
       this.ownerToken = ownerToken;
@@ -107,7 +167,7 @@ export class DataRootLock {
 
   private async readOwner(path: string): Promise<{
     raw: string;
-    record: { ownerToken?: string; pid?: number };
+    record: { ownerToken?: string; pid?: number; processStartId?: string };
   } | null> {
     let raw: string;
     try {
@@ -116,7 +176,11 @@ export class DataRootLock {
       return null;
     }
     try {
-      const parsed = JSON.parse(raw) as { ownerToken?: unknown; pid?: unknown };
+      const parsed = JSON.parse(raw) as {
+        ownerToken?: unknown;
+        pid?: unknown;
+        processStartId?: unknown;
+      };
       return {
         raw,
         record: {
@@ -125,6 +189,8 @@ export class DataRootLock {
             typeof parsed.pid === "number" && Number.isInteger(parsed.pid) && parsed.pid > 0
               ? parsed.pid
               : undefined,
+          processStartId:
+            typeof parsed.processStartId === "string" ? parsed.processStartId : undefined,
         },
       };
     } catch {
@@ -132,16 +198,27 @@ export class DataRootLock {
     }
   }
 
-  public isHolderAlive(pid: number | undefined): boolean {
+  public isHolderAlive(pid: number | undefined, processStartId?: string): boolean {
     if (pid === undefined) return false;
-    if (pid === process.pid) return true;
+    if (pid === process.pid) {
+      if (processStartId === undefined) return true;
+      const currentStartId = readProcessIdentity(pid)?.startId;
+      return currentStartId === undefined || currentStartId === processStartId;
+    }
     try {
       process.kill(pid, 0);
-      return true;
     } catch (error: unknown) {
       // ESRCH 表示进程不存在（stale）；EPERM 表示进程存在但无权限，保守视为存活。
-      return error instanceof Error && "code" in error && error.code === "EPERM";
+      if (!(error instanceof Error && "code" in error && error.code === "EPERM")) return false;
     }
+    const identity = readProcessIdentity(pid);
+    if (identity?.zombie) return false;
+    // PID мог быть переиспользован другим процессом. Для новых lock сравниваем
+    // время старта, для legacy-lock без identity — хотя бы командную строку.
+    if (processStartId !== undefined && identity?.startId !== undefined) {
+      return identity.startId === processStartId;
+    }
+    return looksLikeZcodeServer(identity?.commandLine);
   }
 
   private async tryAcquireRecoveryGate(path: string): Promise<string | null> {
@@ -167,7 +244,7 @@ export class DataRootLock {
       await handle?.close().catch(() => undefined);
     }
     const observed = await this.readOwner(path);
-    if (!observed || !this.isHolderAlive(observed.record.pid)) {
+    if (!observed || !this.isHolderAlive(observed.record.pid, observed.record.processStartId)) {
       if (observed) await this.claimStalePath(path, observed.raw);
       return null;
     }

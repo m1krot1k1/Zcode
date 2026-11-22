@@ -4,7 +4,7 @@ import type { WorkspaceZCodeUIState } from "@/store/zcodeSessionStoreTypes.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceTab } from "@/store/tabStore.js";
 
-export function resolveChatViewActiveTaskProvider(
+function resolveChatViewActiveTaskProvider(
   taskId: string | null,
   workspaceState: Pick<
     WorkspaceZCodeUIState,

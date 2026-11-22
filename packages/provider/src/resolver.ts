@@ -1,9 +1,9 @@
-/* oxlint-disable eslint(max-lines) -- Resolver 同时产出 Settings 分层结果与唯一 Registry 完整类型证明。 */
 import type { z } from "zod";
 import type { completeModelConfigDataSchema } from "@zcode/shared/model-config";
 import type {
   completeApiKeyAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
+  localAuthAccessDataSchema,
   completeProviderConfigDataSchema,
 } from "./config/provider-data-schema.js";
 import type { ConfigValidationIssue } from "./config-overlay.js";
@@ -12,6 +12,7 @@ import {
   ModelConfig,
   ModelConfigRules,
   type ZhipuAccountAccessConfig,
+  type LocalAuthAccessConfig,
   type ModelId,
   type ProviderConfig,
   type ProviderConfigRule,
@@ -27,6 +28,7 @@ export type RegistryZhipuAccountAccessConfig = ZhipuAccountAccessConfig &
 
 export type RegistryProviderAccessConfig =
   | (ApiKeyAccessConfig & z.infer<typeof completeApiKeyAccessDataSchema>)
+  | (LocalAuthAccessConfig & z.infer<typeof localAuthAccessDataSchema>)
   | RegistryZhipuAccountAccessConfig;
 
 export type RegistryProviderConfig = ProviderConfig &
@@ -43,25 +45,30 @@ export function serializeRegistryProviderConfig(
     group: config.group,
     ...(config.logo === undefined ? {} : { logo: config.logo }),
     access:
-      config.access.type !== "zhipu-account"
+      config.access.type === "zhipu-account"
         ? {
-            type: config.access.type,
-            apiKey: config.access.apiKey,
-            ...(config.access.apiKeyManagementUrl === undefined
-              ? {}
-              : { apiKeyManagementUrl: config.access.apiKeyManagementUrl }),
-          }
-        : {
             type: config.access.type,
             accountType: config.access.accountType,
             mode: config.access.mode,
             entitled: config.access.entitled,
+          }
+        : config.access.type === "local-auth"
+          ? { type: config.access.type }
+          : {
+              type: config.access.type,
+              apiKey: config.access.apiKey,
+              ...(config.access.apiKeyManagementUrl === undefined
+                ? {}
+                : { apiKeyManagementUrl: config.access.apiKeyManagementUrl }),
+            },
+    api:
+      config.api.type === "opencode-sdk"
+        ? { type: config.api.type }
+        : {
+            type: config.api.type,
+            baseUrl: config.api.baseUrl,
+            ...(config.api.headers == null ? {} : { headers: config.api.headers }),
           },
-    api: {
-      type: config.api.type,
-      baseUrl: config.api.baseUrl,
-      ...(config.api.headers == null ? {} : { headers: config.api.headers }),
-    },
     ...(config.builtinModelIds == null ? {} : { builtinModelIds: [...config.builtinModelIds] }),
     ...(config.personalModelIds == null ? {} : { personalModelIds: [...config.personalModelIds] }),
     ...(config.modelOrder == null ? {} : { modelOrder: [...config.modelOrder] }),
@@ -78,6 +85,7 @@ export function serializeRegistryModelConfig(
 ): RegistryModelConfigObject {
   return {
     enabled: config.enabled,
+    ...(config.api === undefined ? {} : { api: config.api }),
     properties: {
       requiresMfjsToolSchema: config.properties.requiresMfjsToolSchema,
       contextWindow: config.properties.contextWindow,
@@ -93,6 +101,9 @@ export function serializeRegistryModelConfig(
       supportsJsonSchemaOutput: config.properties.supportsJsonSchemaOutput,
       supportsNativeWebSearch: config.properties.supportsNativeWebSearch,
       supportsMidConversationSystem: config.properties.supportsMidConversationSystem,
+      ...(config.properties.displayName === undefined
+        ? {}
+        : { displayName: config.properties.displayName }),
     },
     optionSpecs: {
       reasoningLevel: config.optionSpecs.reasoningLevel,
@@ -254,20 +265,15 @@ export class ProviderConfigResolver {
       const providerExecutable =
         enabled && accessEntitled && accountCurrent && providerIssues.length === 0;
       const models = orderedModelIds.map((modelId): ResolvedProviderModel => {
-        const modelConfig = effectiveModelRules.resolve({
+        const ruleInput = {
           providerId,
           templateId,
           modelId,
           apiType: config.api?.type,
           baseUrl: config.api?.baseUrl,
-        });
-        const effectiveBuiltinConfig = input.zcodeBuiltinModelRules.resolve({
-          providerId,
-          templateId,
-          modelId,
-          apiType: config.api?.type,
-          baseUrl: config.api?.baseUrl,
-        });
+        };
+        const modelConfig = effectiveModelRules.resolveForModelApi(ruleInput);
+        const effectiveBuiltinConfig = input.zcodeBuiltinModelRules.resolveForModelApi(ruleInput);
         const registryModelResult = createRegistryModelConfig(modelConfig, [
           ...providerPath,
           "models",

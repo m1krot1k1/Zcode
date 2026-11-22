@@ -24,7 +24,7 @@ export async function updateDynamicWorkflowPolicy(
 }
 
 /** createRecord 写进 runtimeConfig 的两个灰度字段（launch.md「On demand: activation」「How the mode travels」）。 */
-export interface DynamicWorkflowRuntimeGate {
+interface DynamicWorkflowRuntimeGate {
   dynamicWorkflowEnabled: boolean;
   dynamicWorkflowToolsOnDemand: boolean;
 }

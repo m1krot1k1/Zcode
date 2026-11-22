@@ -56,7 +56,7 @@ export interface PendingCommandEntry {
   recoveryDismissed?: boolean;
 }
 
-export interface PendingCommandReplayRequest {
+interface PendingCommandReplayRequest {
   type: "sendText" | "sendGoalCommand" | "compact" | "createSession";
   payload: Record<string, unknown>;
   sessionId: string | null;
@@ -64,7 +64,7 @@ export interface PendingCommandReplayRequest {
   clientContext?: PendingCommandClientContext;
 }
 
-export interface PendingCommandRegistryOptions {
+interface PendingCommandRegistryOptions {
   storage?: StorageLike;
   now?: () => number;
 }

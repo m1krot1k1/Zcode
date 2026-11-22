@@ -39,7 +39,7 @@ export interface HighspeedInferenceAuth {
   projectId?: string;
 }
 
-export interface HighspeedCardServiceOptions {
+interface HighspeedCardServiceOptions {
   transport: HighspeedServiceTransport;
   now?: () => number;
   wait?: (milliseconds: number) => Promise<void>;

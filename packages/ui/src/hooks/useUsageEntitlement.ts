@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- entitlement hook 集中处理缓存、共享 in-flight、轮询和 Team Plan 上下文，后续拆分需保持刷新策略一致。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   UsageEntitlementSnapshot,
@@ -43,7 +42,7 @@ const INITIAL_STATE: UsageEntitlementState = {
   error: null,
 };
 
-export const USAGE_ENTITLEMENT_REFRESH_TIMEOUT_MS = 20_000;
+const USAGE_ENTITLEMENT_REFRESH_TIMEOUT_MS = 20_000;
 
 export interface UsageEntitlementRefreshOptions {
   silent?: boolean;

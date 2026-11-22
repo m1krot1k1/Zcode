@@ -131,22 +131,96 @@ describe("model tool transforms", () => {
     expect(contract.inputSchema).not.toHaveProperty("$defs");
   });
 
-  it("keeps local property refs unchanged when MFJS projection is disabled", () => {
+  it("keeps local refs and strips propertyNames when MFJS projection is disabled", () => {
     const contract = createClientToolContract();
     contract.inputSchema = {
       type: "object",
+      propertyNames: { type: "string" },
+      additionalProperties: false,
+      $defs: {
+        Id: { type: "string", propertyNames: { type: "string" } },
+      },
       properties: {
-        source: { type: "object", properties: { id: { type: "string" } } },
+        source: {
+          type: "object",
+          propertyNames: { type: "string" },
+          properties: { id: { type: "string" } },
+        },
         alias: { $ref: "#/properties/source" },
       },
     };
+    const snapshot = structuredClone(contract.inputSchema);
 
     const tools = toAiSdkTools([contract], {
       providerKind: "openai-compatible",
       requiresMfjsToolSchema: false,
     });
+    const sent = readToolJsonSchema(tools?.Read);
+    const properties = sent.properties as Record<string, Record<string, unknown>>;
+    const defs = sent.$defs as Record<string, Record<string, unknown>>;
 
-    expect(readToolJsonSchema(tools?.Read)).toBe(contract.inputSchema);
+    expect(contract.inputSchema).toEqual(snapshot);
+    expect(sent).not.toBe(contract.inputSchema);
+    expect(properties.alias.$ref).toBe("#/properties/source");
+    expect(sent).not.toHaveProperty("propertyNames");
+    expect(properties.source).not.toHaveProperty("propertyNames");
+    expect(defs.Id).not.toHaveProperty("propertyNames");
+    expect(sent.additionalProperties).toBe(false);
+    expect(sent).toHaveProperty("$defs");
+  });
+
+  it("strips propertyNames on every provider send without mutating the contract", () => {
+    const cases: Array<{
+      providerKind?:
+        | "openai"
+        | "anthropic"
+        | "openai-compatible"
+        | "opencode-sdk"
+        | "gateway"
+        | "custom";
+      requiresMfjsToolSchema?: boolean;
+    }> = [
+      {},
+      { providerKind: "openai" },
+      { providerKind: "anthropic" },
+      { providerKind: "openai-compatible" },
+      { providerKind: "opencode-sdk" },
+      { providerKind: "gateway" },
+      { providerKind: "custom" },
+      { providerKind: "openai", requiresMfjsToolSchema: true },
+      { providerKind: "anthropic", requiresMfjsToolSchema: true },
+      { providerKind: "openai-compatible", requiresMfjsToolSchema: true },
+      { providerKind: "opencode-sdk", requiresMfjsToolSchema: true },
+      { providerKind: "gateway", requiresMfjsToolSchema: true },
+      { providerKind: "custom", requiresMfjsToolSchema: true },
+    ];
+
+    for (const options of cases) {
+      const contract = createClientToolContract();
+      contract.inputSchema = {
+        type: "object",
+        propertyNames: { type: "string" },
+        additionalProperties: false,
+        properties: {
+          env: {
+            type: "object",
+            additionalProperties: { type: "string" },
+            propertyNames: { pattern: "^[A-Z]+$" },
+          },
+        },
+      };
+      const snapshot = structuredClone(contract.inputSchema);
+      const tools = toAiSdkTools([contract], options);
+      const sent = readToolJsonSchema(tools?.Read);
+
+      expect(sent).not.toHaveProperty("propertyNames");
+      expect(sent.additionalProperties).toBe(false);
+      const env = (sent.properties as Record<string, Record<string, unknown>>).env;
+      expect(env).not.toHaveProperty("propertyNames");
+      expect(env.additionalProperties).toEqual({ type: "string" });
+      expect(contract.inputSchema).toEqual(snapshot);
+      expect(sent).not.toBe(contract.inputSchema);
+    }
   });
 
   it("rejects an unresolvable local ref before request execution", () => {

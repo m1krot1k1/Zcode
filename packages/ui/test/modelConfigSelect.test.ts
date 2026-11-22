@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Locale } from "@zcode/shared";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import {
@@ -14,6 +14,7 @@ import {
   type ModelSelectGroup,
 } from "@/ModelConfigSelect.js";
 import { shouldRestoreChatInputFocusAfterPickerClose } from "@/lib/pickerFocus.js";
+import type { ComposerPlanGroup } from "@/lib/composerPlanGroups.js";
 
 function createGroup(key: string): ModelSelectGroup {
   return {
@@ -49,7 +50,10 @@ function renderInteractive(element: ReactElement, locale: Locale) {
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("ModelConfigSelect menu hierarchy", () => {
   it("多个 provider 时展示 provider 一级菜单", () => {
@@ -145,6 +149,62 @@ describe("ModelConfigSelect vision capability", () => {
     expect(badge.getAttribute("data-model-input-capability")).toBe("vision");
     expect(modelName).not.toBeNull();
     expect(modelName?.compareDocumentPosition(badge)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+});
+
+describe("Composer provider model selection", () => {
+  it("выбирает модель OpenCode из открытого меню через обычный callback", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    const onValueChange = vi.fn();
+    const openCodeGroup = {
+      key: "registry-provider:opencode",
+      label: "OpenCode CLI",
+      items: [
+        {
+          key: "registry-provider:opencode:opencode/big-pickle",
+          value: "custom:opencode:opencode%2Fbig-pickle",
+          name: "opencode/big-pickle",
+        },
+      ],
+    } as ComposerPlanGroup;
+    renderInteractive(
+      createElement(ModelConfigSelect, {
+        modelGroups: [openCodeGroup],
+        normalizedValue: openCodeGroup.items[0]!.value,
+        triggerLabel: "opencode/big-pickle",
+        composerOptions: {
+          providerMenu: {
+            groups: [openCodeGroup],
+            pending: false,
+            error: null,
+            onSelect: vi.fn(),
+          },
+          providerLabel: "Provider",
+          modelsLabel: "Models",
+          effortLabel: "Effort",
+          selectModelLabel: "Select provider and model",
+          levels: [],
+          value: "",
+          onValueChange: vi.fn(),
+        },
+        showManageModelsAction: false,
+        lockReasonMessage: "Locked",
+        isItemLocked: () => false,
+        onValueChange,
+        open: true,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "opencode/big-pickle" }));
+
+    expect(onValueChange).toHaveBeenCalledWith("custom:opencode:opencode%2Fbig-pickle");
   });
 });
 

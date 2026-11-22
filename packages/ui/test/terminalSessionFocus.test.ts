@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { uiSourcePath } from "./uiSourcePath.js";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +13,7 @@ describe("persistentKey 路径输入链路保活契约", () => {
   // 而复用路径不重绑 → 切回 workspace 后 scrollback 在但输入失效。
   // 输入订阅生命周期必须 = entry 生命周期（registryDisposers，随 term 常驻，detach 不取消）。
   it("persistent 路径的 term.onData 挂在 registryDisposers 而非 localDisposers", () => {
-    const source = readSource("packages/ui/src/terminal/TerminalSession.tsx");
+    const source = readSource(uiSourcePath("src", "terminal", "TerminalSession.tsx"));
     const onDataIdx = source.indexOf("term.onData(");
     expect(onDataIdx).toBeGreaterThanOrEqual(0);
     // onData 前面最近的 XxxDisposers.push( 必须是 registryDisposers，不能是 localDisposers。
@@ -23,7 +24,7 @@ describe("persistentKey 路径输入链路保活契约", () => {
   });
 
   it("persistent 路径的 Windows 输入法 textarea 兜底也挂在 registryDisposers", () => {
-    const source = readSource("packages/ui/src/terminal/TerminalSession.tsx");
+    const source = readSource(uiSourcePath("src", "terminal", "TerminalSession.tsx"));
     // textarea 兜底的 disposer（removeEventListener）前面最近的 push 必须是 registryDisposers。
     const removeIdx = source.indexOf('removeEventListener("input", handleInput, true)');
     expect(removeIdx).toBeGreaterThanOrEqual(0);

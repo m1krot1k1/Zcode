@@ -26,7 +26,7 @@ import { analyzeScript } from "./workflow-script-analysis.js";
 import { resolveModelReference } from "./model-reference.js";
 
 /** 名字 → 规范串 `providerId/modelId[$level]`。 */
-export type ScriptModelBindings = Record<string, string>;
+type ScriptModelBindings = Record<string, string>;
 
 /** 宿主没有模型目录时，每个名字的 9011 文案（脚本侧的改法，不是参数侧的）。 */
 export const SCRIPT_MODELS_UNAVAILABLE =

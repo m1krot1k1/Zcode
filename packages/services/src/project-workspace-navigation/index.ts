@@ -5,11 +5,7 @@ import type {
   ProjectNavigationPort,
   ProjectWorkspaceNavigation,
 } from "#src/project-workspace-navigation/contract.js";
-export type {
-  ProjectNavigationRequest,
-  ProjectNavigationResult,
-  ProjectNavigationPort,
-} from "#src/project-workspace-navigation/contract.js";
+
 
 const requestSchema = z
   .object({

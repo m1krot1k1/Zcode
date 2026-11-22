@@ -8,18 +8,18 @@ import {
 } from "@/mentions/components/scrollMask.js";
 import { ToolLayout } from "@/ToolCallBlocks/ToolLayout.js";
 import { buildCuaSummaryPresentation } from "@/ToolCallBlocks/renderers/cua.js";
-import { CUA_TOOL_ICON } from "@/ToolCallBlocks/renderers/cuaIcon.js";
+import { CUA_FALLBACK_ICON } from "@/ToolCallBlocks/renderers/cuaIcon.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
 import type { ConversationCuaGroupEvent } from "@/v4/conversationCuaGroups.js";
 
 const TERMINAL_CUA_STATUSES = new Set(["completed", "failed", "stopped"]);
 const STICK_TO_BOTTOM_THRESHOLD_PX = 8;
 
-export function scrollCuaGroupToBottom(viewport: Pick<HTMLElement, "scrollHeight" | "scrollTop">) {
+function scrollCuaGroupToBottom(viewport: Pick<HTMLElement, "scrollHeight" | "scrollTop">) {
   viewport.scrollTop = viewport.scrollHeight;
 }
 
-export function isCuaGroupViewportAtBottom(
+function isCuaGroupViewportAtBottom(
   viewport: Pick<HTMLElement, "clientHeight" | "scrollHeight" | "scrollTop">,
 ) {
   return (
@@ -212,7 +212,7 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
   const primaryText = latestSummaryEvent ? (
     <span className="inline-flex min-w-0 items-center gap-2">
       <span className="shrink-0 size-4 flex items-center justify-center [&_svg]:size-4">
-        {latestToolSummary?.icon ?? CUA_TOOL_ICON}
+        {latestToolSummary?.icon ?? CUA_FALLBACK_ICON}
       </span>
       <span className={animatedTextClass}>
         {latestToolSummary ? (
@@ -253,7 +253,7 @@ export function CuaGroupToolCallBlock(context: CuaGroupRenderProps) {
   return (
     <ToolLayout
       toolId={toolCall.toolId}
-      icon={isRunning ? null : CUA_TOOL_ICON}
+      icon={isRunning ? null : CUA_FALLBACK_ICON}
       showIcon={!isRunning}
       canToggle={context.canToggle ?? true}
       forceOpen={!isRunning && (context.forceOpen ?? false)}

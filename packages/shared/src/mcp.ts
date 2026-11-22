@@ -14,6 +14,23 @@ export const ZCODE_CUA_OFFICIAL_MCP_NAMESPACE_NAME = "plugin:computer-use:comput
 // 插件身份 env key：resolver（adapters/src/plugins/mcp.ts）权威写入 loaded.id，manifest/user env 不可覆盖。
 // bootstrap + cli/plugin-host-command.ts 复用此常量识别 official zcode-cua plugin server，避免字面量漂移。
 export const ZCODE_PLUGIN_ID_ENV_KEY = "ZCODE_PLUGIN_ID";
+/**
+ * Official document plugins are activated by the turn that names their format,
+ * not at session/plugin-install startup. Keep this list in one place so bootstrap
+ * config projection and live plugin refresh cannot drift.
+ */
+export const LAZY_PLUGIN_MCP_PLUGIN_IDS = [
+  "documents@zcode-plugins-official",
+  "pdf@zcode-plugins-official",
+  "presentations@zcode-plugins-official",
+  "spreadsheets@zcode-plugins-official",
+] as const;
+const LAZY_PLUGIN_MCP_PLUGIN_ID_SET = new Set<string>(LAZY_PLUGIN_MCP_PLUGIN_IDS);
+
+export function isLazyPluginMcpServerConfig(config: McpServerConfig): boolean {
+  const pluginId = config.env?.[ZCODE_PLUGIN_ID_ENV_KEY]?.trim().toLowerCase();
+  return pluginId !== undefined && LAZY_PLUGIN_MCP_PLUGIN_ID_SET.has(pluginId);
+}
 
 export type McpSource =
   | "mcp"
@@ -53,7 +70,13 @@ export interface McpServerConfig {
   [key: string]: any;
 }
 
-export type McpServerStatus = "connected" | "disconnected" | "error" | "connecting" | "unknown";
+export type McpServerStatus =
+  | "connected"
+  | "disconnected"
+  | "error"
+  | "connecting"
+  | "requires_approval"
+  | "unknown";
 
 export interface CliMcpConfig {
   mcpServers: Record<string, McpServerConfig>;
@@ -387,4 +410,366 @@ function isValidMcpOAuthConfig(value: unknown): value is McpOAuthConfig {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+interface CommunityMcpPresetBase {
+  id: string;
+  name: string;
+  sourceUrl: string;
+  usageLabel?: "todoist-account-free" | "webflow-site-plan" | "apify-actor-usage-may-cost";
+}
+
+export type CommunityMcpPreset = CommunityMcpPresetBase &
+  (
+    | {
+        kind: "stdio";
+        packageName: string;
+        version: string;
+        command: "npx";
+        args: readonly string[];
+        /** Require the user to provide their own credential; no token is bundled in the catalog. */
+        authRequirement: "none" | "api-key-optional";
+        env?: Readonly<Record<string, string>>;
+      }
+    | {
+        kind: "hosted";
+        url: string;
+        authRequirement: "oauth" | "api-key-required" | "oauth-or-api-key";
+      }
+  );
+
+/** Metadata from the fixed Cline marketplace feed. It deliberately has no install config fields. */
+export interface ClineMcpMarketplaceEntry {
+  id: string;
+  name: string;
+  tagline?: string;
+  description?: string;
+  tags: string[];
+  author?: string;
+  sourceUrl?: string;
+  homepageUrl?: string;
+  /** Set only when the listing ID maps to a local preset; executable values still come from that preset. */
+  localPresetId?: string;
+}
+
+export interface ClineMcpMarketplaceCatalog {
+  entries: ClineMcpMarketplaceEntry[];
+  rejectedEntryCount: number;
+}
+
+/** One installable transport from the Official MCP Registry. */
+export interface McpRegistryInstallOption {
+  kind: "stdio" | "remote";
+  command?: string;
+  args?: string[];
+  url?: string;
+  transport?: "http" | "sse";
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  requiredEnv?: {
+    name: string;
+    description?: string;
+    isSecret?: boolean;
+    required?: boolean;
+    default?: string;
+  }[];
+  requiredHeaders?: {
+    name: string;
+    description?: string;
+    isSecret?: boolean;
+    required?: boolean;
+  }[];
+  requiresAuth: boolean;
+}
+
+export interface McpRegistryMarketplaceEntry {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  repositoryUrl?: string;
+  options: McpRegistryInstallOption[];
+}
+
+export interface McpRegistryMarketplaceResult {
+  query: string;
+  entries: McpRegistryMarketplaceEntry[];
+}
+
+const MCP_MARKETPLACE_MAX_ENTRIES = 500;
+const MCP_MARKETPLACE_MAX_TAGS = 20;
+const MCP_MARKETPLACE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,127}$/u;
+
+function hasMarketplaceControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x061c ||
+      code === 0x200e ||
+      code === 0x200f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function readMarketplaceText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (
+    normalized.length === 0 ||
+    normalized.length > maxLength ||
+    hasMarketplaceControlCharacter(normalized)
+  ) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function readMarketplaceHttpsUrl(value: unknown): string | undefined {
+  const normalized = readMarketplaceText(value, 2_048);
+  if (!normalized) return undefined;
+  try {
+    const parsed = new URL(normalized);
+    if (
+      parsed.protocol !== "https:" ||
+      !parsed.hostname ||
+      parsed.username.length > 0 ||
+      parsed.password.length > 0
+    ) {
+      return undefined;
+    }
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function readMarketplaceAuthor(value: unknown): string | undefined {
+  if (typeof value === "string") return readMarketplaceText(value, 120);
+  if (!isRecord(value)) return undefined;
+  return readMarketplaceText(value.name, 120);
+}
+
+function parseClineMarketplaceEntry(value: unknown): ClineMcpMarketplaceEntry | undefined {
+  if (!isRecord(value) || value.type !== "mcp") return undefined;
+  const id = readMarketplaceText(value.id, 128);
+  const name = readMarketplaceText(value.name ?? value.id, 120);
+  if (!id || !name || !MCP_MARKETPLACE_ID_PATTERN.test(id)) return undefined;
+
+  const tags = Array.isArray(value.tags)
+    ? value.tags
+        .slice(0, MCP_MARKETPLACE_MAX_TAGS)
+        .map((tag) => readMarketplaceText(tag, 48))
+        .filter((tag): tag is string => tag !== undefined)
+    : [];
+  const sourceUrl = readMarketplaceHttpsUrl(value.sourceUrl ?? value.repo);
+  const homepageUrl = readMarketplaceHttpsUrl(value.homepageUrl ?? value.homepage);
+  const normalizedId = id.toLocaleLowerCase("en-US");
+  const localPreset = COMMUNITY_MCP_PRESETS.find(
+    (preset) => preset.id.toLocaleLowerCase("en-US") === normalizedId,
+  );
+
+  return {
+    id,
+    name,
+    ...(readMarketplaceText(value.tagline, 280)
+      ? { tagline: readMarketplaceText(value.tagline, 280) }
+      : {}),
+    ...(readMarketplaceText(value.description, 1_000)
+      ? { description: readMarketplaceText(value.description, 1_000) }
+      : {}),
+    tags,
+    ...(readMarketplaceAuthor(value.author) ? { author: readMarketplaceAuthor(value.author) } : {}),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(homepageUrl ? { homepageUrl } : {}),
+    ...(localPreset ? { localPresetId: localPreset.id } : {}),
+  };
+}
+
+/**
+ * Parses Cline marketplace responses as untrusted discovery metadata. Install fields are
+ * intentionally discarded; a matching ID only points to an independently bundled preset.
+ */
+export function parseClineMcpMarketplaceCatalog(value: unknown): ClineMcpMarketplaceCatalog {
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
+    throw new Error("Invalid Cline MCP marketplace catalog");
+  }
+  if (value.entries.length > MCP_MARKETPLACE_MAX_ENTRIES) {
+    throw new Error("Cline MCP marketplace catalog exceeds the entry limit");
+  }
+
+  const parsed: ClineMcpMarketplaceEntry[] = [];
+  let rejectedEntryCount = 0;
+  for (const rawEntry of value.entries) {
+    if (!isRecord(rawEntry) || rawEntry.type !== "mcp") continue;
+    const entry = parseClineMarketplaceEntry(rawEntry);
+    if (entry) parsed.push(entry);
+    else rejectedEntryCount++;
+  }
+
+  const counts = new Map<string, number>();
+  for (const entry of parsed) {
+    const key = entry.id.toLocaleLowerCase("en-US");
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const entries = parsed.filter((entry) => {
+    const isUnique = counts.get(entry.id.toLocaleLowerCase("en-US")) === 1;
+    if (!isUnique) rejectedEntryCount++;
+    return isUnique;
+  });
+  return { entries, rejectedEntryCount };
+}
+
+export function filterClineMcpMarketplaceEntries(
+  entries: readonly ClineMcpMarketplaceEntry[],
+  query: string,
+): ClineMcpMarketplaceEntry[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const externalEntries = entries.filter((entry) => !entry.localPresetId);
+  if (!normalizedQuery) return [...externalEntries];
+  return externalEntries.filter((entry) =>
+    `${entry.id} ${entry.name} ${entry.tagline ?? ""} ${entry.description ?? ""} ${entry.author ?? ""} ${entry.tags.join(" ")}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery),
+  );
+}
+
+/** Immutable, provenance-labelled catalog. Selection only creates an editable draft. */
+export const COMMUNITY_MCP_PRESETS: readonly CommunityMcpPreset[] = [
+  {
+    id: "todoist",
+    name: "Todoist",
+    kind: "hosted",
+    url: "https://ai.todoist.net/mcp",
+    authRequirement: "oauth",
+    usageLabel: "todoist-account-free",
+    sourceUrl: "https://developer.todoist.com/",
+  },
+  {
+    id: "webflow",
+    name: "Webflow",
+    kind: "hosted",
+    url: "https://mcp.webflow.com/mcp",
+    authRequirement: "oauth",
+    usageLabel: "webflow-site-plan",
+    sourceUrl: "https://developers.webflow.com/mcp/reference/getting-started",
+  },
+  {
+    id: "apify",
+    name: "Apify",
+    kind: "hosted",
+    url: "https://mcp.apify.com",
+    authRequirement: "oauth-or-api-key",
+    usageLabel: "apify-actor-usage-may-cost",
+    sourceUrl: "https://docs.apify.com/mcp",
+  },
+  {
+    id: "context7",
+    name: "Context7",
+    kind: "stdio",
+    packageName: "@upstash/context7-mcp",
+    version: "4.4.1",
+    command: "npx",
+    args: ["-y", "@upstash/context7-mcp@4.4.1"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/@upstash/context7-mcp",
+  },
+  {
+    id: "sequential-thinking",
+    name: "Sequential Thinking",
+    kind: "stdio",
+    packageName: "@modelcontextprotocol/server-sequential-thinking",
+    version: "2.1.1",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2.1.1"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
+  },
+  {
+    id: "chrome-devtools",
+    name: "Chrome DevTools",
+    kind: "stdio",
+    packageName: "chrome-devtools-mcp",
+    version: "1.9.0",
+    command: "npx",
+    args: ["-y", "chrome-devtools-mcp@1.9.0"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/chrome-devtools-mcp",
+  },
+  {
+    id: "playwright",
+    name: "Playwright",
+    kind: "stdio",
+    packageName: "@playwright/mcp",
+    version: "0.0.83",
+    command: "npx",
+    args: ["-y", "@playwright/mcp@0.0.83"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/@playwright/mcp",
+  },
+  {
+    id: "duckduckgo-search",
+    name: "DuckDuckGo",
+    kind: "stdio",
+    packageName: "duckduckgo-mcp-server",
+    version: "0.1.2",
+    command: "npx",
+    args: ["-y", "duckduckgo-mcp-server@0.1.2"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/duckduckgo-mcp-server",
+  },
+  {
+    id: "web-fetch",
+    name: "Web Fetch",
+    kind: "stdio",
+    packageName: "@yawlabs/fetch-mcp",
+    version: "0.8.5",
+    command: "npx",
+    args: ["-y", "@yawlabs/fetch-mcp@0.8.5"],
+    authRequirement: "none",
+    sourceUrl: "https://www.npmjs.com/package/@yawlabs/fetch-mcp",
+  },
+  {
+    id: "firecrawl",
+    name: "Firecrawl",
+    kind: "stdio",
+    packageName: "firecrawl-mcp",
+    version: "3.33.0",
+    command: "npx",
+    args: ["-y", "firecrawl-mcp@3.33.0"],
+    authRequirement: "api-key-optional",
+    sourceUrl: "https://github.com/firecrawl/firecrawl-mcp-server",
+    env: { FIRECRAWL_API_KEY: "" },
+  },
+] as const;
+
+export function communityMcpPresetConfig(preset: CommunityMcpPreset): McpServerConfig {
+  if (preset.kind === "hosted") {
+    return { type: "http", url: preset.url };
+  }
+  return {
+    type: "stdio",
+    command: preset.command,
+    args: [...preset.args],
+    ...(preset.env ? { env: { ...preset.env } } : {}),
+  };
+}
+
+export function filterCommunityMcpPresets(
+  presets: readonly CommunityMcpPreset[],
+  query: string,
+): CommunityMcpPreset[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return [...presets];
+  return presets.filter((preset) =>
+    `${preset.name} ${preset.id} ${preset.kind === "stdio" ? preset.packageName : preset.url} ${preset.authRequirement} ${preset.usageLabel ?? ""}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery),
+  );
 }

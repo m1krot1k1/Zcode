@@ -18,10 +18,12 @@ import {
   resolveBuiltInToolAllowlist,
   resolveRuntimeDisallowedTools,
   resolveRuntimeDynamicWorkflowToolsIncluded,
+  shouldIncludeTaskAlias,
 } from "./tool-allowlist.js";
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
 import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
+import { filterAgentTypesForCaller } from "../../subagent/profile.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
 const EMPTY_RUNTIME_HOOK_CONFIG = {
@@ -51,6 +53,9 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
     includeAgent: Boolean(runtime.subagentPort),
+    // 原因：ZCode 原生路由规则要求根会话用 Task(start) 作为可见入口，但此前 Task 只对子代理进入 provider schema，模型无法遵循这条规则。
+    // 修复依据：可见性规则收敛到唯一 helper shouldIncludeTaskAlias；首次装配与分支 refresh 共用，交互根会话和可递归子代理可见，workflow actor 不可见。
+    includeTaskAlias: shouldIncludeTaskAlias(runtime.config.taskType),
     includeSendMessage: runtime.subagentPort?.sendMessage !== undefined,
     includeRespondToCoordinator:
       runtime.config.taskType === "subagent_child" && Boolean(deps.coordinatorResponsePort),
@@ -75,7 +80,11 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     // 修复原因：browserControlPort 只是宿主能力，不应隐式暴露高权限 node_repl。
     // node_repl/browser-use 由 ZCode 官方 browser-use 插件启停推导出的 runtimeFeatures 控制。
     includeNodeRepl: nodeReplEnabled,
+    // PTY-инструмент не входит в публичный контракт модели: обычные команды идут
+    // через Bash одним вызовом. Регистрация возможна только при явном
+    // includePtySession: true, и runtime этот флаг не передаёт.
     includeBrowserUse: browserUseEnabled,
+    includeCodeIndex: Boolean(deps.codeIntelligencePort),
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
     // workflow_child 的结构性禁用（CreateWorkflow/SaveWorkflow 因 alwaysAsk 隐形挂起；
@@ -170,11 +179,15 @@ function createRuntimeToolExecutor(
       stopBackgroundTask: runtime.stopBackgroundTask.bind(runtime),
     },
     executionPort: deps.executionPort,
+    ptySessionPort: deps.ptySessionPort,
     browserControlPort: browserUseEnabled ? deps.browserControlPort : undefined,
     browserDocumentationRoot: browserUseEnabled
       ? runtime.config.runtimeFeatures?.browserDocumentationRoot
       : undefined,
     fileSystemPort: deps.fileSystemPort,
+    fileLockRegistry: runtime.fileLockRegistry,
+    fileTransactionTaskRegistry: runtime.fileTransactionTaskRegistry,
+    enableToolCallSelfRepair: runtime.config.enableToolCallSelfRepair,
     httpClientPort: deps.httpClientPort,
     imageProcessorPort: deps.imageProcessorPort,
     // 合并删除旧模型连接时曾漏掉此端口；Read 分页渲染与整份 PDF 页数检查仍依赖宿主注入。
@@ -182,7 +195,16 @@ function createRuntimeToolExecutor(
     embeddedSearchBackend: runtime.config.embeddedSearchBackend,
     nativeSearchEnhancementsEnabled: runtime.config.nativeSearchEnhancementsEnabled,
     skillPort: deps.skillPort,
+    capabilityInstallPort: deps.capabilityInstallPort,
     subagentPort: runtime.subagentPort,
+    // Каталог и admission читают один и тот же caller-scoped фильтр: start видит только
+    // orchestrator, orchestrator — worker-роли, root/main — все активные профили.
+    callerAgentType: runtime.config.agentType,
+    getAvailableAgentTypes: () =>
+      filterAgentTypesForCaller(
+        runtime.getAgentDefinitions().activeAgents,
+        runtime.config.agentType,
+      ).map((profile) => profile.name),
     coordinatorResponsePort: deps.coordinatorResponsePort,
     workflowSubmitPort: deps.workflowSubmitPort,
     workflowEscalatePort: deps.workflowEscalatePort,
@@ -190,6 +212,7 @@ function createRuntimeToolExecutor(
     automationPort: deps.automationPort,
     offPeakPort: deps.offPeakPort,
     topicResourcePort: deps.topicResourcePort,
+    codeIntelligencePort: deps.codeIntelligencePort,
     sessionStore: deps.sessionStore,
     sessionModePort: createRuntimeSessionModePort(runtime),
     workflowPort: deps.workflowPort,
@@ -197,6 +220,7 @@ function createRuntimeToolExecutor(
     dynamicWorkflowSnippetPort: deps.dynamicWorkflowSnippetPort,
     modelCatalogPort: deps.modelCatalogPort,
     runtimeTaskRegistry: runtime.runtimeTaskRegistry,
+    runtimeTaskOutputRootDir: runtime.config.subagents?.outputRootDir,
     readFileState: runtime.readFileState,
     // 工作流创作工具的技能门（tool/handlers/workflow-skill-gate.ts）：按模型此刻看得见的历史回答
     // 「读过技能没有」。只在会话真有 Skill 工具时给探针——没有 skillPort 的会话装不上那个技能，
@@ -211,11 +235,15 @@ function createRuntimeToolExecutor(
       runtime.config.taskType === "subagent_child"
         ? normalizeSubagentBackgroundBashMaxMs(runtime.config.subagents?.backgroundBashMaxMs)
         : undefined,
+    sandboxMode: runtime.config.sandboxMode,
+    sandboxAllowNetwork: runtime.config.sandboxAllowNetwork,
     getBashShellSelection: () => getSessionShellSelectionFromConfig(runtime.config),
     hookRunner,
     getWorkingDirectory: () => runtime.workingDirectory,
     setWorkingDirectory: runtime.setWorkingDirectory.bind(runtime),
     getWorkspaceRoot: () => runtime.workspaceRoot,
+    getWriteScope: () => runtime.config.writeScope,
+    workspaceBoundary: runtime.config.workspaceBoundary,
     workspaceIdentity: runtime.config.workspaceIdentity?.toString(),
     remoteSessionId: runtime.config.remoteSessionId,
     clientMode: runtime.config.clientMode,

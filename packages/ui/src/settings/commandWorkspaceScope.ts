@@ -2,7 +2,7 @@ import type { CommandStorageLevel } from "@zcode/shared";
 import { getPluginWorkspaceKey } from "@/settings/PluginScopeMenu.js";
 import type { ConfigWorkspaceTarget } from "@/workspace-config-catalog/index.js";
 
-export type CommandScopeRecovery = "keep" | "fallback-user" | "close-editor";
+type CommandScopeRecovery = "keep" | "fallback-user" | "close-editor";
 
 export function resolveCommandScopeRecovery(params: {
   editing: boolean;

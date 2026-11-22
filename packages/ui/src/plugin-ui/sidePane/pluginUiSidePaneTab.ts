@@ -3,7 +3,7 @@ import { activateSidePaneTab } from "@/lib/workspaceSidePane.js";
 import type { OpenPluginUiSideTabRequest, PluginUiSidePaneTab } from "../contract.js";
 import { buildPluginUiSidePaneTabId, readPluginUiScopeRef } from "../contract.js";
 
-export type OpenScopedPluginUiSideTabRequest = OpenPluginUiSideTabRequest & {
+type OpenScopedPluginUiSideTabRequest = OpenPluginUiSideTabRequest & {
   workspaceKey: string;
 };
 

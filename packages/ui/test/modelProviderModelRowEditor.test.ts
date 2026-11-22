@@ -44,6 +44,7 @@ vi.mock("@/i18n/IntlProvider.js", () => ({
       formatMessage: ({ id }: { id: string }, values?: Record<string, string>) => {
         const messages: Record<string, string> = {
           "settings.modelProvider.addModel": "添加模型",
+          "settings.modelProvider.credentialModeApiKey": "API key",
           "model.capability.vision": "视觉",
           "settings.modelProvider.contextWindow": "上下文窗口",
           "settings.modelProvider.contextWindowBadgeLabel": "上下文窗口：{value}",
@@ -204,6 +205,15 @@ function createProvider(
 }
 
 describe("ProviderModelsSection compact model rows", () => {
+  it("为 API-key provider 显示认证方式标签", () => {
+    const provider = createProvider();
+    provider.config.access = { type: "api-key", apiKey: "fixture" };
+
+    render(createElement(InlineEditableProviderCard, { provider, onSave: vi.fn() }));
+
+    expect(screen.getByText("API key")).toBeTruthy();
+  });
+
   it.each(["individual-coding-plan", "team-coding-plan", "start-plan", "manual", "standard"])(
     "设置页共享视觉标判断，连接=%s",
     (mode) => {

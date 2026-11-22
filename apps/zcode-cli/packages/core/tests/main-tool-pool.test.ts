@@ -41,23 +41,27 @@ describe("main agent tool pool", () => {
       },
     );
 
-    // 无 skillPort 故不含 Skill；WebSearch 是普通 client-side wrapper。
-    // 顺序按 builtInTools 注册顺序。
+    // 无 skillPort 故不含 Skill; WebSearch — обычный client-side wrapper.
+    // Embedded search дополняет Glob/Grep, а не заменяет их: оба остаются в реестре,
+    // иначе child allowlist терял бы поиск. CodeIndex требует Host-порт, поэтому его
+    // здесь нет. Порядок —按 builtInTools 注册顺序。
     expect(defaultRuntime.getToolRegistry().list()).toEqual([
       "ToolSearch",
       "DeferredToolCall",
       "Read",
       "Bash",
+      "Glob",
+      "Grep",
       "WebFetch",
       "WebSearch",
       "TodoWrite",
     ]);
-    // allowlist ["Read","Glob","Bash","Write"] 与 Explore 白名单求交后，
-    // 默认 embedded branch 隐藏 Glob/Grep，Write 被 Explore 白名单排除。
-    expect(runtime.getToolRegistry().list()).toEqual(["Read", "Bash"]);
+    // allowlist ["Read","Glob","Bash","Write"] ∩ Explore whitelist: Write исключён,
+    // порядок соответствует регистрации (Read, Bash, Glob).
+    expect(runtime.getToolRegistry().list()).toEqual(["Read", "Bash", "Glob"]);
   });
 
-  it("keeps Glob/Grep hidden when main toolAllowlist includes them", () => {
+  it("keeps Glob/Grep available when main toolAllowlist includes them", () => {
     const runtime = createTestAgentRuntime(
       createSessionId("runtime-main-allowlist-search-tools"),
       {
@@ -70,7 +74,8 @@ describe("main agent tool pool", () => {
       },
     );
 
-    expect(runtime.getToolRegistry().list()).toEqual(["Read", "Bash"]);
+    // Embedded Bash search — дополнение, а не замена: явный allowlist сохраняет оба инструмента.
+    expect(runtime.getToolRegistry().list()).toEqual(["Read", "Bash", "Glob", "Grep"]);
   });
 
   it("does not expose node_repl just because a browser control port exists", () => {
@@ -331,8 +336,9 @@ describe("main agent tool pool", () => {
       },
     );
 
-    expect(runtime.getToolRegistry().has("Glob")).toBe(false);
-    expect(runtime.getToolRegistry().has("Grep")).toBe(false);
+    // Embedded branch не скрывает Glob/Grep: они остаются зарегистрированными и видны модели.
+    expect(runtime.getToolRegistry().has("Glob")).toBe(true);
+    expect(runtime.getToolRegistry().has("Grep")).toBe(true);
 
     runtime.initializeSessionShellEnvironmentIfNeeded({
       dialect: "cmd",
@@ -345,8 +351,8 @@ describe("main agent tool pool", () => {
 
     const byName = new Map(runtime.getTools().map((tool) => [tool.name, tool]));
 
-    expect(byName.has("Glob")).toBe(false);
-    expect(byName.has("Grep")).toBe(false);
+    expect(byName.has("Glob")).toBe(true);
+    expect(byName.has("Grep")).toBe(true);
     expect(byName.get("Bash")?.description ?? "").toContain(
       "Avoid using this tool to run `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands",
     );

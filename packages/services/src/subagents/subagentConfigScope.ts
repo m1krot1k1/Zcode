@@ -1,5 +1,6 @@
 import { watch, type FSWatcher } from "chokidar";
 import { stat, watch as watchDirectory } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
@@ -64,6 +65,7 @@ export function createSubagentConfigScope<T>(options: {
     stabilize = false;
   let watcher: FSWatcher | undefined, anchor: string | undefined;
   let parentWatch: AbortController | undefined;
+  let parentWatchTask: Promise<void> | undefined;
   let anchorStats: Awaited<ReturnType<typeof stat>> | undefined;
   let releaseReady: (() => void) | undefined;
   let binding: Promise<void> | undefined;
@@ -155,8 +157,13 @@ export function createSubagentConfigScope<T>(options: {
       !(file ? absolute === file : /\.(md|markdown)$/iu.test(absolute))
     )
       return;
-    if (event === "unlink") pending.set(absolute, "remove");
-    else if (event === "add" || event === "change") pending.set(absolute, "read");
+    if (event === "unlink") {
+      pending.set(absolute, "remove");
+      // 原子重命名是目标新增 + 源文件删除；部分文件系统可能只交付 unlink。
+      // 重建直接 watcher 以清除旧文件名缓存，避免大小写重命名后漏掉新路径的后续删除。
+      void checkWatch(true);
+      reset = true;
+    } else if (event === "add" || event === "change") pending.set(absolute, "read");
     else return;
     revision++;
     schedule();
@@ -166,7 +173,9 @@ export function createSubagentConfigScope<T>(options: {
     while (true) {
       try {
         const stats = await stat(path);
-        if (path === root || stats.isDirectory()) return { path, stats };
+        // 监听目标根若被替换成普通文件，必须退回父目录监听；这样 ENOTDIR 会进入加载失败回退，
+        // 并能在目录恢复时重新扫描，不能把非目录节点当成有效 watcher anchor。
+        if (stats.isDirectory()) return { path, stats };
       } catch (error) {
         if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""))
           throw error;
@@ -202,9 +211,12 @@ export function createSubagentConfigScope<T>(options: {
         )
           continue;
         const previous = watcher;
+        const previousParentWatchTask = parentWatchTask;
         watcher = undefined;
         parentWatch?.abort();
-        if (previous) await previous.close();
+        parentWatch = undefined;
+        parentWatchTask = undefined;
+        await Promise.all([previous?.close(), previousParentWatchTask]);
         if (disposed) return;
         if (anchor !== undefined && (anchor === root || nextAnchor === root)) {
           revision++;
@@ -229,6 +241,8 @@ export function createSubagentConfigScope<T>(options: {
           ignored: (path, info) => {
             const absolute = resolve(path);
             if (absolute === nextAnchor) return false;
+            // 缺失 root 的浅层 watcher 必须接收 root 本身的 add/unlink（即使它变成普通文件）。
+            if (!direct && absolute === root) return false;
             if (dirname(absolute) !== nextAnchor) return true;
             if (!direct) return info ? !info.isDirectory() && !info.isSymbolicLink() : false;
             return file
@@ -240,20 +254,43 @@ export function createSubagentConfigScope<T>(options: {
         current.on("raw", () => {
           if (!direct && !disposed && watcher === current) void checkWatch();
         });
-        // Windows 不报告空目录自身的移动；父目录只订阅原生结构事件，不枚举其内容。
-        // 与 Chokidar 的文件索引分离，避免 AGENTS 被误当作逻辑 agents 的删除事件。
-        if (parent !== anchor) {
+        // Windows не сообщает о перемещении пустого каталога, а Linux/chokidar 4 не
+        // сообщает об удалении и повторном создании самой watched root (см. тест
+        // «recovers after deleting missing-path parents»). Родительский watcher нужен
+        // всегда: он получает только структурные события (unlinkDir/addDir) и не
+        // индексирует содержимое, поэтому не конфликтует с Chokidar.
+        //
+        // Причина, по которой раньше ограничивали Windows: второй watcher на scope
+        // расходует handle. На практике это один inotify-watch на scope; при лимите
+        // 128 instances несколько Host остаются в пределах нормы, а корректность
+        // восстановления важнее экономии fd. При отсутствии root подписываемся на
+        // ближайший существующий предок: его родитель тоже может быть удалён.
+        const nearestExistingAncestor = (path: string): string | undefined => {
+          let current = path;
+          for (;;) {
+            if (existsSync(current)) return current;
+            const up = dirname(current);
+            if (up === current) return undefined;
+            current = up;
+          }
+        };
+        const parentWatchAnchor = nearestExistingAncestor(parent);
+        if (parentWatchAnchor !== undefined && parentWatchAnchor !== anchor) {
           const controller = new AbortController();
           parentWatch = controller;
-          void (async () => {
-            for await (const _event of watchDirectory(parent, { signal: controller.signal })) {
+          parentWatchTask = (async () => {
+            for await (const _event of watchDirectory(parentWatchAnchor, {
+              signal: controller.signal,
+            })) {
               if (disposed || watcher !== current) return;
-              await checkWatch();
+              // Не блокируем цикл нативного watcher'а пересозданием scope: новый bind сначала
+              // отменит этот цикл и дождётся его закрытия.
+              void checkWatch();
             }
           })().catch((error) => {
             if (!controller.signal.aborted && !disposed)
               logger.warn(undefined, "Subagent 父目录监听异常，显式重载可重建监听", {
-                path: parent,
+                path: parentWatchAnchor,
                 error: String(error),
               });
           });
@@ -261,6 +298,7 @@ export function createSubagentConfigScope<T>(options: {
         current.on("all", (event, path) => {
           if (disposed || watcher !== current) return;
           if (direct) changed(event, path);
+          else if (resolve(path) === root) void checkWatch(true);
           else if (event === "addDir" || event === "unlinkDir") void checkWatch();
         });
         await new Promise<void>((ready) => {
@@ -289,6 +327,11 @@ export function createSubagentConfigScope<T>(options: {
       })
       .finally(() => {
         binding = undefined;
+        // 事件若在 binding 收尾边界到达，checkWatch 已置位但拿到了旧 Promise；不可丢失目录重绑请求。
+        if (!disposed && checkRequested) {
+          void checkWatch();
+          return;
+        }
         // 无关父目录事件只检查位置，不能反复推迟已经排队的配置更新。
         if (!timer) schedule();
         if (!disposed) options.onSettled();
@@ -323,7 +366,7 @@ export function createSubagentConfigScope<T>(options: {
         (!initialized || Boolean(binding) || Boolean(draining) || reset || pending.size > 0)
       );
     },
-    dispose() {
+    async dispose() {
       disposed = true;
       loadController?.abort();
       parentWatch?.abort();
@@ -332,12 +375,15 @@ export function createSubagentConfigScope<T>(options: {
       pending.clear();
       const current = watcher;
       watcher = undefined;
-      void current?.close().catch((error) =>
-        logger.warn(undefined, "Subagent 文件监听关闭失败", {
-          path: root,
-          error: String(error),
-        }),
-      );
+      await Promise.all([
+        current?.close().catch((error) =>
+          logger.warn(undefined, "Subagent 文件监听关闭失败", {
+            path: root,
+            error: String(error),
+          }),
+        ),
+        parentWatchTask,
+      ]);
     },
   };
 }

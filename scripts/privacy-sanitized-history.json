@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "path": "docs/architecture/stage1-forensic-audit-and-baseline.md",
+      "blobSha": "01385b9671679330b06e52fc2fcd65238c4b8f69",
+      "findingTypes": ["home-path"],
+      "count": 5,
+      "sanitizedInCommit": "f14af289",
+      "reason": "Значения заменены на <home> в HEAD; изменить исторический блоб без перезаписи истории невозможно."
+    },
+    {
+      "path": "docs/architecture/stage2-comparative-oss-research.md",
+      "blobSha": "c83ee9135a0e887616731b8c3d82704305b04b77",
+      "findingTypes": ["home-path"],
+      "count": 3,
+      "sanitizedInCommit": "f14af289",
+      "reason": "Значения заменены на <home> в HEAD; изменить исторический блоб без перезаписи истории невозможно."
+    },
+    {
+      "path": "docs/architecture/stage3-target-architecture-and-specs.md",
+      "blobSha": "51ceae34f808b486514b78cc85e78446a04fb728",
+      "findingTypes": ["home-path"],
+      "count": 2,
+      "sanitizedInCommit": "f14af289",
+      "reason": "Значения заменены на <home> в HEAD; изменить исторический блоб без перезаписи истории невозможно."
+    },
+    {
+      "path": "docs/architecture/stage6-release-report.md",
+      "blobSha": "5975b2dc8778c8756e26b0d6133af4a69363de33",
+      "findingTypes": ["home-path", "email"],
+      "count": 2,
+      "sanitizedInCommit": "77fe4f65",
+      "reason": "Домашний путь и личный адрес убраны в 77fe4f65; исторический блоб остаётся в диапазоне origin/dev..HEAD."
+    },
+    {
+      "path": "docs/research/2026-11-19-gitnexus-and-code-intelligence.md",
+      "blobSha": "0829fc5881da7a87f6826f655b2e199b3bdb39c9",
+      "findingTypes": ["home-path"],
+      "count": 1,
+      "sanitizedInCommit": "76c95a9b",
+      "reason": "Путь заменён на «текущий checkout Zcode» в 76c95a9b; в 8c1248dc исторический блоб ещё содержит абсолютный путь."
+    }
+  ]
+}

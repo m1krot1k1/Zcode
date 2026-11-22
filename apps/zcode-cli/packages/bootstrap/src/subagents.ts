@@ -45,14 +45,18 @@ interface ParsedPluginAgentProfile {
   profile: AgentProfile;
 }
 
-const RESERVED_AGENT_NAMES = new Set(["general-purpose", "Explore"]);
+const RESERVED_AGENT_NAMES = new Set(["general", "general-purpose", "Explore"]);
 
 export async function loadZCodeAgentProfiles(
   input: LoadZCodeAgentProfilesInput,
 ): Promise<LoadZCodeAgentProfilesResult> {
   const migration = await migrateUserSubagentMarkdown(join(input.storageRoot, "agents"));
   await migrateSubagentStateFile(join(input.storageRoot, "v2", "agents-state.json"));
-  const roots: Array<{ path: string; source: "user" | "project"; namespace?: string }> = [
+  const roots: Array<{
+    path: string;
+    source: "user" | "project";
+    namespace?: string;
+  }> = [
     { path: join(input.storageRoot, "agents"), source: "user" as const },
     { path: join(input.workingDirectory, ".zcode", "agents"), source: "project" as const },
   ];
@@ -289,6 +293,12 @@ function normalizeBuiltInSelectionOverrides(
   const explore = modelSelectionSchema.safeParse(structuredRecord.Explore);
   if (generalPurpose.success) result["general-purpose"] = generalPurpose.data;
   if (explore.success) result.Explore = explore.data;
+  // Router-роли: дешёвая/быстрая модель для маршрутизации не обязательна, но если Host
+  // её задал — применяем. Отсутствие ключа сохраняет наследование модели сессии.
+  for (const role of ["start", "orchestrator"] as const) {
+    const parsed = modelSelectionSchema.safeParse(structuredRecord[role]);
+    if (parsed.success) result[role] = parsed.data;
+  }
   return result;
 }
 

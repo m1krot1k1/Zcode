@@ -1,9 +1,5 @@
 import type { ISettingService } from "@zcode/services";
-import {
-  type AppSettings,
-  type ProviderFamilyConnectionSelectionSettings,
-  type ProviderFamilyDomain,
-} from "@zcode/shared";
+import { type ProviderFamilyConnectionSelectionSettings, type ProviderFamilyDomain } from "@zcode/shared";
 
 export function resolveLogoutProviderFamilyDomain(params: {
   currentDomain: ProviderFamilyDomain | null | undefined;
@@ -38,7 +34,7 @@ export async function setProviderFamilyDomain(
   );
 }
 
-export function buildOAuthProviderFamilySelections(
+function buildOAuthProviderFamilySelections(
   domain: ProviderFamilyDomain,
   currentSelections: ProviderFamilyConnectionSelectionSettings | null | undefined,
 ): ProviderFamilyConnectionSelectionSettings {
@@ -46,16 +42,4 @@ export function buildOAuthProviderFamilySelections(
     ...currentSelections,
     [domain]: { kind: "individual-coding-plan" },
   };
-}
-
-export async function clearProviderFamilyDomain(
-  settingService: Pick<ISettingService, "update">,
-): Promise<void> {
-  await settingService.update({
-    // 清理原因：providerFamilyDomain 通过 RPC 传 undefined 容易被吞掉。
-    // settingService 会把空串归一成 undefined，确保退出/解绑后不会继续过滤到旧 domain。
-    providerFamilyDomain: "" as AppSettings["providerFamilyDomain"],
-    providerFamilyDomainUpdatedAt: Date.now(),
-    providerFamilyDomainMigrated: true,
-  });
 }

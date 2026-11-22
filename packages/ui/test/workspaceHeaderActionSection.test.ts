@@ -68,13 +68,18 @@ vi.mock("@/components/ui/dropdown-menu.js", () => ({
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => children,
 }));
 
+const headerPlatform = {
+  exportLogs: capturedHeaderHelp.exportLogs,
+  captureWindowScreenshot: capturedHeaderHelp.captureWindowScreenshot,
+  openCommunity: capturedHeaderHelp.openCommunity,
+  openExternal: capturedHeaderHelp.openExternal,
+};
+
+// Причина: `useSettings` берёт платформу через `useOptionalPlatform`, поэтому мок
+// обязан экспортировать оба хука реального модуля.
 vi.mock("@/hooks/usePlatform.js", () => ({
-  usePlatform: () => ({
-    exportLogs: capturedHeaderHelp.exportLogs,
-    captureWindowScreenshot: capturedHeaderHelp.captureWindowScreenshot,
-    openCommunity: capturedHeaderHelp.openCommunity,
-    openExternal: capturedHeaderHelp.openExternal,
-  }),
+  usePlatform: () => headerPlatform,
+  useOptionalPlatform: () => headerPlatform,
 }));
 
 vi.mock("@/components/ui/toast.js", () => ({

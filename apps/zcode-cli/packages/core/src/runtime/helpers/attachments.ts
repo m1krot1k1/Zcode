@@ -345,5 +345,5 @@ async function resolveLocalFileAttachment(
   }
 }
 
-export { parseDataUrlHeader } from "./attachment-data-url.js";
-export { inferImageMimeFromPath, prepareImageDataUrl } from "./attachment-image.js";
+
+

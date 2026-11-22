@@ -33,9 +33,3 @@ export function subscribePluginUiInstances(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
-
-/** 测试用：清空全部记录。 */
-export function resetPluginUiInstancesForTest(): void {
-  derivations.clear();
-  listeners.clear();
-}

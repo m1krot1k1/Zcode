@@ -9,6 +9,47 @@ import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
+import { resolveMaxTurnsWrapUpReminder } from "../src/runtime/helpers/model-anomaly.js";
+
+describe("maxTurns wrap-up reminder", () => {
+  it("appears only inside the final margin and only once", () => {
+    expect(
+      resolveMaxTurnsWrapUpReminder({
+        modelStepCount: 30,
+        maxTurns: 40,
+        alreadyInjected: false,
+      }),
+    ).toBeUndefined();
+
+    const reminder = resolveMaxTurnsWrapUpReminder({
+      modelStepCount: 35,
+      maxTurns: 40,
+      alreadyInjected: false,
+    });
+    expect(reminder).toContain("Only 5 model steps remain");
+    expect(reminder).toContain("partial");
+
+    expect(
+      resolveMaxTurnsWrapUpReminder({
+        modelStepCount: 36,
+        maxTurns: 40,
+        alreadyInjected: true,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("is inert without a valid explicit maxTurns", () => {
+    for (const maxTurns of [undefined, 0, -1, Number.NaN]) {
+      expect(
+        resolveMaxTurnsWrapUpReminder({
+          modelStepCount: 0,
+          maxTurns,
+          alreadyInjected: false,
+        }),
+      ).toBeUndefined();
+    }
+  });
+});
 
 describe("AgentRuntime model anomaly guards", () => {
   it("passes model capability through on main model requests", async () => {
@@ -95,7 +136,7 @@ describe("AgentRuntime model anomaly guards", () => {
     );
 
     await expect(runtime.executeTurn("trigger empty model result")).rejects.toMatchObject({
-      message: "Model returned no text, no tool calls, and no usage before completing the turn.",
+      message: "Model completed without returning visible text or tool calls.",
       type: CoreErrorType.ModelError,
     });
 
@@ -109,7 +150,48 @@ describe("AgentRuntime model anomaly guards", () => {
           reason: "empty_model_response",
           source: "provider",
         },
-        message: "Model returned no text, no tool calls, and no usage before completing the turn.",
+        message: "Model completed without returning visible text or tool calls.",
+        type: CoreErrorType.ModelError,
+      },
+    });
+  });
+
+  it("fails a silent stop in the interactive root turn even when usage is nonzero", async () => {
+    const sessionId = createSessionId("runtime-empty-stop-with-usage");
+    const eventStore = createTestSessionEventStore();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {},
+      {
+        eventStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            return {
+              finishReason: "stop",
+              text: "",
+              usage: { inputTokens: 32, outputTokens: 1, totalTokens: 33 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await expect(runtime.executeTurn("answer with no visible text")).rejects.toMatchObject({
+      message: "Model completed without returning visible text or tool calls.",
+      type: CoreErrorType.ModelError,
+    });
+
+    const events = await eventStore.getEvents(sessionId);
+    expect(events.some((event) => event.type === SessionEventType.TurnComplete)).toBe(false);
+    expect(
+      events.find((event) => event.type === SessionEventType.TurnError)?.payload,
+    ).toMatchObject({
+      error: {
+        attribution: {
+          reason: "empty_model_response",
+          source: "provider",
+        },
+        message: "Model completed without returning visible text or tool calls.",
         type: CoreErrorType.ModelError,
       },
     });

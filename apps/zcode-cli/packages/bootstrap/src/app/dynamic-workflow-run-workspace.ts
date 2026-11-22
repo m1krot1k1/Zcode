@@ -42,7 +42,7 @@ interface WorkspaceReadableJournal
   extends JournalStorePort, Pick<DwfRunIntrospectionQueries, "listWorldNodes"> {}
 
 /** journal 是否带工作区读面。刻意是 `supportsArtifactReads` 的兄弟而不是把它扩宽（同一条论证）。 */
-export function supportsWorkspaceReads(
+function supportsWorkspaceReads(
   journal: JournalStorePort,
 ): journal is WorkspaceReadableJournal {
   return typeof (journal as Partial<DwfRunIntrospectionQueries>).listWorldNodes === "function";

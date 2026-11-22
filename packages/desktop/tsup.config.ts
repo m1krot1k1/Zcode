@@ -2,6 +2,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defineConfig } from "tsup";
+import { resolveZCodeEndpointOrigin } from "@zcode/shared/zcodeEndpoint";
+import { OFFLINE_PREVIEW_ZCODE_ENDPOINT } from "../../scripts/preview-release-contract.mjs";
 import { getBuildMetadata } from "./scripts/build-metadata.mjs";
 import { resolveDesktopProductFlavor } from "./scripts/desktop-product-identity.mjs";
 const { copyGenUiRuntimeAssets } = await import(
@@ -68,6 +70,21 @@ function loadEnvFiles(): Record<string, string> {
 
 const env = loadEnvFiles();
 const { environment: zcodeEnv } = await loadBuiltinProviderConfig();
+const zcodeEndpointOrigin =
+  process.env.ZCODE_OFFLINE_PREVIEW === "1"
+    ? OFFLINE_PREVIEW_ZCODE_ENDPOINT
+    : resolveZCodeEndpointOrigin({
+        env: zcodeEnv,
+        envBaseOrigin:
+          process.env.ZCODE_BASE_URL?.trim() ||
+          process.env.ZCODE_ENDPOINT_ORIGIN?.trim() ||
+          process.env[
+            zcodeEnv === "production" ? "ZCODE_PRODUCTION_BASE_URL" : "ZCODE_TEST_BASE_URL"
+          ]?.trim() ||
+          (env.ZCODE_BASE_URL ??
+            env.ZCODE_ENDPOINT_ORIGIN ??
+            (zcodeEnv === "production" ? env.ZCODE_PRODUCTION_BASE_URL : env.ZCODE_TEST_BASE_URL)),
+      });
 // 安装包身份与后端环境分轴：ZCODE_PREVIEW_IDENTITY=1 让生产后端的构建仍以 ZCode Preview 身份打包运行。
 const zcodeProductFlavor = resolveDesktopProductFlavor({ ...process.env, ZCODE_ENV: zcodeEnv });
 console.log(`[tsup] ZCODE_ENV=${zcodeEnv} ZCODE_PRODUCT_FLAVOR=${zcodeProductFlavor}`);
@@ -197,6 +214,8 @@ function createSharedDefines() {
     __ZCODE_BUILD_TIME__: JSON.stringify(buildMetadata.buildTime),
     __ZCODE_ENV__: JSON.stringify(zcodeEnv),
     __ZCODE_PRODUCT_FLAVOR__: JSON.stringify(zcodeProductFlavor),
+    __ZCODE_OFFLINE_PREVIEW__: JSON.stringify(process.env.ZCODE_OFFLINE_PREVIEW === "1"),
+    __ZCODE_DEFAULT_ENDPOINT_ORIGIN__: JSON.stringify(zcodeEndpointOrigin),
     ...buildTimeConfigDefines,
     // Computer Use Helper build identity — helperInstaller 读它决定下载哪个 Helper bundle。
     // 缺失时 installer 抛 "Packaged ZCode is missing its embedded Computer Use Helper build identity"。
@@ -224,6 +243,9 @@ function createMainDefines() {
 const desktopNodeRuntimeExternals = [
   "electron",
   "node-pty",
+  // TypeScript's compiler API uses CommonJS dynamic require("fs"). The code indexer runs in
+  // main/host, so keep the compiler as a packaged runtime module instead of inlining it into ESM.
+  "typescript",
   "ssh2",
   "undici",
   "@larksuiteoapi/node-sdk",

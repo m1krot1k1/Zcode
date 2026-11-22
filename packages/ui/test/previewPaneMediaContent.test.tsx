@@ -30,7 +30,9 @@ describe("PreviewPaneMediaContent", () => {
 
     expect(html).toContain("<video");
     expect(html).toContain("controls");
-    expect(html).toContain("playsinline");
+    // React 19 的 renderToStaticMarkup 保留 JSX prop 的 camelCase（playsInline=""），
+    // 而 HTML 属性名大小写不敏感；断言按小写比较，避免把合法渲染误判为缺失。
+    expect(html.toLowerCase()).toContain("playsinline");
     expect(html).toContain('preload="metadata"');
     expect(html).not.toContain("autoplay");
   });

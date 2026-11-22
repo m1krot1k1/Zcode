@@ -12,12 +12,12 @@
 
 ZCode 的子智能体调度工具名是 `Agent`，Claude Code 插件生态里的子智能体调度工具名是 `Task`。Superpowers 等 `.claude-plugin` 的 skill 文档会直接要求模型调用 `Task`；如果只在 `SessionStart` 追加一段提示词映射，模型、hook matcher、后台任务恢复和 UI 投影仍会各自有一套不一致的解释。
 
-因此 ZCode 的兼容目标是把 `Task` 作为结构化 runtime 别名接入，而不是对单个插件做文本补丁。面向 first-party 模型的 provider-visible `tools[]` 仍只暴露 canonical `Agent`；`Task` 只用于历史调用、hook matcher 和内部兼容。
+因此 ZCode 的兼容目标是把 `Task` 作为结构化 runtime 别名接入，而不是对单个插件做文本补丁。`Task` 与 `Agent` 共享 handler 和 schema；provider-visible 可见性由会话 `taskType` 决定（见 `docs/specs/task-alias-visibility.md`），而不是固定隐藏。
 
 ## 兼容原则
 
 - `Agent` 是 ZCode canonical subagent 工具。
-- `Task` 是 Claude Code 兼容 runtime alias，底层委托 `Agent` 的 handler，但默认不进入 provider-visible `tools[]`。
+- `Task` 是 Claude Code 兼容 runtime alias，底层委托 `Agent` 的 handler。是否进入 provider-visible `tools[]` 由 `shouldIncludeTaskAlias(taskType)` 决定：`undefined`/`interactive`/`fork`/`selection_side_chat`/`subagent_child` 可见，`workflow_child`/`nested_workflow_child` 隐藏；注册仍要求 `Agent` 已启用且未被子级 allowlist/父级 disallowlist 排除。
 - 两者共享输入/输出 schema、权限能力、结果预算、timeout、cancellation 和 trace 策略。
 - 兼容层不能改变实际工具调用轨迹：模型调用 `Agent` 时 hook input 仍是 `Agent`，模型调用 `Task` 时 hook input 仍是 `Task`。
 - 不通过 Superpowers 专用 additional context 注入工具映射；所有 Claude Code 插件复用同一套 runtime 兼容。
@@ -28,7 +28,7 @@ ZCode 的子智能体调度工具名是 `Agent`，Claude Code 插件生态里的
 
 - 父 runtime 只有在存在 `subagentPort` 时才注册 `Agent` / `Task` runtime entry。
 - 没有 subagent 能力时两个 runtime entry 都不注册，避免历史/内部调用走到不可执行工具。
-- provider-visible `tools[]` 只包含 `Agent`，不包含 `Task`。
+- provider-visible `tools[]` 包含 `Task` 当且仅当该会话 `taskType` 允许 alias 且 `Agent` 本身可见；workflow actor 只保留 `Agent`。
 - allowlist 仍按实际工具名过滤；显式 allowlist 未包含 `Task` 时不会额外放行 `Task`。
 
 核心实现位置：
@@ -37,16 +37,11 @@ ZCode 的子智能体调度工具名是 `Agent`，Claude Code 插件生态里的
 - `apps/zcode-cli/packages/core/src/tool/handlers/index.ts`
 - `apps/zcode-cli/packages/core/src/tool/compat.ts`
 
-## 子 Runtime 防递归
+## 子 Runtime 递归与计划模式
 
-子 agent runtime 当前禁止继续递归创建 subagent。过去只过滤 `Agent`，加入 `Task` 后必须把二者视为同一类 subagent dispatch 工具。
+ZCode 子 runtime 可以继续调用 `Agent`/`Task`。递归深度本身没有固定上限；整棵树仍共享 `rootRunId`、cancellation 和实际 worker slot 容量。Root-run wall-clock deadline 默认不存在（只有显式 `deadlineMs` 才启用），token budget 已删除。不要把并发配额、实际容量或终端快照保留量称为 nesting-depth 限制。
 
-规则：
-
-- `allowedTools: ["*"]` 时，从父工具列表继承可用工具，但过滤 `Agent` / `Task`。
-- `disallowedTools` 存在时，仍先过滤 subagent dispatch 工具，再应用 disallow。
-- 显式 `allowedTools` 不额外扩展 alias；子 runtime 本身不会注册 `Agent` / `Task`，所以即使 profile 误写也不会可用。
-- 子 runtime 不暴露 `EnterPlanMode` / `ExitPlanMode`。原因是 subagent 没有可靠的用户审批恢复面；一旦子模型进入 plan mode，`ExitPlanMode` 会请求用户确认并可能让父 turn 永久等待。该限制必须在 child provider-visible tool list 层统一执行，覆盖内置 `general-purpose`、`Explore`、自定义 profile 的 `tools: ["*"]` 和显式 `tools`。
+`EnterPlanMode` / `ExitPlanMode` 仍在子 runtime 中禁止。原因是 subagent 没有可靠的用户审批恢复面；一旦子模型进入 plan mode，`ExitPlanMode` 会请求用户确认并可能让父 turn 永久等待。过滤必须在 child provider-visible tool list 层统一执行，覆盖内置 `general-purpose`、`Explore`、自定义 profile 的 `tools: ["*"]` 和显式 `tools`。
 
 核心实现位置：
 
@@ -104,10 +99,11 @@ App/UI 层需要同时识别现役 `Task` 和历史 ZCode Agent 投影：
 
 关键回归覆盖：
 
-- `apps/zcode-cli/packages/core/tests/tool-contracts.test.ts`：`Agent` / `Task` 只在 subagent port 可用时注册，且共享 handler/schema/permission；provider-visible contracts 只包含 `Agent`。
+- `apps/zcode-cli/packages/core/tests/tool-contracts.test.ts`：`Agent` / `Task` 只在 subagent port 可用时注册，且共享 handler/schema/permission；该测试未传 `includeTaskAlias`，因此 provider-visible contracts 只包含 `Agent`。
+- `apps/zcode-cli/packages/core/tests/runtime-tool-allowlist.test.ts` 与 `task-alias-visibility.test.ts`：`Task` 的 provider-visible 可见性按 `taskType` 矩阵变化，并且首次注册与 shell-init refresh 结果一致。
 - `apps/zcode-cli/packages/core/tests/tool-hook-context.test.ts`：`Agent` / `Task` hook matcher alias 双向匹配，hook input 不被改写。
-- `apps/zcode-cli/packages/core/tests/main-tool-pool.test.ts`：父 runtime 具备 `Agent` runtime 能力，`Task` 仅作为非 provider-visible alias 保留。
-- `apps/zcode-cli/packages/core/tests/subagent-explore.test.ts`：子 runtime 不暴露 `Agent` / `Task`。
+- `apps/zcode-cli/packages/core/tests/main-tool-pool.test.ts`：subagents 关闭时父 runtime 不注册 `Agent` / `Task`。
+- `apps/zcode-cli/packages/core/tests/subagent-explore.test.ts`：Explore child 的 provider tool list 不包含 `Agent`。
 - `apps/zcode-cli/packages/core/tests/tool-executor-trace.test.ts`：Superpowers `SessionStart` 不再追加专用工具映射。
 - `packages/ui/test/toolIdentity.test.ts`：现役 `Task` 与历史 `title: "Task"` legacy 投影边界不串。
 

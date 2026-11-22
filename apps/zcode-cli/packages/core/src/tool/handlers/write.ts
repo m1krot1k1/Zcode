@@ -10,15 +10,24 @@ import {
   WriteOutputJsonSchema,
   WriteOutputSchema,
   createCoreError,
-  isFileSystemPortError,
   type FileSystemReadTextResult,
-  type FileSystemTextEncoding,
   type WriteInput,
   type TraceContext,
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
+import { createTransactionHooks } from "./transaction-hooks.js";
+import {
+  createFileTransactionManager,
+  type FileStagedSnapshot,
+  type IFileLockRegistry,
+  type TransactionReadStateEntryLike,
+} from "../file-transaction/index.js";
 import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
-import { resolveWorkspacePath } from "../path-policy.js";
+import {
+  assertPathWithinWriteScope,
+  resolveWorkspacePath,
+  workspaceBoundaryOptions,
+} from "../path-policy.js";
 import {
   createReadFileStateKey,
   findLatestReadFileState,
@@ -45,6 +54,16 @@ const WRITE_USER_MODIFIED_NOTE = " The user modified your proposed content befor
 const WRITE_NOT_READ_MESSAGE = "File has not been read yet. Read it first before writing to it.";
 const WRITE_STALE_MESSAGE =
   "File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.";
+
+/** Fallback для unit-тестов без runtime-реестра; в проде всегда приходит единый FileLockRegistry. */
+const NOOP_LOCK_REGISTRY: IFileLockRegistry = {
+  resolveCanonicalLockKey: async (_identity, _root, target) => target,
+  acquire: async () => ({ canonicalKeys: [], release() {} }),
+  acquireBatch: async () => ({ canonicalKeys: [], release() {} }),
+  withLocks: async (_entries, _options, fn) => fn(),
+  releaseByHolder: () => 0,
+  getActiveLockSnapshot: () => [],
+};
 
 function formatWriteModelContent(output: unknown): string {
   if (!isRecord(output)) {
@@ -86,66 +105,116 @@ export const writeHandler: ToolHandler = async (input, context) => {
     operation: "write",
     workingDirectory: context.workingDirectory,
     workspaceRoot: context.workspaceRoot,
+    ...workspaceBoundaryOptions(context),
+  });
+  // 原因: write_paths был только подсказкой для ledger; фактическая запись не ограничивалась.
+  assertPathWithinWriteScope({
+    filePath,
+    workspaceRoot: context.workspaceRoot,
+    writeScope: context.writeScope,
   });
 
-  let originalFile: string | null = null;
-  let originalEncoding: FileSystemTextEncoding | undefined;
-  let originalLineEndings: "LF" | "CRLF" | undefined;
-  let originalRevision: FileSystemReadTextResult["revision"] | undefined;
-  const readStartedAt = Date.now();
-  let fsReadMs = 0;
-  try {
-    const read = await fileSystemPort.readTextFile(
-      {
-        path: filePath,
-        trace: createWriteTrace(context),
-      },
-      { signal: context.abortSignal },
-    );
-    assertWritableExistingFileIsFresh(filePath, read, context.readFileState);
-    originalFile = read.content;
-    originalEncoding = read.encoding;
-    originalLineEndings = read.lineEndings;
-    originalRevision = read.revision;
-    fsReadMs = elapsedMsSince(readStartedAt);
-  } catch (error) {
-    fsReadMs = elapsedMsSince(readStartedAt);
-    if (!isFileSystemPortError(error) || error.code !== "not_found") {
-      throw error;
-    }
-  }
-
+  // 原因 (F-07): Write раньше писал буфер на диск без AST/синтаксической проверки.
+  // Теперь файл проходит через общий FileTransactionManager: staging -> SyntaxValidator ->
+  // атомарный commit с 100% откатом; readFileState обновляется только после успешного commit.
   const contentToWrite = stampMemoryOriginSessionId({
     content,
     filePath,
     memoryRoot: context.memoryRoot,
     sessionId: context.sessionId,
   });
-  const writeStartedAt = Date.now();
-  const writeResult = await fileSystemPort.writeTextFile(
-    {
-      path: filePath,
-      content: contentToWrite,
-      encoding: originalEncoding,
-      lineEndings: originalLineEndings,
-      createParents: true,
-      atomic: true,
-      expectedRevision: originalRevision,
-      trace: createWriteTrace(context),
-    },
-    { signal: context.abortSignal },
-  );
-  const fsWriteMs = elapsedMsSince(writeStartedAt);
+  let stagedBefore: string | null = null;
+  let stagedRevision: FileSystemReadTextResult["revision"];
 
+  // Freshness-проверка выполняется по уже снятому в памяти staged-снимку,
+  // поэтому файл читается ровно один раз (staging транзакции) и нет TOCTOU-окна между read и commit.
+  const onStagedFiles = (files: readonly FileStagedSnapshot[]): void => {
+    const staged = files[0];
+    if (!staged) return;
+    stagedBefore = staged.beforeContent;
+    stagedRevision = staged.revision;
+    if (staged.beforeContent === null) return;
+    assertWritableExistingFileIsFresh(
+      filePath,
+      {
+        path: filePath,
+        content: staged.beforeContent,
+        encoding: staged.encoding ?? "utf8",
+        lineEndings: staged.lineEndings,
+        bytesRead: Buffer.byteLength(staged.beforeContent, "utf8"),
+        sizeBytes: staged.revision?.sizeBytes ?? Buffer.byteLength(staged.beforeContent, "utf8"),
+        truncated: false,
+        revision: staged.revision,
+      },
+      context.readFileState,
+    );
+  };
+
+  const manager = createFileTransactionManager({
+    lockRegistry: context.fileLockRegistry ?? NOOP_LOCK_REGISTRY,
+  });
+  const writeStartedAt = Date.now();
+  const result = await manager.executeTransaction({
+    workspaceIdentity: context.workspaceIdentity,
+    workspacePath: context.workspaceRoot,
+    sessionId: context.sessionId,
+    turnId: context.turnId,
+    toolCallId: context.toolCallId,
+    toolName: "Write",
+    operations: [
+      {
+        kind: "create",
+        path: filePath,
+        displayPath: file_path,
+        content: contentToWrite,
+        overwrite: true,
+      },
+    ],
+    fileSystemPort,
+    readFileState: context.readFileState as unknown as Map<
+      string,
+      TransactionReadStateEntryLike
+    > | undefined,
+    enforceStaleReadGuard: false,
+    strictSyntaxValidation: true,
+    abortSignal: context.abortSignal,
+    trace: createWriteTrace(context),
+    onStagedFiles,
+    // Реактивная синхронизация: полный патч для Electron, сводка для Web/Mobile.
+    onTransactionEvent: createTransactionHooks(context),
+  });
+  const fsWriteMs = elapsedMsSince(writeStartedAt);
+  const fsReadMs = result.readMs;
+
+  if (result.status !== "committed") {
+    throw createCoreError(
+      CoreErrorType.ToolExecutionFailed,
+      result.errorDetails ?? `Write transaction ended with status ${result.status}.`,
+      {
+        context: {
+          code: result.status === "rejected_syntax" ? "write_syntax_validation_failed" : "write_failed",
+          filePath,
+          toolCallId: context.toolCallId,
+          toolName: "Write",
+          transactionStatus: result.status,
+        },
+        recoverable: true,
+      },
+    );
+  }
+
+  // Pipeline сам обновляет readFileState; revision берём из результата транзакции.
+  const committed = result.files[0];
   const readFileStateEntry = updateReadFileStateAfterWrite(
     context.readFileState,
     filePath,
     contentToWrite,
-    writeResult.revision,
+    committed?.revision ?? stagedRevision,
   );
   recordReadFileStateMetadata(context, readFileStateEntry);
 
-  if (originalFile) {
+  const originalFile = stagedBefore;
+  if (originalFile !== null) {
     return attachToolExecutionTelemetry(
       {
         type: "update",
@@ -221,6 +290,10 @@ export const writeToolEntry: ToolEntry = {
     sideEffectScope: "workspace",
     riskLevel: "medium",
     needsApproval: true,
+  },
+  resolveWorkspaceBoundaryPaths: (input) => {
+    const parsed = WriteInputSchema.safeParse(input);
+    return parsed.success ? [{ path: parsed.data.file_path, operation: "write" }] : [];
   },
   handler: writeHandler,
   formatModelContent: formatWriteModelContent,

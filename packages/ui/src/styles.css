@@ -118,24 +118,14 @@ html[data-document-hidden] *::after {
 }
 
 /*
- * Bugfix: 部分浏览器 / Electron 运行环境会在 focus-visible 时叠加系统级高亮边框，
- * 表现为和产品主题无关的黄色描边，看起来像“随机冒出来的无障碍样式”。
- * 这里在全局层同时清掉 outline 和 focus ring 对应的 box-shadow，避免系统高亮和组件局部 ring 混用。
- * 曾按对话框、远程控件和设置导航强制恢复 outline，导致组合输入出现双框；保留组件原有焦点样式，不再全局叠加。
+ * 修复原因：旧规则在全局用 `outline: none !important` 和 `box-shadow: none !important`
+ * 清掉所有焦点样式，既吞掉浏览器默认 focus-visible，也吞掉组件基于 ring（box-shadow）的键盘焦点提示，
+ * 键盘用户因此无法判断当前焦点位置。DESIGN.md 要求保留组件既有焦点样式，不允许再叠加全局 !important outline。
+ * 现在只抑制「鼠标等非键盘焦点」的 outline：:focus-visible 继续使用组件自身的 ring/outline，
+ * 没有自定义焦点样式的元素回落到浏览器默认高亮；forced-colors 模式同样不再清空 outline。
  */
-*:focus,
-*:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-  -webkit-box-shadow: none !important;
-}
-
-@media (forced-colors: active) {
-  *:focus,
-  *:focus-visible {
-    outline: none !important;
-    box-shadow: none !important;
-  }
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* === 主题变量 === */
@@ -170,6 +160,11 @@ html[data-document-hidden] *::after {
   --color-background-alt: color-mix(in oklab, var(--color-neutral-100) 60%, transparent);
   --color-background-win-alt: var(--color-neutral-200);
   --color-brand: var(--color-sky-400);
+  /* 修复：组件广泛使用 shadcn 语义 utility `ring-ring` 与 `text-muted-foreground`，
+   * 但主题此前没有定义这两个 token，focus ring 与弱化文字要么不生成、要么落到透明。
+   * ring 复用品牌色，muted 复用现有前景弱化层级，不引入新色板。 */
+  --color-ring: var(--color-brand);
+  --color-muted-foreground: var(--color-foreground-subtle);
   --color-resize-handle: var(--color-sky-500);
   --color-icon-blue: var(--color-terminal-bright-blue);
   --color-icon-purple: var(--color-terminal-bright-magenta);
@@ -2276,4 +2271,37 @@ html[data-document-hidden] *::after {
 [data-workspace-shell]:has([data-project-sidebar-panel="navigation"][aria-hidden="true"])
   [data-sidebar-divider-extension] {
   display: none;
+}
+
+/* 代码图星座：节点换位时滑过去，选中节点轻轻发光。平移画布不走这条过渡。 */
+.code-graph-constellation .react-flow__node {
+  transition: transform 680ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.code-graph-constellation .react-flow__edge-path {
+  transition:
+    stroke-opacity 220ms ease,
+    stroke-width 220ms ease;
+}
+
+.code-graph-constellation .react-flow__node.is-hot {
+  z-index: 4;
+  animation: code-graph-node-glow 2.6s ease-in-out infinite;
+}
+
+@keyframes code-graph-node-glow {
+  50% {
+    filter: drop-shadow(0 0 10px var(--color-terminal-bright-cyan));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-graph-constellation .react-flow__node,
+  .code-graph-constellation .react-flow__edge-path {
+    transition: none;
+  }
+
+  .code-graph-constellation .react-flow__node.is-hot {
+    animation: none;
+  }
 }

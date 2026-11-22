@@ -109,6 +109,8 @@ vi.mock("@/hooks/usePlatform.js", () => ({
     openExternal: openExternalMock,
     registerOAuthState: registerOAuthStateMock,
   }),
+  // 这个用例不测试本地目录选择；Provider 设置会间接挂载 OpenCode ACP 面板。
+  useSelectDirectory: () => async () => null,
 }));
 
 vi.mock("@/hooks/useServices.js", () => ({

@@ -1261,6 +1261,58 @@ describe("SessionPane draft prewarm admission lifecycle", () => {
 });
 
 describe("SessionPane stop foreground execution", () => {
+  it("OpenCode ACP Stop 发回当前 active run 的精确 command/run IDs", async () => {
+    const running = makeSnapshot();
+    running.control = {
+      ...running.control,
+      phase: "running",
+      sessionEnded: false,
+      canStop: true,
+      stopState: "stoppable",
+      stopTargetKind: "externalAgentRun",
+      activeWorks: [
+        {
+          kind: "externalAgentRun",
+          commandId: "opencode-command-4",
+          runId: "opencode-command-4",
+          sourceCommandId: "opencode-command-4",
+          startedAt: 10,
+        },
+      ],
+    };
+    projectionState.current = {
+      status: "live",
+      snapshot: running,
+      subscriptionId: "sub-opencode-stop",
+      lastError: null,
+      optimisticCommands: [],
+      loadingOlder: false,
+    };
+    mocks.sendCommand.mockImplementation(async (envelope: CommandEnvelope) =>
+      ackFor(envelope, { status: "accepted" }),
+    );
+
+    const root = await renderPane();
+    try {
+      await act(async () => {
+        captured.composerProps?.onStop?.();
+        await flushMicrotasks();
+      });
+      expect(mocks.sendCommand).toHaveBeenCalledTimes(1);
+      expect(mocks.sendCommand.mock.calls[0]?.[0]).toMatchObject({
+        type: "stop",
+        payload: {
+          expectedOpenCodeAgentRun: {
+            expectedCommandId: "opencode-command-4",
+            expectedRunId: "opencode-command-4",
+          },
+        },
+      });
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
   it.each([
     "button",
     "escape",

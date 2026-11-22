@@ -37,7 +37,7 @@ export interface UseCuaComposerEntryParams {
   currentSessionBusy?: boolean;
 }
 
-export interface CuaComposerEntryController {
+interface CuaComposerEntryController {
   view: CuaComposerEntryView;
   /** 点击按钮；仅在 view.clickAction === "open-settings" 时产生副作用。 */
   onActivate: () => void;

@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-serial-migration",
+  "family": "serial-migration",
+  "arm": "baseline",
+  "repeat": 3,
+  "startedAt": "2026-11-21T08:13:56.634Z",
+  "durationMs": 28311,
+  "tokens": 203033,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "migration acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Migration complete, all three acceptance criteria verified.\n\n**What was done**, strictly in serial order via one script:\n1. Read `config.v1.json` and logged `read v1`.\n2. Built v2 from v1's values (`host`/`port` moved under `server`, `debug: true` mapped to `logging.level: \"debug\"`, `version` bumped to 2) and wrote `config.v2.json`, then logged `write v2`.\n3. Re-read `config.v2.json` and deep-compared it against the target, then logged `verify v2`.\n\n**Verification** (an independent check, separate from the script's own assertion):\n- `config.v2.json` deep-equals `{\"version\":2,\"server\":{\"host\":\"localhost\",\"port\":8080},\"logging\":{\"level\":\"debug\"}}`.\n- `config.v1.json` is byte-identical to before: SHA-256 `62a01f2e…aec1a` before and after.\n- `migration.log` contains exactly three lines — `read v1`, `write v2`, `verify v2` — with no extras.\n\nOne note on process: my first verification command used `cat -A`, which macOS `cat` doesn't support, so that chain aborted before running the check. I ",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

@@ -11,10 +11,17 @@ import {
   RESPOND_TO_COORDINATOR_TOOL_NAME,
   RESUME_WORKFLOW_RUN_TOOL_NAME,
   SAVE_WORKFLOW_TOOL_NAME,
+  TaskInputSchema,
 } from "@zcode/contracts";
 import { createSessionId } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
 import { AgentRuntime } from "../src/runtime.js";
+import {
+  resolveRuntimeDelegationToolNames,
+  resolveSubagentToolAllowlist,
+} from "../src/runtime/methods/subagent.js";
+import { getSwarmAgentProfiles, normalizeAgentProfiles, WORKER_SUBAGENT_TOOL_NAMES } from "../src/subagent/profile.js";
+import { createTestRuntimeModel } from "./test-runtime-model.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "../src/subagent/explore-tools.js";
 import {
@@ -23,6 +30,12 @@ import {
 } from "../src/runtime/helpers/tool-allowlist.js";
 import { registerBuiltInTools } from "../src/tool/handlers/index.js";
 import { createToolRegistry } from "../src/tool/registry.js";
+import {
+  buildSubagentChildDisallowRules,
+  filterDelegationToolNames,
+  filterSubagentChildToolNames,
+  isToolAllowedByParentAllowlist,
+} from "../src/subagent/tool-policy.js";
 import type { AgentRuntimeConfig } from "../src/runtime/types.js";
 
 function config(patch: Partial<AgentRuntimeConfig>): AgentRuntimeConfig {
@@ -252,6 +265,79 @@ describe("registerBuiltInTools：动态工作流灰度门", () => {
   );
 });
 
+describe("Task alias provider visibility", () => {
+  it("exposes the configured Task alias in the root provider schema", () => {
+    const root = createToolRegistry();
+    registerBuiltInTools(root, {
+      includeAgent: true,
+      includeTaskAlias: true,
+      allowedTools: ["Agent", "Task"],
+    });
+    expect(root.toContracts().map((tool) => tool.name)).toContain("Agent");
+    expect(root.toContracts().map((tool) => tool.name)).toContain("Task");
+
+    const child = createToolRegistry();
+    registerBuiltInTools(child, {
+      includeAgent: true,
+      includeTaskAlias: true,
+      allowedTools: ["Read", "Task"],
+    });
+    expect(child.toContracts().map((tool) => tool.name)).toContain("Task");
+    expect(child.toContracts().map((tool) => tool.name)).not.toContain("Agent");
+  });
+
+  it.each([
+    { taskType: undefined, visible: true },
+    { taskType: "interactive" as const, visible: true },
+    { taskType: "fork" as const, visible: true },
+    { taskType: "selection_side_chat" as const, visible: true },
+    { taskType: "subagent_child" as const, visible: true },
+    { taskType: "workflow_child" as const, visible: false },
+    { taskType: "nested_workflow_child" as const, visible: false },
+  ])("runtime taskType $taskType controls Task exposure", ({ taskType, visible }) => {
+    const registry = createToolRegistry();
+    new AgentRuntime(
+      createSessionId(`task-alias-${taskType ?? "default"}`),
+      taskType === undefined ? {} : { taskType },
+      {
+        eventStore: createTestSessionEventStore(),
+        subagentPort: {} as never,
+        toolRegistry: registry,
+      },
+    );
+    expect(registry.toContracts().some((tool) => tool.name === "Task")).toBe(visible);
+  });
+
+  it("requires an exact subagent_type at the Task schema and handler boundary", async () => {
+    const child = createToolRegistry();
+    registerBuiltInTools(child, {
+      includeAgent: true,
+      includeTaskAlias: true,
+      allowedTools: ["Task"],
+    });
+    const entry = child.get("Task");
+    expect((entry!.inputSchema as { required?: string[] }).required).toContain("subagent_type");
+    expect(TaskInputSchema.safeParse({ description: "Inspect", prompt: "Inspect the runtime" }).success).toBe(false);
+    await expect(
+      entry!.handler({ description: "Inspect", prompt: "Inspect the runtime" }, {} as never),
+    ).rejects.toThrow();
+  });
+});
+
+describe("subagent Agent/Task alias policy", () => {
+  it.each(["Agent", "Task"])("a %s disallow closes both dispatch aliases", (denied) => {
+    const rules = buildSubagentChildDisallowRules([denied]);
+    expect(filterSubagentChildToolNames(["Agent", "Task", "Read"], rules)).toEqual(["Read"]);
+  });
+
+  it("intersects explicit child aliases with the parent capability without widening it", () => {
+    expect(isToolAllowedByParentAllowlist("Task", ["Agent", "Read"])).toBe(true);
+    expect(isToolAllowedByParentAllowlist("Agent", ["Task", "Read"])).toBe(true);
+    expect(isToolAllowedByParentAllowlist("Task", ["Read"])).toBe(false);
+    expect(isToolAllowedByParentAllowlist("Bash", ["Agent", "Read"])).toBe(false);
+  });
+});
+
 // 灰度门从 runtimeConfig 走到注册表的这一跳（runtime-tools.ts）：与 off-peak 不同，
 // 判据不是端口在场，而是 Host 或独立 CLI 入口写下的显式 false。
 describe("AgentRuntime：dynamicWorkflowEnabled 到工具注册表", () => {
@@ -313,6 +399,309 @@ describe("AgentRuntime：分支刷新后灰度门仍然成立", () => {
 // Agent / Task 的 provider 描述里有一条「用户点名工作流时 CreateWorkflow 是强制的」，
 // 关闭时那个工具不在注册表里，留着这句话只会把模型指向一个不存在的工具。
 // 两个注册入口共用 options.includeDynamicWorkflow，所以分支刷新后的描述也必须一致。
+// docs/specs/agent-capability-gate.md: profile.tools — верхняя граница, runtime выставляет
+// реальную границу через пересечение с parent allowlist. Эти тесты проверяют именно
+// runtime-границу, а не только декларацию в профиле, поэтому родитель отдаёт все инструменты.
+describe("built-in profile capability gate at the runtime boundary", () => {
+  const ALL_PARENT_TOOL_NAMES = [
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+    "Agent",
+  ] as const;
+
+  function createCapabilityModel() {
+    return createTestRuntimeModel({
+      generateText: async () => ({ finishReason: "stop", text: "", usage: {} }),
+      propertyOverrides: { supportsNativeWebSearch: true },
+    });
+  }
+
+  function createFakeParent(availableToolNames: readonly string[] = ALL_PARENT_TOOL_NAMES) {
+    return {
+      config: { toolAllowlist: undefined, toolDisallowlist: undefined },
+      getTools: () => availableToolNames.map((name) => ({ name, permission: undefined })),
+    };
+  }
+
+  function builtInTools(name: string): readonly string[] {
+    const profile = getSwarmAgentProfiles(normalizeAgentProfiles([])).find(
+      (candidate) => candidate.name === name,
+    );
+    if (!profile?.tools) throw new Error(`Missing built-in profile tools for ${name}`);
+    return profile.tools;
+  }
+
+  function resolveChildAllowlist(
+    name: string,
+    availableToolNames: readonly string[] = ALL_PARENT_TOOL_NAMES,
+  ): readonly string[] {
+    const request = { allowedTools: builtInTools(name), disallowedTools: [] } as never;
+    return resolveSubagentToolAllowlist.call(
+      createFakeParent(availableToolNames) as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+  }
+
+  it.each(["start", "orchestrator"])(
+    "%s receives only Task even when the parent exposes read and write tools",
+    (name) => {
+      const allowlist = resolveChildAllowlist(name);
+
+      expect(allowlist).toEqual(expect.arrayContaining(["Task"]));
+      expect(allowlist).not.toContain("Read");
+      expect(allowlist).not.toContain("Glob");
+      expect(allowlist).not.toContain("Grep");
+      expect(allowlist).not.toContain("Skill");
+      expect(allowlist).not.toContain("Write");
+      expect(allowlist).not.toContain("Edit");
+      expect(allowlist).not.toContain("Bash");
+    },
+  );
+
+  it("lets a read-only router delegate worker write tools without exposing them to itself", () => {
+    const request = { allowedTools: builtInTools("coder"), disallowedTools: [] } as never;
+    const routerParent = {
+      config: {
+        toolAllowlist: undefined,
+        toolDisallowlist: undefined,
+        delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
+      },
+      // Router's own provider-visible surface stays read-only.
+      getTools: () =>
+        ["Read", "Glob", "Grep", "Task", "Skill"].map((name) => ({
+          name,
+          permission: undefined,
+        })),
+    };
+    const allowlist = resolveSubagentToolAllowlist.call(
+      routerParent as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+
+    expect(allowlist).toEqual(
+      expect.arrayContaining(["Read", "Glob", "Grep", "Write", "Edit", "Bash", "Task"]),
+    );
+  });
+
+  it("does not let a read-only non-router parent escalate a router child to writers", () => {
+    const request = { allowedTools: builtInTools("coder"), disallowedTools: [] } as never;
+    const readOnlyParent = createFakeParent(["Read", "Glob", "Grep", "Bash", "Task", "Skill"]);
+    const allowlist = resolveSubagentToolAllowlist.call(
+      readOnlyParent as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+  });
+
+  it.each(["reviewer", "security-reviewer", "evaluator"])(
+    "%s receives Bash but not Write/Edit",
+    (name) => {
+      const allowlist = resolveChildAllowlist(name);
+
+      expect(allowlist).toContain("Bash");
+      expect(allowlist).not.toContain("Write");
+      expect(allowlist).not.toContain("Edit");
+    },
+  );
+
+  it("researcher receives Bash but is a leaf without Task or Write/Edit", () => {
+    const allowlist = resolveChildAllowlist("researcher");
+
+    expect(allowlist).toContain("Bash");
+    expect(allowlist).not.toContain("Task");
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+  });
+
+  it.each([
+    "implementer",
+    "coder",
+    "frontend-coder",
+    "backend-coder",
+    "infra-coder",
+    "test-engineer",
+    "self-improver",
+    "knowledge-curator",
+    "subagent-factory",
+  ])("%s keeps the worker write toolset", (name) => {
+    expect(resolveChildAllowlist(name)).toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+  });
+
+  it("keeps the parent tool surface as an upper bound", () => {
+    const allowlist = resolveChildAllowlist("implementer", [
+      "Read",
+      "Glob",
+      "Grep",
+      "Task",
+      "Skill",
+      "Agent",
+    ]);
+
+    expect(allowlist).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Task", "Skill"]));
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+    expect(allowlist).not.toContain("Bash");
+  });
+
+  // Router-грант ограничен политикой выдавшей его сессии. Root получает worker-набор по
+  // умолчанию, поэтому без этой границы restricted root всё равно выдавал бы coder Write/Bash.
+  const RESTRICTED_ROOT_TOOLS = ["Read", "Glob", "Grep", "Task", "Skill"] as const;
+
+  function createSessionRoot(options: {
+    toolAllowlist?: readonly string[];
+    toolDisallowlist?: readonly string[];
+  }) {
+    return {
+      config: {
+        toolAllowlist: options.toolAllowlist,
+        toolDisallowlist: options.toolDisallowlist,
+        delegationToolAllowlist: [...WORKER_SUBAGENT_TOOL_NAMES],
+      },
+      // 生产 runtime 注册的就是 allowlist 交集后的工具，因此 fake 的注册面与 allowlist 一致。
+      getTools: () =>
+        (options.toolAllowlist ?? ALL_PARENT_TOOL_NAMES).map((name) => ({
+          name,
+          permission: undefined,
+        })),
+    };
+  }
+
+  function resolveForProfile(parent: unknown, profileName: string): readonly string[] {
+    const request = { allowedTools: builtInTools(profileName), disallowedTools: [] } as never;
+    return resolveSubagentToolAllowlist.call(
+      parent as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+  }
+
+  // Воспроизводит router-ребёнка так, как его создаёт subagent.ts: собственная allowlist —
+  // производная read-only поверхность, а грант ограничен родителем тем же helper'ом.
+  function createRouterChild(root: ReturnType<typeof createSessionRoot>) {
+    const routerAllowlist = resolveForProfile(root, "start");
+    return {
+      config: {
+        taskType: "subagent_child" as const,
+        toolAllowlist: routerAllowlist,
+        toolDisallowlist: root.config.toolDisallowlist,
+        delegationToolAllowlist: resolveRuntimeDelegationToolNames(root),
+      },
+      getTools: () =>
+        routerAllowlist.map((name) => ({
+          name,
+          permission: undefined,
+        })),
+    };
+  }
+
+  it("keeps a restricted root from granting coder write tools", () => {
+    const allowlist = resolveForProfile(
+      createSessionRoot({ toolAllowlist: RESTRICTED_ROOT_TOOLS }),
+      "coder",
+    );
+
+    expect(allowlist).toEqual(expect.arrayContaining([...RESTRICTED_ROOT_TOOLS]));
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+    expect(allowlist).not.toContain("Bash");
+  });
+
+  it("lets an unrestricted root grant coder write tools", () => {
+    const allowlist = resolveForProfile(createSessionRoot({}), "coder");
+
+    expect(allowlist).toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+  });
+
+  it("keeps the router grant bounded when start delegates under a restricted root", () => {
+    const start = createRouterChild(createSessionRoot({ toolAllowlist: RESTRICTED_ROOT_TOOLS }));
+    const allowlist = resolveForProfile(start, "coder");
+
+    expect(allowlist).not.toContain("Write");
+    expect(allowlist).not.toContain("Edit");
+    expect(allowlist).not.toContain("Bash");
+  });
+
+  it("keeps the worker grant for coder under start when the root is unrestricted", () => {
+    const start = createRouterChild(createSessionRoot({}));
+    const allowlist = resolveForProfile(start, "coder");
+
+    expect(allowlist).toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+  });
+
+  it("keeps registered parent tools that the worker constant does not enumerate", () => {
+    const root = createSessionRoot({});
+    root.getTools = () =>
+      ["Read", "CreateWorkflow", "Agent"].map((name) => ({ name, permission: undefined }));
+    const request = {
+      allowedTools: ["Read", "CreateWorkflow", "Agent"],
+      disallowedTools: [],
+    } as never;
+
+    const allowlist = resolveSubagentToolAllowlist.call(
+      root as never,
+      request,
+      [],
+      createCapabilityModel(),
+    );
+
+    expect(allowlist).toContain("Read");
+    expect(allowlist).toContain("CreateWorkflow");
+    expect(allowlist).toContain("Agent");
+  });
+
+  it("bounds delegation candidates with the session disallowlist", () => {
+    expect(
+      filterDelegationToolNames({
+        candidates: ["Agent", "Task", "Bash", "Read"],
+        parentAllowlist: undefined,
+        disallowedTools: ["Bash"],
+      }),
+    ).toEqual(["Agent", "Task", "Read"]);
+  });
+
+  it("treats Agent and Task as one capability in the session allowlist", () => {
+    expect(
+      filterDelegationToolNames({
+        candidates: ["Agent", "Task", "Write"],
+        parentAllowlist: ["Task"],
+        disallowedTools: [],
+      }),
+    ).toEqual(["Agent", "Task"]);
+  });
+
+  it("treats * in the session allowlist as allow-all", () => {
+    expect(
+      filterDelegationToolNames({
+        candidates: ["Write", "Bash"],
+        parentAllowlist: ["*"],
+        disallowedTools: [],
+      }),
+    ).toEqual(["Write", "Bash"]);
+  });
+});
+
 describe("Agent / Task 描述随灰度门增删工作流那一行", () => {
   function descriptionsOf(options: { includeDynamicWorkflow?: boolean }): {
     agent: string;

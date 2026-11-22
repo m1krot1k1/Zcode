@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- public API manifest、动态裁剪策略和 Proxy 合同集中维护，拆分会增加对象图漂移风险。 */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {

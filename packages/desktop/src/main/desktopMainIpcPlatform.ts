@@ -1,9 +1,7 @@
 import { decorateRequestSecurityLogArgs } from "./request-security-edition/index.js";
-/* eslint-disable max-lines -- 桌面平台 IPC 集中装配，拆散会让权限边界更难审计；行数随平台能力增长。 */
 import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
-import { readZCodeStdioTapDevState } from "@zcode/services/node";
+import { readZCodeStdioTapDevState, testProxyConnectivity } from "@zcode/services/node";
 import {
-  DesktopCommandIds,
   appSettingsPatchSchema,
   formatZodError,
   localeSchema,
@@ -62,6 +60,7 @@ import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
 import { registerDesktopCommandIpcHandler } from "./desktopCommandIpc.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
+import { registerVoiceDictationIpc } from "./voice/index.js";
 
 export function registerPlatformIpcHandlers(options: {
   fetchHelpConfig?: () => Promise<unknown>;
@@ -114,6 +113,7 @@ export function registerPlatformIpcHandlers(options: {
   /** Browser tab 关闭、挂起、恢复与跨重启 shell IPC。 */
   browserViewResidencyHandlers?: BrowserViewResidencyIpcHandlers;
 }) {
+  registerVoiceDictationIpc(options.logger);
   ipcMain.handle(PlatformChannels.SelectDirectory, async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
@@ -139,6 +139,13 @@ export function registerPlatformIpcHandlers(options: {
       return null;
     }
     return result.filePaths[0];
+  });
+
+  ipcMain.handle(PlatformChannels.TestProxyConnectivity, async (_event, rawEndpoint: unknown) => {
+    if (typeof rawEndpoint !== "string" || rawEndpoint.length > 2048) {
+      return { ok: false, reason: "invalid_proxy" as const };
+    }
+    return testProxyConnectivity(rawEndpoint);
   });
 
   ipcMain.handle(PlatformChannels.SelectFiles, async () => {

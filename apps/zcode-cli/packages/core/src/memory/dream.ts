@@ -11,7 +11,7 @@ const DREAM_LOCK_FRESH_MS = 60 * 60 * 1000;
 const AUTO_DREAM_MINIMUM_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const AUTO_DREAM_SCAN_THROTTLE_MS = 10 * 60 * 1000;
 
-export type AutoDreamTimingDecision =
+type AutoDreamTimingDecision =
   | { decision: "scan" }
   | { decision: "skip"; reason: "minimum-interval" | "scan-throttled" };
 

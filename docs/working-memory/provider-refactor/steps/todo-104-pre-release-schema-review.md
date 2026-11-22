@@ -833,7 +833,7 @@ Provider / Model / 排序修改 --+
 
 有最终个人文件但缺少 defaultModelSelection 时表示未指定默认；不能仅凭这一成员缺省，每次启动又从旧配置恢复用户已清除的选择。旧数据导入与最终文件是否存在的判断需要一起适配。
 
-证据：[当前默认选择文件 codec](../../../../packages/provider-node/src/model-selection-config-file-codec.ts)、[当前默认选择 Repository](../../../../packages/provider-node/src/model-selection-config-repository.ts)、[当前独立文件装配](../../../../packages/services/src/node.ts)。
+证据：[当前默认选择文件 codec](../../../../packages/provider-node/src/provider-config-file-codec.ts)、[当前默认选择 Repository](../../../../packages/provider-node/src/model-selection-config-repository.ts)、[当前独立文件装配](../../../../packages/services/src/node.ts)。
 
 ### 6.10 新增文件取舍与程序维护目录：已确认
 
@@ -1246,7 +1246,7 @@ modelSelection 层：复用第 2 节通用结构，不另建一套 Provider / Mo
 
 旧版行为核查仅为当前静态证据：上述 staging 的桌面 / Web 恢复链路能读陌生 ID，但将对应模型判为不可用；有可用模型时有回退路径，无可用模型时历史可打开、发送受阻。旧版不读取 options.reasoningLevel。因此本裁决解决的是原选择快照丢失，不应声称旧版必然打不开整个会话；也未宣称已完成旧 App 实机回滚。
 
-证据：[Off-Peak 编辑](../../../../packages/services/src/session/offPeakTaskRepo.ts)、[Wiki 存储](../../../../packages/services/src/repo-wiki/repoWikiStorage.ts)、[Session 选择迁移](../../../../apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/model-selection-migration.ts)、[旧身份转换](../../../../packages/shared/src/legacy-model-provider-identity.ts)、[实用回滚原边界](./todo-69-provider-refactor-practical-rollback-compatibility.md)。
+证据：[Off-Peak 编辑](../../../../packages/services/src/session/offPeakTaskRepo.ts)、`../../../../packages/services/src/repo-wiki/repoWikiStorage.ts`（已删除）、[Session 选择迁移](../../../../apps/zcode-cli/packages/adapters/src/storage/session-store/migrations/0020-provider-model-selection.ts)、[旧身份转换](../../../../packages/shared/src/legacy-model-provider-identity.ts)、[实用回滚原边界](./todo-69-provider-refactor-practical-rollback-compatibility.md)。
 
 #### 6.18.4 仍需留意的具体边界
 

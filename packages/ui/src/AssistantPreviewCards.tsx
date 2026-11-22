@@ -19,7 +19,7 @@ import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
 import { OpenSplitButton } from "@/OpenSplitButton.js";
 
-export interface AssistantPreviewCardValidationResult {
+interface AssistantPreviewCardValidationResult {
   visibleCards: AssistantPreviewCard[];
   settled: boolean;
 }

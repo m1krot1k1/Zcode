@@ -52,7 +52,7 @@ export interface ComposerModelOptions {
   onValueChange: (value: string) => void;
 }
 
-export function getComposerThoughtDisplay(options: ComposerModelOptions) {
+function getComposerThoughtDisplay(options: ComposerModelOptions) {
   const current = options.levels.find((level) => level.value === options.value);
   const thinking = options.levels.filter((level) => !isNoThoughtLevel(level));
   const progress =

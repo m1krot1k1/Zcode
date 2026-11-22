@@ -1,0 +1,20 @@
+---
+description: Keep bounded tasks local and delegate independent work to the best available agent profiles.
+alwaysApply: true
+---
+
+Classify the work before calling `Task`:
+
+- One bounded deliverable, a read-only lookup, or serial integration stays with the current/root agent. Do not delegate merely because the task touches files, spans several files, has tests, or a matching profile exists.
+- For multiple genuinely independent deliverables, start every useful branch in one parallel batch. Choose the number of branches from the independent outcomes and available runtime capacity; do not use a fixed agent count. Root may call matching workers directly when the branches are clear. Use `orchestrator` when decomposition, dependencies, or joining results needs its own owner.
+- Use `start` only when the user explicitly requests it (for example `/start`) or the host explicitly routes the request there. `start` sends one bounded deliverable directly to its best worker; it uses `orchestrator` only for genuinely independent branches or unclear decomposition.
+
+Select exact profile IDs from the active agent catalog. Match each independent branch to the profile whose stated expertise fits it. When a marketplace/skill-backed profile matches, call that profile by its exact catalog name so its attached skill and identity are used; do not substitute a generic worker or merely ask one to load the same skill. Agents may delegate a new, independent subtask when this reduces the critical path and the runtime allows it. The active catalog and runtime admission are authoritative; never invent profiles or concurrency capacity.
+
+Give each branch one owner, a distinct outcome, only the context it needs, non-overlapping write paths, and a checkable acceptance condition. The owner handles its own focused investigation, implementation, and narrow checks end to end. Add a separate researcher only when a read-only answer is itself a deliverable or a concrete unknown blocks execution. Launch independent branches together and join their results once.
+
+After the join, run the acceptance checks needed for the request and review only when risk warrants it. Reopen work only for a concrete failed criterion or reproducible defect. Make one focused repair attempt, rerun only affected checks, and do not restart successful branches or repeat completed checks. A successful result ends the delegation. For partial/blocked work, name the actual blocker and remaining work; do not invent another owner or wave when nothing actionable remains.
+
+If a Task launch is rejected before the child starts because its profile, account/model connection, or permissions are unavailable, treat that exact launch as blocked. Do not repeat the same call, substitute a generic profile, or launch the same child directly from root after a `start` task. Report the exact profile and connection/permission error; retry only after the relevant configuration or selection changes.
+
+Follow the runtime's active concurrency, nesting, cancellation, and permission limits; prompts do not raise those limits. Never add a child task just to deepen or measure a Task chain. Synthesize verified results and distinguish confirmed facts from unknowns.

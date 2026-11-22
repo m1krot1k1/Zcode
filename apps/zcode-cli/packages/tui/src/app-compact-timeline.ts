@@ -14,7 +14,7 @@ export function compactCommandFromText(text: string): string | undefined {
   return instructions ? `/compact ${instructions}` : "/compact";
 }
 
-export function isCompactSlashCommand(text: string): boolean {
+function _isCompactSlashCommand(text: string): boolean {
   return compactCommandFromText(text) !== undefined;
 }
 
@@ -35,7 +35,7 @@ export function createLocalCompactTimelineMessage(input: {
   });
 }
 
-export function compactTimelineMessageFromPayload(
+function compactTimelineMessageFromPayload(
   payload: Record<string, unknown>,
 ): Message | null {
   const operationId = stringField(payload, "operationId");
@@ -159,7 +159,7 @@ function isRunningCompactTimelineStatus(status: TimelineMessage["status"]): bool
   return status === "started" || status === "retrying";
 }
 
-export function compactErrorMessage(errorPayload: unknown): string {
+function compactErrorMessage(errorPayload: unknown): string {
   const payload = asRecord(errorPayload);
   const nestedError = asRecord(payload.error);
   return (

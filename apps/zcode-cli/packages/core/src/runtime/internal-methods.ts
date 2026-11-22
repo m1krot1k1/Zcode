@@ -38,6 +38,10 @@ import type { BackgroundResultOriginMeta, ContextUsageBreakdownItem } from "@zco
 import type { RuntimeCommand, RuntimeCommandId } from "./command-queue.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
+  WorkspaceGenerateTextInput,
+  WorkspaceGenerateTextResult,
+} from "./methods/workspace-generate-text.js";
+import type {
   ActiveTurnInfo,
   AcquireForegroundPromotionLeaseResult,
   ActiveTurnKind,
@@ -65,6 +69,10 @@ import type {
 } from "./types.js";
 
 export interface AgentRuntimeCoreMethods {
+  generateWorkspaceText(
+    input: WorkspaceGenerateTextInput,
+    options?: { abortSignal?: AbortSignal; traceContext?: TraceContext },
+  ): Promise<WorkspaceGenerateTextResult>;
   updateConfig(
     patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
   ): void;
@@ -80,7 +88,10 @@ export interface AgentRuntimeCoreMethods {
     traceContext?: TraceContext,
   ): Promise<void>;
   getSessionModelSelection(): ModelSelection | undefined;
-  setSessionModelSelection(selection: ModelSelection | undefined): void;
+  setSessionModelSelection(
+    selection: ModelSelection | undefined,
+    options?: { reasoningLevelExplicit?: boolean },
+  ): void;
   getProjectId(): ProjectId;
   setWorkingDirectory(cwd: string): void;
   ensureSessionPersistedForExternalActivity(
@@ -271,6 +282,11 @@ export interface AgentRuntimeCoreMethods {
   ): Promise<void>;
   startMcpStartup(traceContext: TraceContext): Promise<McpConnectionSnapshot> | undefined;
   initializeMcp(traceContext: TraceContext): Promise<void>;
+  activateLazyMcpServers(
+    names: readonly string[],
+    traceContext: TraceContext,
+  ): Promise<{ activated: string[]; failed: Array<{ name: string; error: string }> }>;
+  activateLazyMcpServersForInput(input: string, traceContext: TraceContext): Promise<void>;
   refreshMcpToolsIfChanged(traceContext: TraceContext): Promise<void>;
   discoverSkillsForContext(traceContext: TraceContext): Promise<SkillLoadOutcome | undefined>;
   createConfigOnlyContextSnapshot(workingDirectory: string): ContextSourceSnapshot;

@@ -45,7 +45,7 @@ export const BOT_REPLY_GRANULARITIES: Array<{
   },
 ];
 
-export const DEFAULT_BOT_REPLY_GRANULARITY_ENTRY = BOT_REPLY_GRANULARITIES[0]!;
+const DEFAULT_BOT_REPLY_GRANULARITY_ENTRY = BOT_REPLY_GRANULARITIES[0]!;
 
 export function getBotReplyGranularitiesForProvider(
   provider: BotProvider,

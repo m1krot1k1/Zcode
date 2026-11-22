@@ -4,7 +4,225 @@
     "-lintignore"
   ],
   "workspaces": {
-    ".": {}
+    "packages/ui": {
+      "entry": [
+        "test/**/*.test.tsx",
+        "src/**/*.test.ts",
+        "src/**/*.test.tsx",
+        "src/lexical-ghost-autocomplete/index.ts",
+        "src/prompt-enhancer-ui/index.ts",
+        "src/settings-stage4/index.ts"
+      ],
+      "ignoreDependencies": [
+        "@radix-ui/react-radio-group",
+        "@rive-app/react-webgl2",
+        "ansi-to-react",
+        "embla-carousel-react",
+        "media-chrome",
+        "react-jsx-parser",
+        "use-stick-to-bottom"
+      ]
+    },
+    "packages/desktop": {
+      "entry": [
+        "scripts/**/*.{mjs,cjs,js,ts,mts}",
+        "src/renderer/cuaPermissionPanel.ts",
+        "src/renderer/src/plugin-sandbox/**/*.ts",
+        "src/renderer/src/resource-manager.tsx"
+      ],
+      "ignoreDependencies": [
+        "@babel/runtime",
+        "@electron/rebuild",
+        "@larksuiteoapi/node-sdk",
+        "@lydell/node-pty-linux-arm64",
+        "@lydell/node-pty-linux-x64",
+        "@opentelemetry/otlp-transformer",
+        "@wdio/local-runner",
+        "esbuild",
+        "module-details-from-path",
+        "tailwindcss"
+      ],
+      "ignore": [
+        "scripts/*-fixture/**",
+        "src/**/*.d.ts"
+      ]
+    },
+    "apps/zcode-cli/packages/dynamic-workflow": {
+      "entry": [
+        "tests/**/*.test.ts"
+      ],
+      "ignore": [
+        "tests/graphs/**",
+        "tests/lowering/**",
+        "tests/schemas/**",
+        "tests/schema-errors/**",
+        "tests/workflows/**",
+        "tests/smoke/**"
+      ]
+    },
+    "apps/zcode-cli/packages/office-runtime": {
+      "ignore": [
+        "ui/**",
+        "src/adapters/**"
+      ],
+      "ignoreDependencies": [
+        "@aiden0z/pptx-renderer",
+        "@modelcontextprotocol/ext-apps",
+        "docx-preview"
+      ],
+      "entry": [
+        "index.ts",
+        "src/adapters/**/*.ts"
+      ]
+    },
+    "apps/zcode-cli": {
+      "entry": [
+        "e2e/**/*.mjs",
+        "scripts/**/*.mjs"
+      ],
+      "ignoreDependencies": [
+        "oxlint",
+        "postject",
+        "tsx"
+      ]
+    },
+    "packages/zcode-server-cli": {
+      "entry": [
+        "scripts/**/*.mjs"
+      ]
+    },
+    ".": {
+      "entry": [
+        "scripts/**/*.{mjs,cjs,ts,mts}",
+        ".vscode/*.mjs"
+      ],
+      "ignoreDependencies": [
+        "@release-it/conventional-changelog",
+        "dotenv",
+        "lint-staged",
+        "postject",
+        "turbo"
+      ]
+    },
+    "packages/services": {
+      "entry": [
+        "src/index.ts",
+        "src/node.ts",
+        "src/code-intelligence/worker/indexWorker.ts",
+        "bench/code-intelligence-bench.mjs"
+      ],
+      "ignoreDependencies": [
+        "koffi",
+        "tree-sitter-wasms",
+        "web-tree-sitter"
+      ]
+    },
+    "packages/server": {
+      "entry": [
+        "src/entry-stdio.ts"
+      ],
+      "ignoreDependencies": [
+        "@lydell/node-pty-darwin-arm64",
+        "@lydell/node-pty-darwin-x64",
+        "@lydell/node-pty-linux-arm64",
+        "@lydell/node-pty-linux-x64",
+        "axios",
+        "combined-stream",
+        "follow-redirects",
+        "form-data",
+        "node-forge",
+        "proxy-from-env",
+        "undici",
+        "yaml",
+        "yauzl",
+        "yazl"
+      ]
+    },
+    "packages/web": {
+      "ignoreDependencies": [
+        "tailwindcss"
+      ]
+    },
+    "packages/web-share": {
+      "ignoreDependencies": [
+        "tailwindcss"
+      ]
+    },
+    "packages/share-ui": {
+      "ignoreDependencies": [
+        "@tailwindcss/typography",
+        "@types/react",
+        "@types/react-dom"
+      ]
+    },
+    "packages/shared": {
+      "ignoreDependencies": [
+        "@modelcontextprotocol/ext-apps"
+      ]
+    }
   },
-  "ignore": [".agents/**", ".claude/**", "docs/**", "packages/ui/src/components/**"]
+  "ignore": [
+    "**/contract.example.ts",
+    "**/contract.test.ts",
+    "**/contract.ts",
+    "**/dist-types/**",
+    "**/module.ts",
+    "**/skills/**",
+    ".agents/**",
+    ".claude/**",
+    "apps/zcode-cli/packages/adapters/tests/fixtures/**",
+    "apps/zcode-cli/packages/core/tests/fixtures/**",
+    "apps/zcode-cli/tests/gb2312.js",
+    "docs/**",
+    "packages/desktop/src/host/electronPort.ts",
+    "packages/desktop/src/scheduler/schedulerProtocol.ts",
+    "packages/rpc/examples/**",
+    "packages/services/src/subagents/contract.ts",
+    "packages/services/bench/code-intelligence-bench.mjs",
+    "packages/ui/src/components/**",
+    "packages/ui/test/browser/**",
+    "packages/ui/test/fixtures/**"
+  ],
+  "ignoreDependencies": [
+    "d3-path",
+    "tailwind-scrollbar-hide",
+    "@modelcontextprotocol/sdk",
+    "node-pty",
+    "ws",
+    "zod"
+  ],
+  "entry": [
+    "scripts/**/*.{mjs,cjs,ts,mts}",
+    ".vscode/*.mjs"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignoreIssues": {
+    "packages/ui/src/app-shell/workflow-artifacts/presets/ArtifactChartView.tsx": [
+      "duplicates"
+    ],
+    "apps/zcode-cli/packages/contracts/src/tools/agent.ts": [
+      "duplicates"
+    ],
+    "apps/zcode-cli/packages/contracts/src/tools/create-workflow.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/shared-validation-part1.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/zcode-protocol-v4/protocol-v4-transport-part2.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/zcode-protocol/schema-core.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/zcode-protocol/schema-mcp.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/task-realtime-core.ts": [
+      "duplicates"
+    ],
+    "packages/shared/src/streaming-tool-input-preview.ts": [
+      "duplicates"
+    ]
+  }
 }

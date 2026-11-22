@@ -11,6 +11,14 @@ const AZURE_CONTEXT_LENGTH_ERROR =
 const GEMINI_CONTEXT_LENGTH_ERROR =
   "The input token count (131137) exceeds the maximum number of tokens allowed (131072).";
 
+function openCodeEmptyResponseMessage(modelId: string, originalError?: string): string {
+  const detail = originalError ? ` Original error: ${originalError}` : "";
+  return (
+    `OpenCode returned no response data for model "${modelId}".` +
+    detail
+  );
+}
+
 describe("classifyModelFailure context length errors", () => {
   it("maps the reported maximum context length message to context exceeded", () => {
     expect(classifyModelFailure(new Error(MAXIMUM_CONTEXT_LENGTH_ERROR))).toMatchObject({
@@ -228,6 +236,64 @@ describe("classifyModelFailure context length errors", () => {
   });
 });
 
+describe("OpenCode session.create diagnostics", () => {
+  it("retains the sanitized upstream status, code, and message through the SDK error wrapper", () => {
+    const error = new APICallError({
+      message:
+        'Failed to create session: {"statusCode":429,"code":"RATE_LIMITED","message":"OpenCode usage limit reached."}',
+      url: "opencode://session",
+      requestBodyValues: {},
+      isRetryable: false,
+      data: { errorType: "OpenCodeRequestError", modelId: "opencode/deepseek-v4.1-flash-free" },
+    });
+
+    expect(inspectProviderFailure(error)).toEqual({
+      providerErrorCode: "RATE_LIMITED",
+      providerErrorMessage: "OpenCode usage limit reached.",
+    });
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "OPENCODE_FREE_LIMIT_REACHED",
+      reason: "rate_limited",
+      retryable: false,
+      statusCode: 429,
+    });
+  });
+
+  it("identifies an OpenCode authentication failure without exposing the upstream body", () => {
+    const error = new APICallError({
+      message:
+        'Failed to create session: {"statusCode":401,"code":"AUTH_REQUIRED","message":"Sign in required."}',
+      url: "opencode://session",
+      requestBodyValues: {},
+      isRetryable: false,
+      data: { errorType: "OpenCodeRequestError" },
+    });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "provider_not_configured",
+      reason: "auth_failed",
+      retryable: false,
+      statusCode: 401,
+      message:
+        "OpenCode sign-in is required. Sign in with the OpenCode CLI; ZCode does not read or copy those credentials.",
+    });
+  });
+
+  it("surfaces the OpenCode workspace preflight error instead of a generic model failure", () => {
+    const error = Object.assign(new Error("private workspace detail"), {
+      code: "OPENCODE_WORKSPACE_UNAVAILABLE",
+    });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "model_request_failed",
+      message:
+        "OpenCode needs an available workspace folder. Reopen or restore the workspace, then try again.",
+      reason: "unknown",
+      retryable: false,
+    });
+  });
+});
+
 describe("classifyModelFailure TLS errors", () => {
   it.each([
     Object.assign(new Error("request failed"), { code: "MODEL_TLS_VALIDATION_FAILED" }),
@@ -404,6 +470,175 @@ describe("classifyModelFailure provider business codes", () => {
       retryAfterMs: 37_000,
       retryable: true,
       statusCode: 529,
+    });
+  });
+
+  it("shows an OpenCode sign-in error without treating authentication as a provider switch", () => {
+    const failure = classifyModelFailure(
+      new ProviderBusinessError({
+        providerCode: "AUTH_REQUIRED",
+        providerId: "opencode",
+        providerKind: "opencode-sdk",
+        providerMessage: "OpenCode authentication is required",
+        statusCode: 401,
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "provider_not_configured",
+      message:
+        "OpenCode sign-in is required. Sign in with the OpenCode CLI; ZCode does not read or copy those credentials.",
+      reason: "auth_failed",
+      retryable: false,
+      statusCode: 401,
+    });
+  });
+
+  it("classifies an OpenCode free-usage sentence inside the empty-response wrapper as terminal", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: openCodeEmptyResponseMessage(
+          "opencode/deepseek-v4.1-flash-free",
+          "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go",
+        ),
+        url: "opencode://session",
+        requestBodyValues: {},
+        isRetryable: false,
+        data: {
+          errorType: "EmptyResponseData",
+          modelId: "opencode/deepseek-v4.1-flash-free",
+        },
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "OPENCODE_FREE_LIMIT_REACHED",
+      message:
+        "OpenCode free usage limit reached. Resets in about 4 hours, or switch to another model.",
+      reason: "rate_limited",
+      retryable: false,
+    });
+  });
+
+  it("classifies an OpenCode empty response caused by fetch failed as a retryable network error", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: openCodeEmptyResponseMessage("opencode/deepseek-v4.1-flash-free", "fetch failed"),
+        url: "opencode://session",
+        requestBodyValues: {},
+        isRetryable: false,
+        data: {
+          errorType: "EmptyResponseData",
+          modelId: "opencode/deepseek-v4.1-flash-free",
+        },
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "model_request_failed",
+      reason: "network_error",
+      retryReason: "network_error",
+      retryable: true,
+    });
+  });
+
+  it("keeps an OpenCode empty response without a fetch failure non-retryable", () => {
+    const error = new APICallError({
+      message: openCodeEmptyResponseMessage(
+        "opencode/deepseek-v4.1-flash-free",
+        "Unexpected server error. Check server logs for details.",
+      ),
+      url: "opencode://session",
+      requestBodyValues: {},
+      isRetryable: false,
+      data: {
+        errorType: "EmptyResponseData",
+        modelId: "opencode/deepseek-v4.1-flash-free",
+      },
+    });
+    const failure = classifyModelFailure(error);
+
+    expect(failure).toMatchObject({
+      reason: "unknown",
+      retryable: false,
+      message:
+        "OpenCode's local server failed while processing the request. Check the OpenCode CLI logs; the model ID has not been identified as the cause.",
+    });
+    expect(failure.reason).not.toBe("network_error");
+  });
+
+  it("keeps the local OpenCode HTTP status while treating a 500 as an upstream server failure", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: openCodeEmptyResponseMessage(
+          "opencode/deepseek-v4.1-flash-free",
+          "Unexpected server error. Check server logs for details.",
+        ),
+        url: "opencode://session",
+        requestBodyValues: {},
+        statusCode: 500,
+        isRetryable: false,
+        data: {
+          errorType: "EmptyResponseData",
+          modelId: "opencode/deepseek-v4.1-flash-free",
+        },
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      statusCode: 500,
+      reason: "unknown",
+      retryable: false,
+      message:
+        "OpenCode's local server failed while processing the request. Check the OpenCode CLI logs; the model ID has not been identified as the cause.",
+    });
+  });
+
+  it("classifies a bare undici TypeError fetch failed as a retryable network error", () => {
+    expect(classifyModelFailure(new TypeError("fetch failed"))).toMatchObject({
+      code: "model_request_failed",
+      reason: "network_error",
+      retryReason: "network_error",
+      retryable: true,
+    });
+  });
+
+  it("does not treat an HTTP 429 as a fetch failure when the message mentions fetch failed", () => {
+    const failure = classifyModelFailure(
+      new APICallError({
+        message: "Provider rate limited the model request. Original error: fetch failed",
+        url: "opencode://session",
+        requestBodyValues: {},
+        isRetryable: false,
+        statusCode: 429,
+      }),
+    );
+
+    expect(failure).toMatchObject({
+      code: "model_rate_limited",
+      reason: "rate_limited",
+      retryable: true,
+      statusCode: 429,
+    });
+  });
+
+  it("preserves OpenCode provider attribution when rebuilding a business finish error", () => {
+    const error = detectProviderBusinessFinishError({
+      providerId: "opencode",
+      providerKind: "opencode-sdk",
+      source: {
+        type: "finish",
+        rawFinishReason: "provider_success_false",
+        providerCode: "AUTH_REQUIRED",
+        message: "OpenCode authentication is required",
+      },
+    });
+
+    expect(error).toBeInstanceOf(ProviderBusinessError);
+    expect(error).toMatchObject({
+      providerId: "opencode",
+      providerKind: "opencode-sdk",
+      providerCode: "AUTH_REQUIRED",
     });
   });
 
@@ -1039,6 +1274,50 @@ describe("classifyModelFailure provider business codes", () => {
       retryable: true,
       statusCode: 408,
     });
+  });
+});
+
+describe("classifyModelFailure root run budget exhaustion", () => {
+  it.each([
+    ["resource", "Root run resource budget is exhausted: session_1:turn_1"],
+    ["token", "Root run token budget exhausted"],
+    ["time", "Root run time budget exhausted"],
+  ])("maps the %s budget message to run_budget_exhausted", (_dimension, message) => {
+    expect(classifyModelFailure(new Error(message))).toMatchObject({
+      code: "model_request_failed",
+      message,
+      reason: "run_budget_exhausted",
+      retryable: false,
+    });
+  });
+
+  it("keeps the budget reason instead of cancelled when the run is already aborted", () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    expect(
+      classifyModelFailure(new Error("Root run time budget exhausted"), controller.signal),
+    ).toMatchObject({
+      reason: "run_budget_exhausted",
+      retryable: false,
+    });
+  });
+
+  it("reads the budget message from the error cause", () => {
+    const error = new Error("Turn execution failed", {
+      cause: new Error("Root run token budget exhausted"),
+    });
+
+    expect(classifyModelFailure(error)).toMatchObject({
+      reason: "run_budget_exhausted",
+      retryable: false,
+    });
+  });
+
+  it("does not classify ordinary text or non-Error values as budget exhaustion", () => {
+    expect(classifyModelFailure(new Error("Model request failed.")).reason).toBe("unknown");
+    expect(classifyModelFailure(undefined).reason).toBe("unknown");
+    expect(classifyModelFailure(null).reason).toBe("unknown");
   });
 });
 

@@ -9,7 +9,7 @@ import { formatBytes, formatPercent, type ResourceUsageGroupView } from "./resou
 
 export const UNSAMPLED_PLACEHOLDER = "—";
 
-export type UsageMetric = "cpu" | "memory";
+type UsageMetric = "cpu" | "memory";
 
 interface UsageMeterProps {
   testId: string;

@@ -1,6 +1,8 @@
 import type {
   LoadCliMcpFromUserDirectoryRequest,
   LoadCliMcpFromUserDirectoryResult,
+  ClineMcpMarketplaceCatalog,
+  McpRegistryMarketplaceResult,
   McpSyncCandidateListResult,
   McpSyncExportResult,
   McpSyncExportedServer,
@@ -9,6 +11,7 @@ import type {
   RemoteSyncWriteAccessResult,
   SaveCliMcpToUserDirectoryRequest,
   ZCodeAgentMcpServer,
+  ZCodeMcpConnectResult,
   ZCodeMcpListMode,
   ZCodeMcpListResult,
 } from "@zcode/shared";
@@ -16,6 +19,14 @@ import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 export interface IMcpSyncService {
+  /** Load untrusted, read-only MCP discovery metadata from the fixed Cline catalog. */
+  loadMarketplaceCatalog(): Promise<ClineMcpMarketplaceCatalog>;
+  /**
+   * Search the Official MCP Registry (public, no credentials) for installable
+   * servers. Returns normalized stdio/remote options; installation is performed
+   * by the caller after explicit user approval.
+   */
+  searchMarketplace(query: string): Promise<McpRegistryMarketplaceResult>;
   loadMcpFromUserDirectory(
     request?: LoadCliMcpFromUserDirectoryRequest,
   ): Promise<LoadCliMcpFromUserDirectoryResult>;
@@ -30,6 +41,17 @@ export interface IMcpSyncService {
     mcpServers?: ZCodeAgentMcpServer[];
     mode?: ZCodeMcpListMode;
   }): Promise<ZCodeMcpListResult>;
+  /**
+   * 设置页显式连接（`mcp/connect`）。只有 `approveProjectScope: true` 才允许
+   * project-scope 写 digest approval；其余情况只返回 requiresApproval 投影。
+   */
+  connectWorkspaceMcpServer(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    serverName: string;
+    mcpServers?: ZCodeAgentMcpServer[];
+    approveProjectScope?: boolean;
+  }): Promise<ZCodeMcpConnectResult>;
   saveMcpToUserDirectory(payload: SaveCliMcpToUserDirectoryRequest): Promise<void>;
   listLocalUserMcpCandidates(): Promise<McpSyncCandidateListResult>;
   listRemoteUserMcpStatuses(params: { names: string[] }): Promise<McpSyncRemoteStatusResult>;

@@ -38,7 +38,7 @@ export function getV4ClientId(): string {
   return clientId;
 }
 
-export interface CreateCommandEnvelopeInput<T extends CommandType> {
+interface CreateCommandEnvelopeInput<T extends CommandType> {
   type: T;
   payload: CommandPayloadMap[T];
   /** createSession 时为 null。 */

@@ -220,6 +220,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
     let child: ChildProcess | undefined;
     let cwdDialect: ExecutionShellDialect = defaultCwdDialect(this.platform);
     let cwdFilePath: string | undefined;
+    let sandboxReport: ExecutionResult["sandbox"];
     let timedOut = false;
     let cancelled = false;
     let exited = false;
@@ -301,6 +302,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
 
     try {
       const prepared = await this.prepareChildSpawn(request);
+      sandboxReport = prepared.sandboxReport;
 
       // shell init snapshot 创建是异步的；用户可能在等待期间取消或关闭 adapter。
 
@@ -483,6 +485,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
         cancelled,
         error: failure,
         resolvedCwd,
+        sandbox: sandboxReport,
       });
 
       this.emitResult(options, result);
@@ -502,6 +505,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
         timedOut: false,
         cancelled: false,
         error: failure,
+        sandbox: sandboxReport,
       });
       this.emitResult(options, result);
       return result;

@@ -1,0 +1,3 @@
+{"taskId": "holdout-package-version", "arm": "candidate", "run": 1, "success": true, "tokens": 68522, "cacheReadTokens": 33991, "durationMs": 11461, "quality": 1.0, "criticalRegressions": 0, "holdout": true, "synthetic": false, "mode": "behavioral"}
+{"taskId": "holdout-package-version", "arm": "candidate", "run": 2, "success": true, "tokens": 71580, "cacheReadTokens": 34047, "durationMs": 10241, "quality": 1.0, "criticalRegressions": 0, "holdout": true, "synthetic": false, "mode": "behavioral"}
+{"taskId": "holdout-package-version", "arm": "candidate", "run": 3, "success": true, "tokens": 68643, "cacheReadTokens": 34047, "durationMs": 9129, "quality": 1.0, "criticalRegressions": 0, "holdout": true, "synthetic": false, "mode": "behavioral"}

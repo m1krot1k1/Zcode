@@ -1,5 +1,3 @@
-/* eslint-disable max-lines -- off-peak 任务编排服务集中维护 创建/取消/暂停/继续/删除、
-   轮询同步（offPeakTaskSync）、终态核销 outbox 与 3102 续跑重取号，稳定后再按职责拆分。 */
 /* off-peak 任务编排服务（host 域，仿 automationService 形态）。
    职责：
    - 创建即取号（POST /ticket 成功才落库，§4.1）；3103/3101 抛类型化错误给 UI
@@ -29,11 +27,11 @@ import type { ModelSelection, ModelSelectionValidation } from "@zcode/provider";
 import { OffPeakResidentExecutions } from "./offPeakResidentExecutions.js";
 
 /** 轮询下限/上限与失败退避（服务端 next_poll_after 优先，钳制防打爆/防饿死）。 */
-export const OFF_PEAK_SYNC_MIN_INTERVAL_MS = 5_000;
-export const OFF_PEAK_SYNC_MAX_INTERVAL_MS = 5 * 60_000;
+const OFF_PEAK_SYNC_MIN_INTERVAL_MS = 5_000;
+const OFF_PEAK_SYNC_MAX_INTERVAL_MS = 5 * 60_000;
 const SYNC_FAILURE_BASE_MS = 10_000;
 
-export interface OffPeakTaskServiceDeps {
+interface OffPeakTaskServiceDeps {
   repo: OffPeakTaskRepo;
   prepareProjectExecution?: (projectId: string) => Promise<ProjectExecutionSnapshot>;
   client: OffPeakServerClient;

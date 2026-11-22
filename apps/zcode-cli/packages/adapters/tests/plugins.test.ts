@@ -15,6 +15,7 @@ import {
   discoverNodePluginsSync,
   enrichCachedClaudeMarketplaceIcons,
   ensureDefaultPluginMarketplaces,
+  grantPluginHookTrust,
   installMarketplacePlugin,
   listInstalledPluginRecords,
   loadKnownMarketplacesSync,
@@ -521,6 +522,58 @@ describe("NodePluginAdapter", () => {
     }
   });
 
+  it("dedupes the same plugin name across marketplaces and keeps the first MCP server", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-duplicate-name-"));
+    const inlineRoot = join(dir, "inline-shared");
+    const officialRoot = join(dir, "official-shared");
+    const mcpServers = {
+      shared: { type: "stdio", command: "node", args: ["server.js"] },
+    };
+
+    try {
+      await writePluginManifest(inlineRoot, {
+        name: "shared-plugin",
+        version: "1.0.0",
+        mcpServers,
+      });
+      await writePluginManifest(officialRoot, {
+        name: "shared-plugin",
+        version: "2.0.0",
+        mcpServers,
+      });
+
+      const outcome = discoverNodePluginsSync({
+        config: {
+          dirs: [inlineRoot],
+          enabled: true,
+          enabledPlugins: {},
+          options: {},
+          suppressedBuiltins: [],
+        },
+        env: {},
+        officialPluginRoots: [officialRoot],
+        storageRoot: join(dir, "storage"),
+        workingDirectory: join(dir, "workspace"),
+      });
+
+      expect(outcome.plugins).toHaveLength(1);
+      expect(outcome.plugins[0]).toMatchObject({
+        marketplace: "inline",
+        name: "shared-plugin",
+      });
+      expect(Object.keys(outcome.mcpServers)).toEqual(["plugin:shared-plugin:shared"]);
+      expect(
+        outcome.diagnostics.some(
+          (diagnostic) =>
+            diagnostic.code === "plugin_duplicate_name" &&
+            diagnostic.pluginId === "shared-plugin@zcode-plugins-official",
+        ),
+      ).toBe(true);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   // Guard: suppression only targets official candidates. An inline/cache plugin whose id
   // collides with a suppressed string must NOT be dropped.
   it("does not suppress inline plugins that share a suppressed built-in's name", async () => {
@@ -738,6 +791,93 @@ describe("NodePluginAdapter", () => {
     }
   });
 
+  // 回归：manifest 之前没有任何内核版本声明，不兼容插件也能装进 inventory。
+  // 安装必须在写入 installed record 之前 fail-closed，且无声明/满足声明的目录保持原行为。
+  it("rejects plugins whose declared ZCode kernel version is incompatible", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-app-version-"));
+    const storageRoot = join(dir, "storage");
+    const marketplaceRoot = join(dir, "marketplace");
+
+    try {
+      await writeMarketplaceManifest(marketplaceRoot, {
+        name: "compat-market",
+        plugins: [
+          { name: "too-new", source: "./plugins/too-new" },
+          { name: "compatible", source: "./plugins/compatible" },
+          { name: "legacy", source: "./plugins/legacy" },
+          { name: "broken-range", source: "./plugins/broken-range" },
+        ],
+      });
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "too-new"),
+        { name: "too-new", version: "1.0.0", minAppVersion: "999.0.0" },
+        ".claude-plugin",
+      );
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "compatible"),
+        { name: "compatible", version: "1.0.0", engines: { zcode: ">=0.0.0" } },
+        ".claude-plugin",
+      );
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "legacy"),
+        { name: "legacy", version: "1.0.0" },
+        ".claude-plugin",
+      );
+      await writePluginManifest(
+        join(marketplaceRoot, "plugins", "broken-range"),
+        { name: "broken-range", version: "1.0.0", engines: { zcode: "not a range" } },
+        ".claude-plugin",
+      );
+      await addMarketplace({
+        source: { source: "directory", path: marketplaceRoot },
+        storageRoot,
+      });
+
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "too-new",
+          storageRoot,
+        }),
+      ).rejects.toMatchObject({ diagnosticCode: "plugin_incompatible_app_version" });
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "broken-range",
+          storageRoot,
+        }),
+      ).rejects.toMatchObject({ diagnosticCode: "plugin_incompatible_app_version" });
+      // 被拒绝的插件不能留下 installed record，否则 UI 会显示已安装但不可用。
+      expect(listInstalledPluginRecords(storageRoot)).toHaveLength(0);
+
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "compatible",
+          storageRoot,
+        }),
+      ).resolves.toMatchObject({ closure: ["compatible@compat-market"] });
+      await expect(
+        installMarketplacePlugin({
+          appVersion: "0.17.0",
+          marketplace: "compat-market",
+          name: "legacy",
+          storageRoot,
+        }),
+      ).resolves.toMatchObject({ closure: ["legacy@compat-market"] });
+      expect(
+        listInstalledPluginRecords(storageRoot)
+          .map((record) => record.name)
+          .toSorted(),
+      ).toEqual(["compatible", "legacy"]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("loads Claude-compatible local plugin components", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-"));
     const pluginRoot = join(dir, "ios-plugin");
@@ -819,7 +959,9 @@ describe("NodePluginAdapter", () => {
             command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start"',
             event: "SessionStart",
             matcher: "startup",
-            runnable: true,
+            // inline（project plugins.dirs 形态）不是 first-party：未显式信任前不可执行，
+            // 定义仍保留给设置页只读展示（docs/specs/2026-11-11-plugin-hooks-trust.md PT-08）。
+            runnable: false,
             sourcePath: join(pluginRoot, "hooks", "hooks.json"),
             type: "command",
           },
@@ -838,14 +980,9 @@ describe("NodePluginAdapter", () => {
       expect(outcome.mcpServers[mcpKey]?.env).toMatchObject({
         IOS_SIM_DEFAULT_DEVICE: "iPhone 16",
       });
-      expect(outcome.hooks.SessionStart?.[0]?.hooks[0]).toMatchObject({
-        command: '"${CLAUDE_PLUGIN_ROOT}/hooks/session-start"',
-        plugin: {
-          id: "ios-dev@inline",
-          rootPath: pluginRoot,
-        },
-        type: "command",
-      });
+      // 未信任的 inline 插件 Hook 不进入可执行集合：matcher 在 gate 之前就被清空，
+      // 因此 bootstrap/core 拿不到任何可创建进程的事件。
+      expect(outcome.hooks.SessionStart).toBeUndefined();
 
       const disabledOutcome = await createNodePluginAdapter({
         storageRoot: join(dir, "plugins"),
@@ -866,7 +1003,8 @@ describe("NodePluginAdapter", () => {
         hookDetails: [
           {
             event: "SessionStart",
-            runnable: true,
+            // 未信任状态与插件启停无关：disabled 插件同样只做只读展示。
+            runnable: false,
           },
         ],
       });
@@ -3546,7 +3684,7 @@ describe("NodePluginAdapter", () => {
     }
   });
 
-  it("runs Marketplace cache hooks from third-party marketplaces when enabled", async () => {
+  it("blocks Marketplace cache hooks from third-party marketplaces until trusted", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-marketplace-hooks-"));
     const storageRoot = join(dir, "storage");
     const marketplaceRoot = join(dir, "marketplace");
@@ -3599,16 +3737,44 @@ describe("NodePluginAdapter", () => {
         storageRoot,
         workingDirectory: dir,
       });
-      // 三方 marketplace 插件 hook 现在默认放行（与内置/官方一致）。
-      expect(outcome.hooks.SessionStart).toBeDefined();
+      // 三方 marketplace 的 cache 安装产物不是 first-party：无显式信任记录时 Hook 不可执行，
+      // 也不进入 PluginLoadOutcome.hooks（docs/specs/2026-11-11-plugin-hooks-trust.md PT-01）。
+      expect(outcome.hooks.SessionStart).toBeUndefined();
       expect(outcome.plugins[0]?.hookDetails).toMatchObject([
         {
           command: "echo hooked",
           event: "SessionStart",
-          runnable: true,
+          runnable: false,
           type: "command",
         },
       ]);
+
+      // 显式 trust 后同一 discovery 才注册（PT-02）。记录按 pluginId + version + digest 匹配，
+      // 安装本身不会产生任何隐式信任。
+      await grantPluginHookTrust({
+        events: {
+          SessionStart: [{ hooks: [{ command: "echo hooked", type: "command" }] }],
+        },
+        pluginId: "hooked@hook-market",
+        storageRoot,
+        version: "0.0.0",
+      });
+      const trustedOutcome = await createNodePluginAdapter({ storageRoot }).discoverPlugins({
+        config: {
+          dirs: [],
+          enabled: true,
+          enabledPlugins: { "hooked@hook-market": true },
+          options: {},
+        },
+        env: {},
+        storageRoot,
+        workingDirectory: dir,
+      });
+      expect(trustedOutcome.hooks.SessionStart?.[0]?.hooks[0]).toMatchObject({
+        command: "echo hooked",
+        plugin: { id: "hooked@hook-market" },
+      });
+      expect(trustedOutcome.plugins[0]?.hookDetails).toMatchObject([{ runnable: true }]);
       expect(outcome.diagnostics).not.toContainEqual(
         expect.objectContaining({
           code: "plugin_unsupported_component",

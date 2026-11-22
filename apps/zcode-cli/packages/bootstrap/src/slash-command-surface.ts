@@ -10,6 +10,10 @@ export const APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES = [
   "workflow",
   "compact",
   "init",
+  "start",
+  "review",
+  "evolve",
+  "evaluate",
 ] as const;
 
 // Plan 由 Composer 本地操作提供，保留名称以防自定义命令接管该入口。
@@ -22,7 +26,7 @@ const RESERVED_SLASH_COMMAND_NAMES = new Set(
   ]).concat([...EXTRA_RESERVED_SLASH_COMMAND_NAMES]),
 );
 
-export function normalizeZCodeSlashCommandName(name: string): string {
+function normalizeZCodeSlashCommandName(name: string): string {
   return name.trim().replace(/^\/+/, "").toLowerCase();
 }
 

@@ -4,6 +4,7 @@
   },
   "files": [],
   "references": [
+    { "path": "./tsconfig.desktop-shared.json" },
     { "path": "./tsconfig.main.json" },
     { "path": "./tsconfig.host.json" },
     { "path": "./tsconfig.scheduler.json" },

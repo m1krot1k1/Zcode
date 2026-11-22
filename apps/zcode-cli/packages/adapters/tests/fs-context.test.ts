@@ -880,6 +880,182 @@ describe("Node file and context adapters", () => {
     }
   });
 
+  it("ignores Cursor rules and loads alwaysApply rules from ZCode", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-context-rules-always-"));
+    const cursorRules = join(dir, ".cursor", "rules");
+    const zcodeRules = join(dir, ".zcode", "rules");
+    const adapter = createNodeContextSourceAdapter({ env: { HOME: dir } });
+
+    try {
+      await mkdir(cursorRules, { recursive: true });
+      await mkdir(zcodeRules, { recursive: true });
+      await writeFile(
+        join(cursorRules, "always.mdc"),
+        "---\ndescription: base\nalwaysApply: true\n---\nAlways guidance.\n",
+      );
+      await writeFile(
+        join(zcodeRules, "files.mdc"),
+        "---\ndescription: source\nalwaysApply: true\n---\nFile guidance.\n",
+      );
+
+      const snapshot = await adapter.resolveContextSources({ workingDirectory: dir });
+
+      expect(snapshot.workspaceRules).toEqual([
+        expect.objectContaining({
+          fileName: "files.mdc",
+          description: "source",
+          alwaysApply: true,
+          appliedBy: "alwaysApply",
+          content: "File guidance.",
+        }),
+      ]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("loads sorted packaged always-on harness rules from the configured bundle root", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-context-bundled-rules-"));
+    const packRules = join(dir, "rules");
+    const adapter = createNodeContextSourceAdapter({
+      env: { HOME: dir },
+      bundledHarnessRulesDirectory: packRules,
+    });
+
+    try {
+      await mkdir(packRules, { recursive: true });
+      await writeFile(
+        join(packRules, "02-valid.mdc"),
+        "---\ndescription: valid\nalwaysApply: true\n---\nBUNDLED_RULE_VALID_SENTINEL",
+      );
+      await writeFile(
+        join(packRules, "01-glob.mdc"),
+        "---\nalwaysApply: true\nglobs: '**/*.ts'\n---\nMust not be conditional",
+      );
+      await writeFile(
+        join(packRules, "03-disabled.mdc"),
+        "---\nalwaysApply: false\n---\nMust not be disabled",
+      );
+
+      const snapshot = await adapter.resolveContextSources({ workingDirectory: dir });
+
+      expect(snapshot.bundledHarnessRules).toEqual([
+        {
+          id: "02-valid",
+          description: "valid",
+          content: "BUNDLED_RULE_VALID_SENTINEL",
+        },
+      ]);
+      expect(snapshot.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "bundled_harness_rule_not_always_on" }),
+        ]),
+      );
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("selects glob rules only for explicit matching workspace-relative targets", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-context-rules-glob-"));
+    const rulesDir = join(dir, ".zcode", "rules");
+    const adapter = createNodeContextSourceAdapter({ env: { HOME: dir } });
+
+    try {
+      await mkdir(rulesDir, { recursive: true });
+      await writeFile(
+        join(rulesDir, "source.mdc"),
+        "---\nglobs: '**/*.{ts,js}'\n---\nSource guidance.\n",
+      );
+      const noTarget = await adapter.resolveContextSources({ workingDirectory: dir });
+      const matching = await adapter.resolveContextSources({
+        workingDirectory: dir,
+        ruleTargetPaths: ["src/index.ts"],
+      });
+      const nonMatching = await adapter.resolveContextSources({
+        workingDirectory: dir,
+        ruleTargetPaths: ["src/index.TS", "../outside.ts"],
+      });
+
+      expect(noTarget.workspaceRules).toBeUndefined();
+      expect(matching.workspaceRules).toEqual([
+        expect.objectContaining({ fileName: "source.mdc", appliedBy: "glob" }),
+      ]);
+      expect(nonMatching.workspaceRules).toBeUndefined();
+      expect(nonMatching.diagnostics).toContainEqual(
+        expect.objectContaining({ code: "workspace_rule_target_invalid" }),
+      );
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("diagnoses malformed workspace rule frontmatter without applying it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-context-rules-malformed-"));
+    const rulesDir = join(dir, ".zcode", "rules");
+    const adapter = createNodeContextSourceAdapter({ env: { HOME: dir } });
+
+    try {
+      await mkdir(rulesDir, { recursive: true });
+      await writeFile(
+        join(rulesDir, "broken.mdc"),
+        "---\nalwaysApply: maybe\n---\nDo not apply.\n",
+      );
+      const snapshot = await adapter.resolveContextSources({ workingDirectory: dir });
+
+      expect(snapshot.workspaceRules).toBeUndefined();
+      expect(snapshot.diagnostics).toContainEqual(
+        expect.objectContaining({ code: "workspace_rule_frontmatter_invalid" }),
+      );
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "ignores rule symlinks that escape the workspace",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-context-rules-escape-"));
+      const outside = await mkdtemp(join(tmpdir(), "zcode-context-rules-outside-"));
+      const rulesDir = join(dir, ".zcode", "rules");
+      const adapter = createNodeContextSourceAdapter({ env: { HOME: dir } });
+
+      try {
+        await mkdir(rulesDir, { recursive: true });
+        const outsideRule = join(outside, "escape.mdc");
+        await writeFile(outsideRule, "---\nalwaysApply: true\n---\nOutside guidance.\n");
+        await symlink(outsideRule, join(rulesDir, "escape.mdc"));
+        const snapshot = await adapter.resolveContextSources({ workingDirectory: dir });
+
+        expect(snapshot.workspaceRules).toBeUndefined();
+        expect(snapshot.diagnostics).toContainEqual(
+          expect.objectContaining({ code: "workspace_rule_path_escape" }),
+        );
+      } finally {
+        await rm(dir, { force: true, recursive: true });
+        await rm(outside, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it("bounds workspace rule reads and marks truncation", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-context-rules-size-"));
+    const rulesDir = join(dir, ".zcode", "rules");
+    const adapter = createNodeContextSourceAdapter({ env: { HOME: dir } });
+
+    try {
+      await mkdir(rulesDir, { recursive: true });
+      const rulePath = join(rulesDir, "large.mdc");
+      await writeFile(rulePath, `---\nalwaysApply: true\n---\n${"x".repeat(70 * 1024)}`);
+      const snapshot = await adapter.resolveContextSources({ workingDirectory: dir });
+
+      expect(snapshot.workspaceRules?.[0]).toMatchObject({ bytesRead: 64 * 1024, truncated: true });
+      expect(snapshot.workspaceRules?.[0]?.content.length).toBeLessThan(64 * 1024);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("uses the effective Bash shell display name when provided by runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-context-shell-"));
     const adapter = createNodeContextSourceAdapter({ env: { HOME: dir, SHELL: "/bin/fish" } });

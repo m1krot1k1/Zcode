@@ -20,14 +20,14 @@ const COMMIT_MESSAGE_QUERY_SOURCE = "git_commit_message";
 const CONVENTIONAL_COMMIT_RE =
   /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .{1,100}$/;
 
-export interface GitCommitMessageCurrentModelProvider {
+interface GitCommitMessageCurrentModelProvider {
   readCurrentModel(params: {
     workspacePath: string;
     workspaceIdentity?: string;
   }): Promise<ZCodeWorkspaceGenerateTextParams["selection"] | null>;
 }
 
-export interface GitCommitMessageTextGenerator {
+interface GitCommitMessageTextGenerator {
   generateText(params: {
     workspacePath: string;
     workspaceIdentity?: string;
@@ -37,7 +37,7 @@ export interface GitCommitMessageTextGenerator {
   }): Promise<{ text: string; selection: ZCodeWorkspaceGenerateTextParams["selection"] }>;
 }
 
-export interface GitCommitMessageGeneratorOptions {
+interface GitCommitMessageGeneratorOptions {
   currentModelProvider: GitCommitMessageCurrentModelProvider;
   textGenerator: GitCommitMessageTextGenerator;
   logger?: ServiceLogger;

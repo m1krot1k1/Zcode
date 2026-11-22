@@ -28,17 +28,19 @@ export interface ForceUpdateGuardLogger {
   warn: (...args: unknown[]) => void;
 }
 
-export interface ForceUpdateGuardResult {
+interface ForceUpdateGuardResult {
   blocked: boolean;
   requirement?: ForceUpdateRequirement;
 }
 
-export interface ForceUpdateGuardOptions {
+interface ForceUpdateGuardOptions {
   locale: Locale;
   logger: ForceUpdateGuardLogger;
   endpointOrigin?: string;
   fetchRemoteConfig?: () => Promise<unknown>;
-  requestAutoUpdate?: (onStateChange?: (state: ForceAutoUpdateState) => void) => (() => void) | void;
+  requestAutoUpdate?: (
+    onStateChange?: (state: ForceAutoUpdateState) => void,
+  ) => (() => void) | void;
   onBlocked?: (requirement: ForceUpdateRequirement) => void;
 }
 
@@ -181,7 +183,7 @@ export async function resolveDesktopForceUpdateRequirement(options: {
   return null;
 }
 
-export function resolveForceUpdateDownloadUrl(
+function resolveForceUpdateDownloadUrl(
   locale: Locale,
   endpointOrigin = DEFAULT_ZCODE_ENDPOINT_ORIGIN,
 ): string {

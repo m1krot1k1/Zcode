@@ -19,6 +19,12 @@ const allowedNetworkBoundaryFiles = new Set([
   "packages/cli/src/provider-runtime-env.ts",
   // WebFetch 工具只读取 node:http 状态码，真实请求由注入的执行端口完成。
   "packages/core/src/tool/handlers/webfetch.ts",
+  // OpenCode adapter поднимает loopback-only HTTP server для SDK; исходящих запросов
+  // к внешним хостам здесь нет, traffic проксируется через network/proxy-fetch.ts.
+  "packages/adapters/src/model/opencode-session.ts",
+  // Каталог marketplace — credentials-free HTTP client skills.sh; adapter и есть
+  // сетевой слой, поэтому прямой fetch принадлежит этой границе.
+  "packages/adapters/src/skills/marketplace.ts",
 ]);
 
 async function collectTypeScriptFiles(directory: string): Promise<string[]> {

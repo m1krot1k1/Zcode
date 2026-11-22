@@ -1,26 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type {
-  CustomCommandRoot,
-  HookConfig,
-  HookEventName,
-  HookMatcherConfig,
-  HookPluginContext,
-  PluginConfig,
-  PluginDiagnostic,
-  PluginDiscoverRequest,
-  PluginHookDetail,
-  PluginLoadOutcome,
-  PluginManifest,
-  PluginUiSurfaceDefinition,
-  PluginMetadata,
-  PluginOperationOptions,
-  PluginPort,
-  SkillRoot,
-} from "@zcode/contracts";
+import type {CustomCommandRoot, HookEventName, HookMatcherConfig, HookPluginContext, PluginConfig, PluginDiagnostic, PluginDiscoverRequest, PluginHookDetail, PluginLoadOutcome, PluginManifest, PluginUiSurfaceDefinition, PluginMetadata, PluginOperationOptions, PluginPort, SkillRoot} from "@zcode/contracts";
 import {
-  HookEventName as HookEventNameValue,
-  HookMatcherConfigSchema,
   ZCODE_INLINE_PLUGIN_MARKETPLACE,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE,
 } from "@zcode/contracts";
@@ -38,7 +19,11 @@ import {
 import { scanSkillFilesUnderRootSync } from "../skills/scan.js";
 import { loadPluginMcpServerDefinitions, resolvePluginMcpServers } from "./mcp.js";
 import { parsePluginUiSurfaces } from "./ui-surfaces.js";
-import { listPluginHookSources } from "./hook-sources.js";
+import {createHookPluginContext, inspectPluginHooks, mergeHookEvents} from "./plugin-hook-inspection.js";
+import {
+  gatePluginHookInspection,
+  loadPluginHookTrustState,
+} from "./plugin-hook-trust.js";
 import { enumeratePluginComponents } from "./plugin-components.js";
 import {
   listInstalledPluginRecords,
@@ -97,6 +82,17 @@ export {
 export { getPluginSourceDiagnosticCode } from "./source-errors.js";
 
 export {
+  assertPluginAppVersionCompatible,
+  getPluginCompatibilityDiagnosticCode,
+  PluginCompatibilityError,
+  resolvePluginAppVersionConstraints,
+  type PluginAppVersionConstraint,
+} from "./marketplace.js";
+
+// 第三方插件 Hook 信任的唯一 owner；barrel 只做透传，禁止在此重复判定或写入。
+export * from "./plugin-hook-trust.js";
+
+export {
   comparePluginUpdate,
   comparePluginVersions,
   type PluginUpdateStatus,
@@ -110,12 +106,6 @@ const FIRST_PLUGIN_PRIORITY = 1_000;
 const PRIORITY_STEP = 10;
 const PLUGIN_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const UNSUPPORTED_COMPONENT_KEYS = ["channels", "lspServers", "outputStyles", "settings"] as const;
-const SUPPORTED_HOOK_EVENTS = new Set<string>(Object.values(HookEventNameValue));
-
-interface PluginHookInspection {
-  details: PluginHookDetail[];
-  events: Partial<Record<HookEventName, HookMatcherConfig[]>>;
-}
 
 export interface NodePluginAdapterOptions {
   storageRoot: string;
@@ -139,12 +129,21 @@ export class NodePluginAdapter implements PluginPort {
 
     const diagnostics: PluginDiagnostic[] = [];
     const dataRoot = join(request.storageRoot || this.options.storageRoot, "data");
+    // 每次 discovery 只读取一次持久信任状态；损坏/不可读返回 corrupt，gate 一律 fail closed。
+    const trustState = loadPluginHookTrustState(request.storageRoot || this.options.storageRoot);
     const candidates = this.resolveCandidates(request, diagnostics, options);
     const commandRoots: CustomCommandRoot[] = [];
     const hooks: PluginLoadOutcome["hooks"] = {};
     const mcpServers: PluginLoadOutcome["mcpServers"] = {};
     const plugins: PluginMetadata[] = [];
     const seen = new Set<string>();
+    // Plugin id includes the marketplace, so the same plugin installed from two
+    // marketplaces has two ids. MCP server names are namespaced by manifest name
+    // (`plugin:<name>:<server>`), which means both copies produce the same runtime
+    // keys and the later one silently overwrites the first. Dedupe by manifest name
+    // before any components are merged; candidate order is the priority order
+    // (inline > official > installed marketplaces), so the first copy wins.
+    const seenByName = new Map<string, LoadedPlugin>();
     const skillRoots: SkillRoot[] = [];
     let priority = FIRST_PLUGIN_PRIORITY;
 
@@ -169,7 +168,19 @@ export class NodePluginAdapter implements PluginPort {
         });
         continue;
       }
+      const sameName = seenByName.get(loaded.manifest.name);
+      if (sameName) {
+        diagnostics.push({
+          code: "plugin_duplicate_name",
+          message: `Plugin '${loaded.manifest.name}' from marketplace '${loaded.marketplace}' ignored: already loaded from '${sameName.marketplace}'`,
+          path: loaded.rootPath,
+          pluginId: loaded.id,
+          severity: "warning",
+        });
+        continue;
+      }
       seen.add(loaded.id);
+      seenByName.set(loaded.manifest.name, loaded);
       warnUnsupportedComponents(loaded, diagnostics);
 
       // candidate.defaultEnabled 在 candidate 构造时无法访问 plugin id,
@@ -183,19 +194,30 @@ export class NodePluginAdapter implements PluginPort {
       // 未启用插件的内置 MCP 就会在管理页完全不可见。这里先读取声明名给 UI 只读展示，
       // 实际 runtime 注入仍只使用 enabled 分支解析出的 component.mcpServers。
       const mcpServerDefinitions = loadPluginMcpServerDefinitions({ diagnostics, loaded });
-      const hooksRunnable = canRunPluginHooks(loaded);
+      // 只读一次 trust store：第三方/ inline hook 默认不可执行，first-party 不受影响。
+      // gate 必须在 resolveEnabledComponents 之前完成，避免未信任的 matcher 进入 bootstrap
+      // 合并后的 RuntimeConfig 或创建外部进程。解析阶段先按 fail-closed 标记 runnable:false，
+      // 只有 gatePluginHookInspection 的评估通过后才放行。
       const hookInspection = inspectPluginHooks({
         dataPath,
         diagnostics,
         loaded,
-        runnable: hooksRunnable,
+        runnable: false,
+      });
+      // gate 原地改写 inspection（未信任时清空 events 并标记 details 不可运行），
+      // 因此这里不保留返回值，避免出现第二条判定路径。
+      gatePluginHookInspection({
+        inspection: hookInspection,
+        loaded,
+        state: trustState,
       });
       const component = enabled
         ? resolveEnabledComponents({
             dataPath,
             diagnostics,
             env: request.env ?? {},
-            hookEvents: hooksRunnable ? hookInspection.events : {},
+            // gate 已在未信任时把 events 清空，这里直接使用评估后的结果。
+            hookEvents: hookInspection.events,
             hookDetails: hookInspection.details,
             loaded,
             mcpServerDefinitions,
@@ -206,7 +228,22 @@ export class NodePluginAdapter implements PluginPort {
         : emptyComponents(hookInspection.details);
       priority += PRIORITY_STEP;
 
-      Object.assign(mcpServers, component.mcpServers);
+      for (const [serverName, serverConfig] of Object.entries(component.mcpServers)) {
+        if (serverName in mcpServers) {
+          // Defensive guard: even if two distinct plugin names ever normalize to the same
+          // namespaced key, never silently replace the first server. The duplicate-name
+          // check above is the primary fix; this keeps the merge first-wins and visible.
+          diagnostics.push({
+            code: "plugin_mcp_server_duplicate",
+            message: `MCP server '${serverName}' from plugin '${loaded.id}' ignored: already provided by another plugin`,
+            path: loaded.manifestPath,
+            pluginId: loaded.id,
+            severity: "warning",
+          });
+          continue;
+        }
+        mcpServers[serverName] = serverConfig;
+      }
       mergeHookEvents(hooks, component.hooks);
       skillRoots.push(...component.skillRoots);
       commandRoots.push(...component.commandRoots);
@@ -368,13 +405,6 @@ function resolveEnabledComponents(input: {
   };
 }
 
-function canRunPluginHooks(_loaded: LoadedPlugin): boolean {
-  // 三方 marketplace 插件 hook 默认放行（与内置/官方一致）。
-  // 上限：放弃了「仅官方可执行 hook」的信任边界，三方插件 hook 会直接执行；
-  // 升级路径：需要逐插件 trust（如 user config 白名单）时，把判断收回这里。
-  return true;
-}
-
 function warnUnsupportedComponents(loaded: LoadedPlugin, diagnostics: PluginDiagnostic[]): void {
   for (const key of UNSUPPORTED_COMPONENT_KEYS) {
     if (key in loaded.manifest) {
@@ -462,193 +492,6 @@ function resolveCommandRoots(
   const generatedRoot = materializeCommandMetadataRoot(input, priority + 1);
   if (generatedRoot) roots.push(generatedRoot);
   return roots;
-}
-
-function inspectPluginHooks(input: {
-  dataPath: string;
-  diagnostics: PluginDiagnostic[];
-  loaded: LoadedPlugin;
-  runnable: boolean;
-}): PluginHookInspection {
-  const inspection = emptyHookInspection();
-  for (const source of listPluginHookSources({
-    diagnostics: input.diagnostics,
-    loaded: input.loaded,
-  })) {
-    const loaded = parsePluginHookEvents({
-      diagnostics: input.diagnostics,
-      loaded: input.loaded,
-      pluginDataPath: input.dataPath,
-      rawHooks: source.rawHooks,
-      runnable: input.runnable,
-      sourcePath: source.sourcePath,
-      wrapper: source.wrapper,
-    });
-    mergeHookInspection(inspection, loaded);
-  }
-
-  return inspection;
-}
-
-function parsePluginHookEvents(input: {
-  diagnostics: PluginDiagnostic[];
-  loaded: LoadedPlugin;
-  pluginDataPath: string;
-  rawHooks: unknown;
-  runnable: boolean;
-  sourcePath: string;
-  wrapper: boolean;
-}): PluginHookInspection {
-  const hooksRoot = input.wrapper
-    ? isRecord(input.rawHooks)
-      ? input.rawHooks.hooks
-      : undefined
-    : input.rawHooks;
-  const inspection = emptyHookInspection();
-  if (!isRecord(hooksRoot)) {
-    input.diagnostics.push({
-      code: "plugin_hook_invalid",
-      message: input.wrapper
-        ? "Plugin hooks file must contain a hooks object"
-        : "Plugin manifest hooks entry must be an object, a path, or an array",
-      path: input.sourcePath,
-      pluginId: input.loaded.id,
-      severity: "error",
-    });
-    return inspection;
-  }
-
-  const plugin = createHookPluginContext(input.loaded, input.pluginDataPath, input.sourcePath);
-  for (const [eventName, matcherConfigs] of Object.entries(hooksRoot)) {
-    if (!SUPPORTED_HOOK_EVENTS.has(eventName)) {
-      input.diagnostics.push({
-        code: "plugin_hook_unsupported_event",
-        message: `Plugin hook event is not supported by this ZCode runtime: ${eventName}`,
-        path: input.sourcePath,
-        pluginId: input.loaded.id,
-        severity: "warning",
-      });
-      continue;
-    }
-    if (!Array.isArray(matcherConfigs)) {
-      input.diagnostics.push({
-        code: "plugin_hook_invalid",
-        message: `Plugin hook event must be an array: ${eventName}`,
-        path: input.sourcePath,
-        pluginId: input.loaded.id,
-        severity: "error",
-      });
-      continue;
-    }
-
-    const event = eventName as HookEventName;
-    for (const matcherConfig of matcherConfigs) {
-      const validation = HookMatcherConfigSchema.safeParse(matcherConfig);
-      if (!validation.success) {
-        input.diagnostics.push({
-          code: "plugin_hook_invalid",
-          message: `Invalid plugin hook matcher for ${eventName}: ${validation.error.issues
-            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-            .join("; ")}`,
-          path: input.sourcePath,
-          pluginId: input.loaded.id,
-          severity: "error",
-        });
-        continue;
-      }
-      const withPlugin: HookMatcherConfig = {
-        ...validation.data,
-        hooks: validation.data.hooks.map((hook) => attachPluginToHook(hook, plugin)),
-      };
-      (inspection.events[event] ??= []).push(withPlugin);
-      for (const hook of validation.data.hooks) {
-        inspection.details.push(
-          toPluginHookDetail({
-            event,
-            hook,
-            ...(validation.data.matcher !== undefined ? { matcher: validation.data.matcher } : {}),
-            runnable: input.runnable,
-            sourcePath: input.sourcePath,
-          }),
-        );
-      }
-    }
-  }
-
-  return inspection;
-}
-
-function toPluginHookDetail(input: {
-  event: HookEventName;
-  hook: HookConfig;
-  matcher?: string;
-  runnable: boolean;
-  sourcePath: string;
-}): PluginHookDetail {
-  const detail: PluginHookDetail = {
-    command: input.hook.command,
-    event: input.event,
-    runnable: input.runnable,
-    sourcePath: input.sourcePath,
-    type: input.hook.type,
-  };
-  if (input.matcher !== undefined) detail.matcher = input.matcher;
-  if (input.hook.statusMessage !== undefined) detail.statusMessage = input.hook.statusMessage;
-  if (input.hook.timeoutMs !== undefined) detail.timeoutMs = input.hook.timeoutMs;
-  if (input.hook.type === "process") {
-    if (input.hook.args !== undefined) detail.args = input.hook.args;
-    return detail;
-  }
-  if (input.hook.async !== undefined) detail.async = input.hook.async;
-  if (input.hook.shell !== undefined) detail.shell = input.hook.shell;
-  if (input.hook.timeout !== undefined) detail.timeout = input.hook.timeout;
-  return detail;
-}
-
-function createHookPluginContext(
-  loaded: LoadedPlugin,
-  dataPath: string,
-  sourcePath?: string,
-): HookPluginContext {
-  return {
-    dataPath,
-    id: loaded.id,
-    name: loaded.manifest.name,
-    rootPath: loaded.rootPath,
-    ...(sourcePath ? { sourcePath } : {}),
-  };
-}
-
-function attachPluginToHook(hook: HookConfig, plugin: HookPluginContext): HookConfig {
-  return {
-    ...hook,
-    plugin,
-  };
-}
-
-function mergeHookEvents(
-  target: Partial<Record<HookEventName, HookMatcherConfig[]>>,
-  source: Partial<Record<HookEventName, HookMatcherConfig[]>>,
-): void {
-  for (const [eventName, matchers] of Object.entries(source) as Array<
-    [HookEventName, HookMatcherConfig[]]
-  >) {
-    if (matchers.length > 0) {
-      (target[eventName] ??= []).push(...matchers);
-    }
-  }
-}
-
-function mergeHookInspection(target: PluginHookInspection, source: PluginHookInspection): void {
-  mergeHookEvents(target.events, source.events);
-  target.details.push(...source.details);
-}
-
-function emptyHookInspection(): PluginHookInspection {
-  return {
-    details: [],
-    events: {},
-  };
 }
 
 function countSkillFiles(skillRoots: SkillRoot[]): number {
@@ -865,7 +708,7 @@ function scanOfficialCache(
   // 不能简单选择最高 semver，否则官方回滚版本时仍会错误加载旧缓存。
   const bundledRoots = loadBundledOfficialPluginRootsSync(storageRoot);
   if (bundledRoots !== undefined) {
-    for (const rootPath of bundledRoots) {
+    for (const _rootPath of bundledRoots) {
       throwIfAborted(options);
     }
     return bundledRoots;

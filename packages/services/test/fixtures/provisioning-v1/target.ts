@@ -1,6 +1,5 @@
 // 冻结基线 0e40230d34 的旧协议/Target，防止新 schema 掩盖混版本破坏性删除回归。
 import { providerProvisioningEnvelopeSchema } from "./schema.js";
-/* eslint-disable max-lines -- Provisioning target keeps transaction and rollback invariants together. */
 import { readFile } from "node:fs/promises";
 import { atomicWritePrivateTextFile, withFileLock } from "@zcode/shared/node";
 import {

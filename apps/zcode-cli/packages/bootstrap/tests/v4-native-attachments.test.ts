@@ -797,6 +797,79 @@ describe("gateway v4 chunked attachment transaction", () => {
     gateway.dispose();
   });
 
+  it("授权当前 session 队列项上的 previewable ref，拒绝队列外路径", async () => {
+    const attachment = {
+      ref: "/tmp/queued.png",
+      previewRef: "zcode-artifact://queued-preview",
+      fileName: "queued.png",
+      mime: "image/png",
+      bytes: 4,
+    };
+    const bytes = Buffer.from("queued-image");
+    const read = vi.fn().mockResolvedValue({ bytes, mediaType: "image/png" });
+    const gateway = makeGateway({ readSessionAttachment: read });
+    ingestAttachmentRow(gateway, []);
+    type GatewayEvent = Parameters<ConversationV4Gateway["ingest"]>[1];
+    gateway.ingest("s1", {
+      id: "preview-queue-image",
+      sessionId: "s1",
+      turnId: "turn-preview",
+      type: SessionEventType.TurnSteerQueued,
+      timestamp: new Date(3),
+      traceId: "trace-preview",
+      sequenceNumber: 3,
+      payload: {
+        pendingInputId: "q-image",
+        input: "看图",
+        inputPreview: "看图",
+        inputSize: 2,
+        queueLength: 1,
+        targetTurnId: "turn-preview",
+        intent: {
+          sourceCommandId: "command-q-image",
+          queueItemId: "q-image",
+          clientId: "cli",
+          kind: "sendText",
+          admissionSeq: 1,
+          admittedAt: 10,
+          requestedDelivery: "queue",
+          admittedDelivery: "queue",
+          attachmentRefs: [attachment],
+        },
+      },
+    } as GatewayEvent);
+
+    await expect(
+      gateway.attachmentRead({
+        sessionId: "s1",
+        ref: attachment.previewRef,
+        offset: 0,
+        limit: 100,
+      }),
+    ).resolves.toMatchObject({
+      dataBase64: bytes.toString("base64"),
+      mediaType: "image/png",
+    });
+    await expect(
+      gateway.attachmentRead({
+        sessionId: "s1",
+        ref: attachment.ref,
+        offset: 0,
+        limit: 100,
+      }),
+    ).rejects.toThrow("fault.attachment.previewRefNotAuthorized");
+    await expect(
+      gateway.attachmentRead({
+        sessionId: "s1",
+        ref: "/tmp/not-in-queue.png",
+        offset: 0,
+        limit: 100,
+      }),
+    ).rejects.toThrow("fault.attachment.previewRefNotAuthorized");
+    expect(read).toHaveBeenCalledTimes(1);
+    gateway.dispose();
+  });
+
   it("只授权当前 session 助手 Markdown 中真实出现的图片 artifact", async () => {
     const ref = "zcode-artifact://s1/cua-shot";
     const read = vi.fn().mockResolvedValue({

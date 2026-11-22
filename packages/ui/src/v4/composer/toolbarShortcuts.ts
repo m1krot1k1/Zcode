@@ -24,7 +24,7 @@ import { logger } from "@/logger.js";
 type ChatToolbarShortcutKey = "m" | "ctrlShiftM" | "t" | null;
 
 /** 旧 chatInputControlShortcuts.getChatToolbarShortcutKey 原样恢复。 */
-export function getChatToolbarShortcutKey(
+function getChatToolbarShortcutKey(
   category: ZCodeConfigOption["category"],
 ): ChatToolbarShortcutKey {
   switch (category) {
@@ -137,7 +137,10 @@ export function resolveToolbarShortcutAction(
     if (candidate.disabled) {
       continue;
     }
-    if (!candidate.option || getChatToolbarShortcutKey(candidate.option.category) !== candidate.expectedKey) {
+    if (
+      !candidate.option ||
+      getChatToolbarShortcutKey(candidate.option.category) !== candidate.expectedKey
+    ) {
       continue;
     }
     for (const binding of effective[candidate.commandId] ?? []) {

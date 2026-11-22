@@ -8,9 +8,7 @@ import {
   captureLoginShellEnvSnapshotSync,
 } from "./runtimeLoginShellEnvCapture.js";
 export {
-  captureLoginShellEnvSnapshot,
-  type LoginShellExecutor,
-} from "./runtimeLoginShellEnvCapture.js";
+  captureLoginShellEnvSnapshot} from "./runtimeLoginShellEnvCapture.js";
 
 const DEFAULT_WINDOWS_NODE_PATHS = [
   "%APPDATA%\\npm",

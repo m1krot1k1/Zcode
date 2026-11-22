@@ -3,8 +3,7 @@ import {
   isTasksStorageMigrated,
   isTasksStoragePrepared,
 } from "#src/session/tasksDatabase/prepared.js";
-/* eslint-disable max-lines -- 与 automationRepo 同理：off-peak 仓库集中维护 off_peak_tasks 的
-   sqlite schema、状态机守卫写入与调度认领，稳定后再按读写职责拆分。 */
+
 /* off-peak 任务仓库：off_peak_tasks 的 sqlite schema、状态机守卫写入与调度认领。
    与 automation 共用 tasks-index.sqlite 与 Repo 模式，但表/状态机/常量全部独立，
    禁止往 automations 表或 ZCodeAutomation 类型上加字段。 */

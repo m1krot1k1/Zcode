@@ -1,6 +1,6 @@
 import type { ConversationRow, SessionPhase } from "@zcode/shared/zcode-protocol-v4";
 
-export interface AssistantPreviewPptxCompletedTurn {
+interface AssistantPreviewPptxCompletedTurn {
   turnId: string;
   rowId: number;
   entityId?: string;
@@ -24,7 +24,7 @@ interface AssistantPreviewPptxAutoOpenGateInput {
   completedTurn: AssistantPreviewPptxCompletedTurn | null;
 }
 
-export interface AssistantPreviewPptxAutoOpenGateResult {
+interface AssistantPreviewPptxAutoOpenGateResult {
   state: AssistantPreviewPptxAutoOpenGateState;
   /** undefined=保持当前 target；null=清空；object=发布新的完成态 target。 */
   target?: AssistantPreviewPptxAutoOpenTarget | null;

@@ -1,4 +1,5 @@
 import { replyToChannelToolEntry } from "./reply-to-channel.js";
+import { codeIndexToolEntry } from "./code-index.js";
 // ============================================================
 // Built-in Tool Handlers
 // ============================================================
@@ -24,7 +25,10 @@ import { toolSearchToolEntry } from "./tool-search.js";
 import { readToolEntry } from "./read.js";
 import { writeToolEntry } from "./write.js";
 import { editToolEntry } from "./edit.js";
+import { applyPatchToolEntry } from "./apply-patch.js";
+import { multiEditToolEntry } from "./multi-edit.js";
 import { bashToolEntry, createBashToolEntry } from "./bash.js";
+import { ptySessionToolEntry } from "./pty-session.js";
 import type { BashTimeoutPolicy } from "../bash-timeout-policy.js";
 import { createJsToolEntry, jsToolEntry } from "./node-repl.js";
 import { globToolEntry } from "./glob.js";
@@ -39,6 +43,8 @@ import {
 } from "./agent.js";
 import { isSubagentDispatchToolName } from "../compat.js";
 import { skillToolEntry } from "./skill.js";
+import { skillInstallToolEntry, skillSearchToolEntry } from "./skill-marketplace.js";
+import { capabilityInstallToolEntry } from "./capability-install.js";
 import { todoReadToolEntry, todoWriteToolEntry } from "./todo.js";
 import {
   cronCreateToolEntry,
@@ -73,18 +79,24 @@ import { getWorkflowRunToolEntry } from "./get-workflow-run.js";
 import { resumeWorkflowRunToolEntry } from "./resume-workflow-run.js";
 // import { workflowToolEntry } from "./workflow.js";
 import { createToolRuleNameSet } from "../tool-visibility.js";
+import { expandSubagentDispatchDisallowRules } from "../../runtime/helpers/tool-allowlist.js";
 
 // direct 分支保留 Glob/Grep 工具实现；embedded search 分支由 registerBuiltInTools
 // 统一隐藏 Glob/Grep，并通过 Bash find/grep 接管搜索。
 
 export const builtInTools: ToolEntry[] = [
+  codeIndexToolEntry,
   toolSearchToolEntry,
   deferredToolCallEntry,
   readToolEntry,
   writeToolEntry,
   editToolEntry,
-  // applyPatchToolEntry,
+  applyPatchToolEntry,
+  multiEditToolEntry,
   bashToolEntry,
+  // Интерактивные PTY-сессии: визарды, REPL, dev-серверы. Регистрируется только
+  // когда runtime предоставил ptySessionPort (иначе инструмент бесполезен).
+  ptySessionToolEntry,
   globToolEntry,
   grepToolEntry,
   webFetchToolEntry,
@@ -115,6 +127,9 @@ export const builtInTools: ToolEntry[] = [
   agentToolEntry,
   taskToolEntry,
   skillToolEntry,
+  skillSearchToolEntry,
+  skillInstallToolEntry,
+  capabilityInstallToolEntry,
   jsToolEntry,
   createWorkflowToolEntry,
   amendWorkflowToolEntry,
@@ -178,6 +193,8 @@ interface RegisterBuiltInToolsOptions {
   bashTimeoutPolicy?: BashTimeoutPolicy;
   includeSkill?: boolean;
   includeAgent?: boolean;
+  /** Claude Task alias is model-visible in delegated sessions that explicitly allow recursion. */
+  includeTaskAlias?: boolean;
   includeSendMessage?: boolean;
   includeRespondToCoordinator?: boolean;
   includeSubmitResult?: boolean;
@@ -201,8 +218,15 @@ interface RegisterBuiltInToolsOptions {
   includeDynamicWorkflow?: boolean;
   /** node_repl（js）默认关闭，由官方 browser-use 插件启用。 */
   includeNodeRepl?: boolean;
+  /**
+   * Интерактивные PTY-сессии. Включается только когда runtime передал
+   * ptySessionPort: без порта инструмент вернул бы configuration error.
+   */
+  includePtySession?: boolean;
   /** browser-use 说明和 agent.browsers 注入由官方 browser-use 插件 + 宿主 browser bridge 共同启用。 */
   includeBrowserUse?: boolean;
+  /** Host-provided, read-only local code graph/search capability. */
+  includeCodeIndex?: boolean;
   embeddedSearchEnabled?: boolean;
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
@@ -216,15 +240,17 @@ export function registerBuiltInTools(
   options: RegisterBuiltInToolsOptions = {},
 ): void {
   const allowedTools = options.allowedTools ? new Set(options.allowedTools) : undefined;
-  const disallowedTools = createToolRuleNameSet(options.disallowedTools);
+  // `Agent`/`Task` — две записи одной возможности (docs/specs/task-alias-visibility.md):
+  // фильтр сравнивает точные имена, поэтому запрет любого из имён обязан закрыть пару здесь,
+  // на единственной границе регистрации для обоих входов (首次装配 и refresh).
+  const disallowedTools = createToolRuleNameSet(
+    expandSubagentDispatchDisallowRules(options.disallowedTools),
+  );
 
   for (const entry of builtInTools) {
-    if (
-      options.embeddedSearchEnabled === true &&
-      (entry.metadata.name === "Glob" || entry.metadata.name === "Grep")
-    ) {
-      continue;
-    }
+    // Embedded Bash search дополняет Glob/Grep, а не заменяет их: профили явно
+    // allowlist'ят оба инструмента, и allowlist ребёнка пересекается с фактическим
+    // tool surface родителя. Снятие Glob/Grep здесь молча лишало child поиска.
     if (allowedTools && !allowedTools.has(entry.metadata.name)) {
       continue;
     }
@@ -234,7 +260,12 @@ export function registerBuiltInTools(
     if (isSubagentDispatchToolName(entry.metadata.name) && options.includeAgent !== true) {
       continue;
     }
-    if (entry.metadata.name === "Skill" && options.includeSkill === false) {
+    if (
+      (entry.metadata.name === "Skill" ||
+        entry.metadata.name === "SkillSearch" ||
+        entry.metadata.name === "SkillInstall") &&
+      options.includeSkill === false
+    ) {
       continue;
     }
     if (entry.metadata.name === "SendMessage" && options.includeSendMessage !== true) {
@@ -279,6 +310,12 @@ export function registerBuiltInTools(
     if (entry.metadata.name === "js" && options.includeNodeRepl !== true) {
       continue;
     }
+    if (entry.metadata.name === "PtySession" && options.includePtySession !== true) {
+      continue;
+    }
+    if (entry.metadata.name === "CodeIndex" && options.includeCodeIndex !== true) {
+      continue;
+    }
     registry.register(resolveBuiltInToolEntryForBranch(entry, options), {
       silentDuplicateWarning: options.silentDuplicateWarnings,
     });
@@ -307,6 +344,9 @@ function resolveBuiltInToolEntryForBranch(
     });
   }
   if (entry.metadata.name === "Task") {
+    if (options.includeTaskAlias === true) {
+      return { ...entry, metadata: { ...entry.metadata, providerVisible: true } };
+    }
     return createTaskToolEntry({
       dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
     });

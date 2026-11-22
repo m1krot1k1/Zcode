@@ -1,4 +1,4 @@
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type { AccountProviderState } from "@zcode/provider";
 import type {
   OAuthProviderId,

@@ -1,7 +1,7 @@
-import { constants } from "node:fs";
+import { constants, statSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { openSpy, statSpy } = vi.hoisted(() => ({ openSpy: vi.fn(), statSpy: vi.fn() }));
@@ -53,6 +53,19 @@ describe("Bash direct output", () => {
       expect(openSpy).toHaveBeenCalledTimes(1);
       await output.close();
       expect(await readFile(path, "utf8")).toBe(platform === "win32" ? "" : "existing\n");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "creates a fresh output directory with owner-only permissions",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-bash-file-"));
+      roots.push(root);
+      const path = join(root, "fresh-output-dir", "out.log");
+      const output = new BashFileOutput(path, process.platform, null);
+      outputs.push(output);
+      await output.prepare();
+      expect(statSync(dirname(path)).mode & 0o777).toBe(0o700);
     },
   );
 

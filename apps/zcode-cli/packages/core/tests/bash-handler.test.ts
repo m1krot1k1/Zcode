@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { CoreErrorType, SessionEventType, createImageProcessorError } from "@zcode/contracts";
+import {SessionEventType, createImageProcessorError} from "@zcode/contracts";
 import { isErrorForToolResult } from "../src/runtime/helpers/tool-result.js";
 import { decideBashCwdPolicy } from "../src/tool/handlers/bash-cwd-policy.js";
 import { bashHandler, bashToolEntry, createBashToolEntry } from "../src/tool/handlers/bash.js";
@@ -270,7 +270,7 @@ describe("bashHandler", () => {
     },
   );
 
-  it("delegates shell command, timeout, session cwd, and sandbox fields to ExecutionPort", async () => {
+  it("delegates shell command, timeout and session cwd to ExecutionPort", async () => {
     let capturedRequest: ExecutionRequest | undefined;
     const executionPort: ExecutionPort = {
       async run(request) {
@@ -287,7 +287,6 @@ describe("bashHandler", () => {
       {
         command: "npm test",
         timeout: 123,
-        dangerouslyDisableSandbox: true,
       } satisfies BashInput,
       contextWith(executionPort, {
         workingDirectory: projectRoot,
@@ -327,11 +326,42 @@ describe("bashHandler", () => {
       maxPersistedBytes: 5 * 1024 * 1024 * 1024,
       persistOutput: "on_truncate",
     });
+    // R04 вариант B: единственный внутренний trace фиксирует отсутствие
+    // OS-изоляции; sandbox-запрос из входа больше не пересылается.
     expect(capturedRequest?.sandbox).toMatchObject({
-      enabled: false,
-      dangerouslyDisableSandbox: true,
+      enabled: true,
+      profile: "workspace-write",
+      wrap: { profile: "workspace-write", networkAccess: "allow" },
     });
+    expect(capturedRequest?.sandbox).not.toHaveProperty("dangerouslyDisableSandbox");
     expect(capturedRequest?.sandbox).not.toHaveProperty("protectedResources");
+  });
+
+  it("passes the host sandbox off policy and network denial to ExecutionPort", async () => {
+    let capturedRequest: ExecutionRequest | undefined;
+    const executionPort: ExecutionPort = {
+      async run(request) {
+        capturedRequest = request;
+        return executionResult({
+          status: "completed",
+          exitCode: 0,
+        });
+      },
+    };
+
+    await bashHandler(
+      { command: "gh auth status" },
+      contextWith(executionPort, {
+        bashSandboxMode: "off",
+        bashSandboxNetwork: "deny",
+      }),
+    );
+
+    expect(capturedRequest?.sandbox).toMatchObject({
+      enabled: true,
+      profile: "off",
+      wrap: { profile: "off" },
+    });
   });
 
   it("keeps the filesystem output-loss diagnostic in provider-visible stdout", async () => {
@@ -447,16 +477,41 @@ describe("bashHandler", () => {
         command: "npm test",
         timeout: "123",
         run_in_background: "false",
-        dangerouslyDisableSandbox: "1",
       },
       contextWith(executionPort),
     );
 
     expect(capturedRequest?.timeoutMs).toBe(123);
-    expect(capturedRequest?.sandbox).toMatchObject({
-      enabled: false,
-      dangerouslyDisableSandbox: true,
-    });
+    // Инкремент 4.5a: внутренний trace больше не «not_implemented» —
+    // он несёт реальную политику, а adapter сообщает фактический режим.
+    expect(capturedRequest?.sandbox?.enabled).toBe(true);
+    expect(capturedRequest?.sandbox?.profile).toBe("workspace-write");
+    expect(capturedRequest?.sandbox?.wrap?.workspacePath).toBeTruthy();
+    expect(capturedRequest?.sandbox?.wrap?.networkAccess).toBe("allow");
+  });
+
+  it("rejects a legacy sandbox argument before execution", async () => {
+    let executionRuns = 0;
+    const executionPort: ExecutionPort = {
+      async run() {
+        executionRuns += 1;
+        return executionResult({ status: "completed" });
+      },
+    };
+
+    // 修复原因：поле удалено из схемы; старый transcript не должен доходить до
+    // команды. Отказ — обычная validation-ошибка handler-а (recoverable), а не
+    // частичное выполнение.
+    await expect(
+      bashHandler(
+        {
+          command: "npm test",
+          dangerouslyDisableSandbox: true,
+        },
+        contextWith(executionPort),
+      ),
+    ).rejects.toBeInstanceOf(Error);
+    expect(executionRuns).toBe(0);
   });
 
   it("updates session cwd from successful foreground Bash execution", async () => {
@@ -2608,6 +2663,8 @@ function contextWith(
   options: {
     abortSignal?: AbortSignal;
     bashShellSelection?: ToolExecutionContext["bashShellSelection"];
+    bashSandboxMode?: ToolExecutionContext["bashSandboxMode"];
+    bashSandboxNetwork?: ToolExecutionContext["bashSandboxNetwork"];
     embeddedSearch?: ToolExecutionContext["embeddedSearch"];
     emitEvent?: ToolExecutionContext["emitEvent"];
     fileSystemPort?: FileSystemPort;
@@ -2627,6 +2684,8 @@ function contextWith(
     spanId: "span_test",
     abortSignal: options.abortSignal ?? new AbortController().signal,
     bashShellSelection: options.bashShellSelection,
+    bashSandboxMode: options.bashSandboxMode,
+    bashSandboxNetwork: options.bashSandboxNetwork,
     embeddedSearch: options.embeddedSearch,
     emitEvent: options.emitEvent,
     executionPort,

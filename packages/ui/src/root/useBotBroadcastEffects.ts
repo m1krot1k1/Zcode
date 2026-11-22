@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { IServiceAccessor } from "@zcode/services";
+import type { IServiceAccessor } from "./contract.ts";
 import type { ZCodeConfigOption } from "@zcode/shared";
 import {
   buildTaskContextUsageFromUsageUpdate,
@@ -11,18 +11,13 @@ import type { useTabStoreApi } from "@/store/TabStoreProvider.js";
 import {
   resolveBotTaskBroadcastRefresh,
   resolveBotTaskBroadcastRuntimeStatus,
+  resolveTaskCompleteRuntimeStatus,
 } from "@/root/botsTaskBroadcast.js";
 import { resolveBotTaskStreamBroadcast } from "@/root/botsTaskStreamBroadcast.js";
-import {
-  insertTaskIntoTaskCaches,
-  syncTaskMetaToTaskCaches,
-} from "@/lib/taskListMetaSync.js";
+import { insertTaskIntoTaskCaches, syncTaskMetaToTaskCaches } from "@/lib/taskListMetaSync.js";
 
 export function syncBotTaskConfigOptionsToStore(params: {
-  zcodeSessionStore: Pick<
-    ReturnType<typeof useZCodeSessionStore.getState>,
-    "setTaskConfigOptions"
-  >;
+  zcodeSessionStore: Pick<ReturnType<typeof useZCodeSessionStore.getState>, "setTaskConfigOptions">;
   workspacePath: string;
   workspaceIdentity?: string;
   taskId: string;
@@ -39,10 +34,7 @@ export function syncBotTaskConfigOptionsToStore(params: {
   );
 }
 
-export function shouldRefreshBotTaskList(
-  event: string,
-  hasTaskMeta: boolean,
-): boolean {
+export function shouldRefreshBotTaskList(event: string, hasTaskMeta: boolean): boolean {
   // Bugfix: Bot 新建任务时会随 created 广播携带 task meta，当前实现因此跳过整表刷新。
   // 但如果对应 workspace 的 task query cache 还没建立，增量写入没有落点，侧栏列表就不会主动拉到这个新任务。
   // created 事件频率低，保留一次版本 bump 作为兜底；其它高频事件仍优先走增量缓存更新，避免列表闪烁回归。
@@ -75,10 +67,7 @@ export function useBotBroadcastEffects(
 ) {
   useEffect(() => {
     const disposable = services.broadcastService.onMessage((message) => {
-      const stream = resolveBotTaskStreamBroadcast(
-        message,
-        tabStoreApi.getState().tabs,
-      );
+      const stream = resolveBotTaskStreamBroadcast(message, tabStoreApi.getState().tabs);
       if (stream) {
         const zcodeSessionStore = useZCodeSessionStore.getState();
         const workspaceState = zcodeSessionStore.getWorkspaceState(
@@ -113,7 +102,12 @@ export function useBotBroadcastEffects(
             );
             break;
           case "permission_request":
-            zcodeSessionStore.setTaskPermissionRequest(stream.workspacePath, stream.taskId, event, stream.workspaceIdentity);
+            zcodeSessionStore.setTaskPermissionRequest(
+              stream.workspacePath,
+              stream.taskId,
+              event,
+              stream.workspaceIdentity,
+            );
             zcodeSessionStore.setTaskRuntimeState(
               stream.workspacePath,
               stream.taskId,
@@ -126,12 +120,23 @@ export function useBotBroadcastEffects(
             zcodeSessionStore.setTaskRuntimeState(
               stream.workspacePath,
               stream.taskId,
-              "completed",
+              // error_max_turns 等受限 resultType 不是成功；只有普通完成才写 completed。
+              resolveTaskCompleteRuntimeStatus(event.stopReason),
               undefined,
               stream.workspaceIdentity,
             );
-            zcodeSessionStore.setTaskPermissionRequest(stream.workspacePath, stream.taskId, null, stream.workspaceIdentity);
-            zcodeSessionStore.setTaskError(stream.workspacePath, stream.taskId, null, stream.workspaceIdentity);
+            zcodeSessionStore.setTaskPermissionRequest(
+              stream.workspacePath,
+              stream.taskId,
+              null,
+              stream.workspaceIdentity,
+            );
+            zcodeSessionStore.setTaskError(
+              stream.workspacePath,
+              stream.taskId,
+              null,
+              stream.workspaceIdentity,
+            );
             break;
           case "task_error": {
             const normalizedError = normalizeZCodeUiError(
@@ -153,8 +158,18 @@ export function useBotBroadcastEffects(
               normalizedError.message,
               stream.workspaceIdentity,
             );
-            zcodeSessionStore.setTaskPermissionRequest(stream.workspacePath, stream.taskId, null, stream.workspaceIdentity);
-            zcodeSessionStore.setTaskError(stream.workspacePath, stream.taskId, normalizedError, stream.workspaceIdentity);
+            zcodeSessionStore.setTaskPermissionRequest(
+              stream.workspacePath,
+              stream.taskId,
+              null,
+              stream.workspaceIdentity,
+            );
+            zcodeSessionStore.setTaskError(
+              stream.workspacePath,
+              stream.taskId,
+              normalizedError,
+              stream.workspaceIdentity,
+            );
             break;
           }
           case "task_warning":
@@ -232,10 +247,7 @@ export function useBotBroadcastEffects(
         return;
       }
 
-      const refresh = resolveBotTaskBroadcastRefresh(
-        message,
-        tabStoreApi.getState().tabs,
-      );
+      const refresh = resolveBotTaskBroadcastRefresh(message, tabStoreApi.getState().tabs);
       if (!refresh) {
         return;
       }

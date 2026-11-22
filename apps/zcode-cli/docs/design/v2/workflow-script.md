@@ -119,7 +119,6 @@ agent(prompt: string, opts?: {
   phase?: string;
   schema?: JsonSchema;
   model?: string;
-  isolation?: "worktree";
   agentType?: string;
   tools?: string[];
   skills?: string[];

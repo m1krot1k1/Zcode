@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- input attachment staging and preview artifact discovery share one immutable snapshot boundary. */
 import { createHash } from "node:crypto";
 import { isWorkflowShareFallbackRow } from "#src/conversation-share/conversationShareWorkflowSnapshot.js";
 
@@ -41,7 +40,7 @@ interface DiscoveredShareArtifact extends MaterializedShareArtifact {
   row: ArtifactRow;
 }
 
-export interface ConversationShareArtifactSnapshot {
+interface ConversationShareArtifactSnapshot {
   rows: ConversationRow[];
   bytesBySourceRef: Map<string, Uint8Array>;
   additionalArtifacts: ConversationSharePublicArtifact[];

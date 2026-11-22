@@ -52,6 +52,44 @@ const BROWSER_USE_REQUIRED_RELATIVE_PATHS = [
   "browser-use-plugin/skills/control-browser/SKILL.md",
   "browser-use-plugin/skills/web-gui-tester/SKILL.md",
 ] as const;
+const BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS = [
+  "bundled-skills/skills/dynamic-workflows/SKILL.md",
+  "bundled-skills/skills/dynamic-workflows/patterns.md",
+  "bundled-skills/skills/dynamic-workflows/examples.md",
+  "bundled-skills/skills/zcode-swarm/SKILL.md",
+  "bundled-skills/skills/zcode-verification/SKILL.md",
+  "bundled-skills/skills/zcode-systematic-debugging/SKILL.md",
+  "bundled-skills/skills/zcode-test-driven-development/SKILL.md",
+  "bundled-skills/skills/anti-loop/SKILL.md",
+  "bundled-skills/skills/self-improvement/SKILL.md",
+  "bundled-skills/skills/code-craft/SKILL.md",
+  "bundled-skills/skills/reference-first/SKILL.md",
+  "bundled-skills/skills/task-planning/SKILL.md",
+  "bundled-skills/skills/execution-patterns/SKILL.md",
+  "bundled-skills/skills/reviewer/SKILL.md",
+  "bundled-skills/skills/completion-gate/SKILL.md",
+  "bundled-skills/skills/research/SKILL.md",
+  "bundled-skills/skills/domain-modeling/SKILL.md",
+  "bundled-skills/skills/ui-craft/SKILL.md",
+  "bundled-skills/skills/ui-craft/LICENSE",
+  "bundled-skills/skills/codebase-design/SKILL.md",
+  "bundled-skills/skills/codebase-design/LICENSE",
+  "bundled-skills/skills/doc-coauthoring/SKILL.md",
+  "bundled-skills/skills/doc-coauthoring/LICENSE",
+  "bundled-skills/skills/image-to-code/SKILL.md",
+  "bundled-skills/skills/image-to-code/LICENSE",
+  "bundled-skills/skills/merge-conflict-resolution/SKILL.md",
+  "bundled-skills/skills/handoff/SKILL.md",
+  "bundled-skills/skills/performance-tuning/SKILL.md",
+  "bundled-skills/skills/mcp-authoring/SKILL.md",
+  "bundled-skills/rules/00-evidence.mdc",
+  "bundled-skills/rules/01-delegation.mdc",
+  "bundled-skills/rules/02-verification.mdc",
+  "bundled-skills/rules/03-context.mdc",
+  "bundled-skills/rules/04-model-identity.mdc",
+  "bundled-skills/rules/05-code-and-ui-craft.mdc",
+  "bundled-skills/rules/06-progress.mdc",
+] as const;
 // Bug 根因：remote fixture 曾复制一份旧的官方插件资产清单；生产合同加入 CUA SDK/docs/skill
 // 后 fixture 仍生成不含这些文件的 GLM archive，所有部署测试都会误报 packages 缺失。
 // 测试数据必须直接复用生产常量，后续新增官方资产时不能再静默漂移。
@@ -616,14 +654,10 @@ function createRemoteAssetComponentMeta(
 }
 
 async function writeTestOfficialPluginPackages(repoDir: string): Promise<void> {
-  for (const name of ["SKILL.md", "patterns.md", "examples.md"]) {
-    const path = join(
-      repoDir,
-      "apps/zcode-cli/packages/bundled-skills/skills/dynamic-workflows",
-      name,
-    );
+  for (const relativePath of BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS) {
+    const path = join(repoDir, "apps/zcode-cli/packages", ...relativePath.split("/"));
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, `bundled workflow ${name}`);
+    await writeFile(path, `bundled harness asset ${relativePath}`);
   }
   await Promise.all(
     OFFICIAL_PLUGIN_PACKAGE_NAMES.map(async (pluginName) => {
@@ -1795,6 +1829,7 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
     expect(REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS).toEqual(
       expect.arrayContaining([
         ...BROWSER_USE_REQUIRED_RELATIVE_PATHS,
+        ...BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS,
         "image-search-plugin/.mcp.json",
         "documents-plugin/agents/visual-judge.md",
         "documents-plugin/skills/docx/SKILL.md",
@@ -1806,13 +1841,16 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
         "spreadsheets-plugin/skills/xlsx/SKILL.md",
       ]),
     );
+    expect(
+      REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS.filter((path) =>
+        path.startsWith("bundled-skills/"),
+      ).toSorted(),
+    ).toEqual(BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS.toSorted());
   });
 
   it.each([
     "browser-use-plugin/scripts/browser-client.mjs",
-    "bundled-skills/skills/dynamic-workflows/SKILL.md",
-    "bundled-skills/skills/dynamic-workflows/patterns.md",
-    "bundled-skills/skills/dynamic-workflows/examples.md",
+    ...BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS,
   ])("开发态缺少 %s 时应在上传前拒绝残缺资源", async (missingAsset) => {
     const rootDir = await mkdtemp(join(tmpdir(), "zcode-remote-dev-agent-missing-browser-client-"));
     tempDirs.push(rootDir);
@@ -1876,6 +1914,13 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
     await mkdir(dirname(cliBundlePath), { recursive: true });
     await writeFile(cliBundlePath, "console.log('dev zcode agent');\n", "utf8");
     await writeTestOfficialPluginPackages(repoDir);
+    // Use the canonical curated files here so this archive test proves source bytes survive staging.
+    for (const relativePath of BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS) {
+      await cp(
+        new URL(`../../../apps/zcode-cli/packages/${relativePath}`, import.meta.url),
+        join(repoDir, "apps/zcode-cli/packages", ...relativePath.split("/")),
+      );
+    }
     process.chdir(repoDir);
     process.env.ZCODE_REMOTE_DEV_AGENT_BUNDLE = "1";
     process.env[ZCODE_RUNTIME_ENV_KEY] = "development";
@@ -1913,9 +1958,13 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
       { log: () => undefined, logWarn: () => undefined },
     );
 
-    for (const file of ["SKILL.md", "patterns.md", "examples.md"]) {
-      expect(archiveContents).toContain(`packages/bundled-skills/skills/dynamic-workflows/${file}`);
-      expect(archiveContents).toContain(`bundled workflow ${file}`);
+    for (const relativePath of BUNDLED_HARNESS_REQUIRED_RELATIVE_PATHS) {
+      expect(archiveContents).toContain(`packages/${relativePath}`);
+      const sourceContents = await readFile(
+        new URL(`../../../apps/zcode-cli/packages/${relativePath}`, import.meta.url),
+        "utf8",
+      );
+      expect(archiveContents).toContain(sourceContents);
     }
     expect(installedFiles).toEqual([]);
     const devBundleUpload = backend.uploads.find(
@@ -1998,7 +2047,9 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
             ]),
           ),
         },
-        { commandPlans: [{ matcher: /createHash/, exitCode: bundleMatches ? 0 : 1 }] },
+        {
+          commandPlans: [{ matcher: /createHash/, exitCode: bundleMatches ? 0 : 1 }],
+        },
       );
       if (scenario === "remote-skill-missing")
         backend.remoteFiles.delete(

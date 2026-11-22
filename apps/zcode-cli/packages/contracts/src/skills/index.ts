@@ -6,7 +6,7 @@ import type { ExecutionContext, TraceContext } from "../tracing/tracer.js";
 
 export type SkillScope = "project" | "user" | "system" | "admin";
 
-export type SkillSource = "agents" | "zcode" | "bundled" | "plugin" | "remote";
+export type SkillSource = "agents" | "cursor" | "zcode" | "bundled" | "plugin" | "remote";
 
 export type SkillDiagnosticSeverity = "warning" | "error";
 
@@ -109,12 +109,66 @@ export interface SkillOperationOptions {
   context?: ExecutionContext;
 }
 
+export interface SkillMarketplaceSearchRequest {
+  query: string;
+  workingDirectory: string;
+  owner?: string;
+  limit?: number;
+  trace?: TraceContext;
+}
+
+export interface SkillMarketplaceSearchItem {
+  /** Canonical skills.sh id: `<source>/<skillId>`. */
+  id: string;
+  source: string;
+  skillId: string;
+  name: string;
+  installs?: number;
+  installed: boolean;
+}
+
+export interface SkillMarketplaceSearchResult {
+  query: string;
+  items: SkillMarketplaceSearchItem[];
+}
+
+export interface SkillMarketplaceInstallRequest {
+  source: string;
+  skillId: string;
+  workingDirectory: string;
+  scope?: "workspace" | "user";
+  overwrite?: boolean;
+  trace?: TraceContext;
+}
+
+export interface SkillMarketplaceInstallResult {
+  name: string;
+  source: string;
+  skillId: string;
+  path: string;
+  scope: "workspace" | "user";
+  filesWritten: number;
+  hash?: string;
+  alreadyInstalled: boolean;
+  /** Generated specialist agent persisted for this skill, when provisioning succeeded. */
+  agentName?: string;
+}
+
 export interface SkillPort {
   discoverSkills(
     request: SkillDiscoverRequest,
     options?: SkillOperationOptions,
   ): Promise<SkillLoadOutcome>;
   loadSkill(request: SkillLoadRequest, options?: SkillOperationOptions): Promise<SkillContent>;
+  /** Optional native skills.sh marketplace bridge; adapters without network support omit it. */
+  searchMarketplace?(
+    request: SkillMarketplaceSearchRequest,
+    options?: SkillOperationOptions,
+  ): Promise<SkillMarketplaceSearchResult>;
+  installMarketplaceSkill?(
+    request: SkillMarketplaceInstallRequest,
+    options?: SkillOperationOptions,
+  ): Promise<SkillMarketplaceInstallResult>;
 }
 
 export interface SkillConfig {

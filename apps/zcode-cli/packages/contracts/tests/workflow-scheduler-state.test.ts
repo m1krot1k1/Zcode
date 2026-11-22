@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ExpertWorkflowRunSnapshotSchema,
+  WorkflowRunSnapshotSchema,
   WorkflowAgentCallInputSchema,
   WorkflowDefinitionSchema,
-  WorkflowRunSnapshotSchema,
   WorkflowSchedulerStateSchema,
   WorkflowScriptMetaSchema,
   WorkflowStrategySchema,
@@ -41,7 +40,6 @@ describe("deriveWorkflowSchedulerState", () => {
       opts: {
         agentType: "Reviewer",
         instructions: "Return raw findings.",
-        isolation: "worktree",
         label: "review:diff",
         maxTurns: 8,
         model: "main",
@@ -55,6 +53,15 @@ describe("deriveWorkflowSchedulerState", () => {
       prompt: "Review current diff.",
     });
     expect(call.opts?.label).toBe("review:diff");
+
+    // QW11: isolation 已从 strict 的 WorkflowAgentOptionsSchema 移除——它只声明了
+    // 未实现的 worktree 能力。解析阶段必须拒绝，避免静默降级执行。
+    expect(() =>
+      WorkflowAgentCallInputSchema.parse({
+        opts: { isolation: "worktree" },
+        prompt: "Review current diff.",
+      }),
+    ).toThrow(/Unrecognized key/);
   });
 
   it("validates the model-facing Workflow tool schema", () => {
@@ -229,7 +236,7 @@ describe("deriveWorkflowSchedulerState", () => {
     };
 
     expect(WorkflowRunSnapshotSchema.parse(snapshot).kind).toBe("audit");
-    expect(ExpertWorkflowRunSnapshotSchema.parse(snapshot).kind).toBe("audit");
+    expect(WorkflowRunSnapshotSchema.parse(snapshot).kind).toBe("audit");
   });
 
   it("derives active child sessions from workflow run activities", () => {

@@ -20,6 +20,7 @@ export type {
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
   Locale,
+  LegacyBilingualLocale,
   LocalePreference,
   ZCodeInteractionBehavior,
   TabId,
@@ -35,6 +36,7 @@ export type {
 } from "./protocol.js";
 export type { WorkspacePurpose } from "./workspacePurpose.js";
 export { DEFAULT_LOCALE } from "./protocol.js";
+export { toLegacyBilingualLocale } from "./protocol.js";
 export { ZCODE_VERSION, ZCODE_COMMIT, ZCODE_BUILD_TIME } from "./version.js";
 export type { HelloMessage, HelloAckMessage } from "./handshake.js";
 export type { ArmsRumEnv, ZCodeEnv, ZCodeProductFlavor } from "./env.js";
@@ -70,6 +72,7 @@ export {
 export {
   ZCODE_ENV,
   ZCODE_PRODUCT_FLAVOR,
+  ZCODE_OFFLINE_PREVIEW,
   ZCODE_APP_VERSION_ENV,
   ZCODE_BUILD_COMMIT_ID_ENV,
   RUNTIME_ZCODE_DEBUG,
@@ -104,6 +107,11 @@ export * from "./zcode-session-task-status.js";
 export * from "./zcode-session-content-profile.js";
 export * from "./zcode-tool-projection-memory.js";
 export * from "./zcode-slash-command-help.js";
+export * from "./prompt-enhancer/index.js";
+export * from "./chat-autocomplete/index.js";
+export * from "./proactive-suggestion/index.js";
+export * from "./stage4-settings/index.js";
+export * from "./prompt-depth.js";
 export * from "./zcodeEndpoint.js";
 export * from "./zcode-source-headers.js";
 export * from "./zcode-agent-policy.js";
@@ -162,6 +170,7 @@ export {
   collectTelemetryRendererContext,
   resolveSafeTelemetryHostname,
   sanitizeTelemetryErrorMessage,
+  sanitizeTelemetryEventText,
   sanitizeTelemetrySkillName,
   sanitizeTelemetryEventDetail,
 } from "./telemetry.js";
@@ -247,6 +256,8 @@ export type {
   UpdateCheckResultPayload,
   UpdateStatePayload,
   WSLDistro,
+  DesktopZoomState,
+  WindowControlsOverlayMetrics,
   WindowControlsOverlayReadyPayload,
   ZCodeStdioTapDevState,
 } from "./platform.js";
@@ -284,6 +295,7 @@ export * from "./plugin-sync.js";
 export * from "./remote-sync.js";
 export * from "./plugin-types.js";
 export * from "./subagents-types.js";
+export * from "./subagent-catalog/index.js";
 export * from "./settings-source.js";
 export * from "./settings-errors.js";
 export * from "./app-runtime-preferences.js";
@@ -335,8 +347,6 @@ export * from "./execution-state.js";
 
 export { bashOutputDisplaySchema } from "./bash-output-display.js";
 
-export * from "./subagent-runtime-config.js";
-
 export * from "./subagent-profile.js";
 export { parseAgentProfileFromMarkdown } from "./subagent-profile-parser.js";
 
@@ -348,6 +358,7 @@ export * from "./marketingTouch.js";
 export * from "./rewardsEmbedded.js";
 export * from "./rewardsBridge.js";
 export * from "./session-debug.js";
+export * from "./model-cost.js";
 export { redactFeedbackText } from "./feedbackPrivacy.js";
 export { API_KEY_USAGE_SCENE, type ApiKeyCreationUsageScene } from "./api-key-usage-scene.js";
 export {
@@ -365,6 +376,8 @@ export * from "./attachment-source.js";
 
 export * from "./channel-mention.js";
 
+export * from "./catalog/index.js";
+
 export {
   requestSecuritySensitiveHeaders,
   isRequestSecurityFailure,
@@ -372,3 +385,5 @@ export {
 export * from "./request-security-edition/verification-policy.js";
 
 export * from "./conversation-share-tool-presentation.js";
+
+export * from "./voice-dictation/index.js";

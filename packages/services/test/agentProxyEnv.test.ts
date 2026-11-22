@@ -11,6 +11,7 @@ import {
   buildAgentNoProxyEnv,
   buildAgentProxyEnv,
   buildAgentRuntimeEnv,
+  buildAgentRootRunBudgetEnv,
   buildAgentWorkspaceIdentityEnv,
 } from "../src/runtime-tools/agentProxyEnv.js";
 
@@ -36,6 +37,17 @@ describe("buildAgentProxyEnv", () => {
 
   it("preserves an explicit scheme such as socks5", () => {
     expect(buildAgentProxyEnv("socks5://127.0.0.1:1080").ALL_PROXY).toBe("socks5://127.0.0.1:1080");
+  });
+});
+
+describe("buildAgentRootRunBudgetEnv", () => {
+  it("passes concurrency and timeout settings without a total spawn budget", () => {
+    expect(buildAgentRootRunBudgetEnv(0, 45)).toEqual({
+      ZCODE_SUBAGENT_MAX_PARALLEL: "0",
+      ZCODE_SUBAGENT_TASK_TIMEOUT_MINUTES: "45",
+    });
+    expect(buildAgentRootRunBudgetEnv(undefined, 181)).toEqual({});
+    expect(buildAgentRootRunBudgetEnv(undefined, undefined)).toEqual({});
   });
 });
 
@@ -95,6 +107,30 @@ describe("buildAgentRuntimeEnv", () => {
       HTTPS_PROXY: "http://127.0.0.1:7890",
       ALL_PROXY: "http://127.0.0.1:7890",
       ZCODE_HTTP_PROXY: "http://127.0.0.1:7890",
+    });
+  });
+
+  it("passes the proxy list without replacing the selected route", () => {
+    expect(
+      buildAgentRuntimeEnv({
+        httpProxy: "http://127.0.0.1:7890",
+        httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+      }),
+    ).toMatchObject({
+      HTTP_PROXY: "http://127.0.0.1:7890",
+      ZCODE_HTTP_PROXY: "http://127.0.0.1:7890",
+      ZCODE_HTTP_PROXY_LIST: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
+    });
+  });
+
+  it("normalizes a shorthand proxy line into the list and keeps direct routing", () => {
+    expect(
+      buildAgentRuntimeEnv({
+        httpProxy: undefined,
+        httpProxyList: " 10.0.0.8:1080:user:secret \n\n socks://127.0.0.1:1081 ",
+      }),
+    ).toEqual({
+      ZCODE_HTTP_PROXY_LIST: "socks5://user:secret@10.0.0.8:1080\nsocks5://127.0.0.1:1081",
     });
   });
 
@@ -234,11 +270,14 @@ describe("official MCP trust: host and agent must agree on the ZCode API origin"
   });
 });
 
-/* 上面的用例证明"注入之后两侧一致"，但证明不了 node.ts 真的注入了。
-   createNodeServices 是 1200+ 行、107 个 import 的容器，resolveSpawnEnv 又是其中的内联闭包，
+/* 上面的用例证明"注入之后两侧一致"，但证明不了 Host 装配真的注入了。
+   resolveSpawnEnv 是 Node 入口 agent 阶段的内联闭包（services/src/node/agent.ts），
    为它搭 mock 不划算；这里退而对接线做源码断言，至少能挡住"整行被删/被接错解析器"。 */
-describe("node.ts wires the authoritative origin into resolveSpawnEnv", () => {
-  const source = readFileSync(resolve(process.cwd(), "packages/services/src/node.ts"), "utf8");
+describe("node/agent wires the authoritative origin into resolveSpawnEnv", () => {
+  const source = readFileSync(
+    resolve(process.cwd(), "packages/services/src/node/agent.ts"),
+    "utf8",
+  );
   // 提取起点不写死参数列表：CUA 集成把闭包改成 `async (context) =>`（需要 workspace
   // registry），写死 `async () =>` 会让 slice 取到空串、两条断言变成永假的空匹配。
   const spawnEnvStart = source.indexOf("resolveSpawnEnv: async (");

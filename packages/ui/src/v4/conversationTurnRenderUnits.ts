@@ -3,9 +3,7 @@ import type {
   BuildConversationTurnRenderUnitsOptions,
 } from "@/v4/conversationTurnRenderUnitTypes.js";
 export type {
-  ConversationTurnRenderUnit,
-  BuildConversationTurnRenderUnitsOptions,
-} from "@/v4/conversationTurnRenderUnitTypes.js";
+  ConversationTurnRenderUnit} from "@/v4/conversationTurnRenderUnitTypes.js";
 import type {
   AssistantTextRow,
   ConversationRow,
@@ -29,9 +27,7 @@ import { markHighspeedOutputFooterUnits } from "@/highspeed/highspeedOutputFoote
 
 export type { AssistantWorkRow, ConversationTurnFlowItem } from "@/v4/conversationTurnFlowItems.js";
 export type {
-  ConversationTurnWorkSegment,
-  ConversationTurnWorkStatus,
-} from "@/v4/conversationTurnWorkSegments.js";
+  ConversationTurnWorkSegment} from "@/v4/conversationTurnWorkSegments.js";
 export { resolveNextHighspeedExpiryMs } from "@/highspeed/highspeedConversationRows.js";
 
 interface DraftTurnRenderUnit {
@@ -149,6 +145,8 @@ function isCompletionBlockingWorkRowRunning(row: AssistantWorkRow): boolean {
       );
     case "subagent":
       return row.backgrounded !== true && row.status === "running";
+    case "externalAgentRun":
+      return row.status === "starting" || row.status === "running";
     case "timelineMarker":
       return "status" in row.marker && row.marker.status === "running";
     default:
@@ -241,6 +239,12 @@ function materializeDraftUnit(
   const isInterrupted = draft.header
     ? draft.header.state === "completedInterrupted"
     : options.sessionPhase === "completedInterrupted";
+  // failed 是独立终态（含 error_max_turns 等受限结果），不能并入 completed，
+  // 否则轮次标签会把它显示成「已工作」；与 isInterrupted 一样，
+  // 冷恢复尾窗缺 header 时才回退 session phase。
+  const isFailed = draft.header
+    ? draft.header.state === "failed"
+    : options.sessionPhase === "error";
   // 旧展开规则只看 running 和最终正文，异常终态一旦保留 partial assistant text
   // 就会被当作正常完成而收起，隐藏中断/失败上下文。终态必须以 header 为权威；冷恢复
   // 尾窗缺 header 时才回退 session phase，desktop continuous 与 mobile replayable 共用此边界。
@@ -262,6 +266,7 @@ function materializeDraftUnit(
     isRunning,
     workDurationMs,
     isInterrupted,
+    isFailed,
   );
   const browserTurnEndRowIds = new Set(browserTurnEndRows.map((row) => row.rowId));
   const orderedBodyRows = visibleOrderedRows.filter(
@@ -278,6 +283,7 @@ function materializeDraftUnit(
     isRunning,
     isLastTurn,
     isInterrupted,
+    isFailed,
     forceOpenHistory,
     timelineOnly,
     nowMs: options.nowMs,

@@ -165,7 +165,7 @@ function WorkflowArtifactMoreLine({
       <span className="min-w-0 flex-1 truncate text-foreground-subtle">
         {intl.formatMessage(
           { id: "chat.toolCall.workflow.completion.moreArtifacts" },
-          { count: truncated ? "…" : count.toLocaleString() },
+          { count: truncated ? "…" : count.toLocaleString("en-US") },
         )}
       </span>
       {openable ? (

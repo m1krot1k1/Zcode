@@ -23,6 +23,8 @@ import { webFetchRuleSubjects, wildcardToRegExp } from "./rule-matching.js";
 import { isPreapprovedWorkflowDraftWrite } from "./workflow-draft-path.js";
 import { applyPermissionUpdates } from "../tool/executor/permission-rules.js";
 import { isWebFetchPreapprovedUrl } from "../tool/webfetch-preapproved.js";
+import { isStoredMcpResultPageRequest } from "../mcp/index.js";
+import { expandSubagentDispatchDisallowRules } from "../runtime/helpers/tool-allowlist.js";
 import type { ToolPermissionRulePolicy } from "../tool/types.js";
 
 // -----------------------------------------------
@@ -98,6 +100,20 @@ export class PermissionService {
     this.sessionRules = applyPermissionUpdates(this.sessionRules, updates);
   }
 
+  /**
+   * Проверка `PermissionConfig.disallowedTools` по точному имени записи.
+   *
+   * `context.toolName` приходит именем конкретной записи (`Agent` или `Task`), поэтому запрет
+   * одного имени без развёртывания оставлял бы alias исполняемым, если вызов пришёл напрямую
+   * или от hook. Развёртывание делает тот же общий helper, что и на границе регистрации
+   * (docs/specs/task-alias-visibility.md, TASKALIAS-05/07); собственного списка имён здесь нет.
+   * Список читается живым, поэтому семантика `PermissionConfig` не меняется.
+   */
+  private isToolDisallowed(toolName: string): boolean {
+    const rules = expandSubagentDispatchDisallowRules([...this.config.disallowedTools]);
+    return rules?.includes(toolName) === true;
+  }
+
   checkPermission(
     context: PermissionContext,
     toolCapability?: PermissionToolCapability,
@@ -105,6 +121,29 @@ export class PermissionService {
     rulePolicy?: ToolPermissionRulePolicy,
   ): PermissionDecisionResult {
     const capability = this.resolveCapability(context, toolCapability);
+
+    // 硬拒绝（disallowedTools / 项目 deny）先于任何 allow 分支：
+    // 修复原因：yolo/guarded 的放行分支原先排在 deny 之前，切一次模式就能执行用户
+    // 明确禁用的工具；research R05 要求 deny > ask > allow，模式不得解除硬禁用。
+    // 这里保留唯一硬拒绝入口，下面的模式分支不再重复判定。
+    if (this.isToolDisallowed(context.toolName)) {
+      return this.deny(
+        context,
+        capability,
+        "rule.disallowedTools",
+        `Tool ${context.toolName} is explicitly disallowed`,
+      );
+    }
+
+    if (this.matchesProjectRules(projectRules, "deny", context, capability, rulePolicy)) {
+      return this.deny(
+        context,
+        capability,
+        "rule.project.deny",
+        `Tool ${context.toolName} is denied by project permission rules`,
+      );
+    }
+
     const planModeTransition = resolvePlanModeTransitionPermission(context);
 
     if (planModeTransition) {
@@ -114,15 +153,6 @@ export class PermissionService {
     }
 
     if (capability.requiresUserInteraction) {
-      if (this.config.disallowedTools.has(context.toolName)) {
-        return this.deny(
-          context,
-          capability,
-          "rule.disallowedTools",
-          `Tool ${context.toolName} is explicitly disallowed`,
-        );
-      }
-
       return this.ask(
         context,
         capability,
@@ -147,7 +177,7 @@ export class PermissionService {
 
     // 保留 staging 的工具级确认，不被 Guarded 普通调用的 YOLO 基础策略跳过。
     if (capability.alwaysAsk) {
-      return this.checkAlwaysAsk(context, capability, projectRules, rulePolicy);
+      return this.checkAlwaysAsk(context, capability, rulePolicy);
     }
 
     if ((context.mode === "yolo" || context.mode === "guarded") && !planEnabled) {
@@ -160,24 +190,6 @@ export class PermissionService {
         capability,
         "mode.auto.unimplemented",
         "Auto mode is reserved but not implemented yet",
-      );
-    }
-
-    if (this.config.disallowedTools.has(context.toolName)) {
-      return this.deny(
-        context,
-        capability,
-        "rule.disallowedTools",
-        `Tool ${context.toolName} is explicitly disallowed`,
-      );
-    }
-
-    if (this.matchesProjectRules(projectRules, "deny", context, capability, rulePolicy)) {
-      return this.deny(
-        context,
-        capability,
-        "rule.project.deny",
-        `Tool ${context.toolName} is denied by project permission rules`,
       );
     }
 
@@ -218,6 +230,15 @@ export class PermissionService {
         capability,
         "rule.project.allow",
         `Tool ${context.toolName} is allowed by project permission rules`,
+      );
+    }
+
+    if (capability.permissionName === "mcp" && isStoredMcpResultPageRequest(context.input)) {
+      return this.allow(
+        context,
+        capability,
+        "tool.mcp.resultPage",
+        "Stored MCP result page does not call the server",
       );
     }
 
@@ -355,20 +376,14 @@ export class PermissionService {
   }
 
   /**
-   * 工具自报 alwaysAsk 时的判定：ask 压过所有"放行"分支（yolo 直通、plan 的 readOnly 直通），
-   * 但**压不过"阻断"**——所以这里先自己走一遍硬阻断判定。
+   * 工具自报 alwaysAsk 时的判定：ask 压过所有"放行"分支（yolo 直通、plan 的 readOnly 直通）。
    *
-   * 为什么不直接返回 ask：disallowedTools 是用户配置的硬禁用，项目 deny 规则符合工具自报的
-   * denyPriority: "beforeAsk"，auto 模式是"该模式未实现"的保护。少了这一步，一个被硬禁用的
-   * 工具会退化成"弹个窗、用户一点就能跑"。
-   *
-   * 这些判定在 checkPermission 里按原有顺序还会各自出现一次；此处刻意只覆盖 alwaysAsk 工具，
-   * 不改动其他工具的既有优先级（尤其 yolo 目前先于 disallowedTools 放行这一点）。
+   * 阻断分支（disallowedTools / 项目 deny）已在 checkPermission 的硬拒绝入口统一判定并返回，
+   * 所以这里不再重复；auto 模式的保护仍在此保留，因为它属于"模式未实现"而非用户硬禁用。
    */
   private checkAlwaysAsk(
     context: PermissionContext,
     capability: ResolvedPermissionCapability,
-    projectRules?: PermissionRuleset | null,
     rulePolicy?: ToolPermissionRulePolicy,
   ): PermissionDecisionResult {
     if (context.mode === "auto") {
@@ -377,22 +392,6 @@ export class PermissionService {
         capability,
         "mode.auto.unimplemented",
         "Auto mode is reserved but not implemented yet",
-      );
-    }
-    if (this.config.disallowedTools.has(context.toolName)) {
-      return this.deny(
-        context,
-        capability,
-        "rule.disallowedTools",
-        `Tool ${context.toolName} is explicitly disallowed`,
-      );
-    }
-    if (this.matchesProjectRules(projectRules, "deny", context, capability, rulePolicy)) {
-      return this.deny(
-        context,
-        capability,
-        "rule.project.deny",
-        `Tool ${context.toolName} is denied by project permission rules`,
       );
     }
     // 会话免确认：阻断分支之后、ask 之前。命中即放行，不发 permission 事件、不弹窗；

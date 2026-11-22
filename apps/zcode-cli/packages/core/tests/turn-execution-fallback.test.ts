@@ -90,6 +90,52 @@ describe("matchExecutionSelectionFallback", () => {
     ).toBeUndefined();
   });
 
+  it("OpenCode 429 不退到另一个 provider", () => {
+    const error = Object.assign(new Error("OpenCode rate limit"), {
+      code: "model_rate_limited",
+      context: {
+        providerId: "opencode",
+        modelId: "deepseek-v4.1-flash-free",
+        reason: "rate_limited",
+        source: "provider",
+        statusCode: 429,
+      },
+      name: "AiSdkModelAdapterError",
+    });
+    expect(
+      match(error, {
+        executionProviderId: "opencode",
+        selectionFallback: {
+          providerId: "opencode",
+          rules: [{ reason: "highspeed_request_failed" }],
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("OpenCode 登录失败不退到另一个 provider", () => {
+    const error = Object.assign(new Error("OpenCode sign-in is required"), {
+      code: "provider_not_configured",
+      context: {
+        providerId: "opencode",
+        modelId: "deepseek-v4.1-flash-free",
+        reason: "auth_failed",
+        source: "provider",
+        statusCode: 401,
+      },
+      name: "AiSdkModelAdapterError",
+    });
+    expect(
+      match(error, {
+        executionProviderId: "opencode",
+        selectionFallback: {
+          providerId: "opencode",
+          rules: [{ reason: "highspeed_request_failed" }],
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it("上下文超窗不退回，交给 reactive compact", () => {
     expect(
       match(

@@ -10,12 +10,46 @@ export const seaBundledSkillAssetPrefix = "zcode-bundled-skills/";
 export const seaBundledSkillManifestAssetKey = `${seaBundledSkillAssetPrefix}manifest.json`;
 export const bundledSkillPackRootPath = join("packages", "bundled-skills");
 export const bundledSkillPackSkillsDirectory = "skills";
+export const bundledSkillPackRulesDirectory = "rules";
 // 与 bootstrap 的 BUNDLED_SKILL_PACK_REQUIRED_PATHS 对齐：缺任一项即中止 SEA 构建，
 // 不把一个引用文件残缺的技能包发进正式二进制。
 export const bundledSkillPackRequiredPaths = [
   "skills/dynamic-workflows/SKILL.md",
   "skills/dynamic-workflows/patterns.md",
   "skills/dynamic-workflows/examples.md",
+  "skills/zcode-swarm/SKILL.md",
+  "skills/zcode-verification/SKILL.md",
+  "skills/zcode-systematic-debugging/SKILL.md",
+  "skills/zcode-test-driven-development/SKILL.md",
+  "skills/anti-loop/SKILL.md",
+  "skills/self-improvement/SKILL.md",
+  "skills/code-craft/SKILL.md",
+  "skills/reference-first/SKILL.md",
+  "skills/task-planning/SKILL.md",
+  "skills/execution-patterns/SKILL.md",
+  "skills/reviewer/SKILL.md",
+  "skills/completion-gate/SKILL.md",
+  "skills/research/SKILL.md",
+  "skills/domain-modeling/SKILL.md",
+  "skills/codebase-design/SKILL.md",
+  "skills/codebase-design/LICENSE",
+  "skills/doc-coauthoring/SKILL.md",
+  "skills/doc-coauthoring/LICENSE",
+  "skills/image-to-code/SKILL.md",
+  "skills/image-to-code/LICENSE",
+  "skills/ui-craft/SKILL.md",
+  "skills/ui-craft/LICENSE",
+  "skills/merge-conflict-resolution/SKILL.md",
+  "skills/handoff/SKILL.md",
+  "skills/performance-tuning/SKILL.md",
+  "skills/mcp-authoring/SKILL.md",
+  "rules/00-evidence.mdc",
+  "rules/01-delegation.mdc",
+  "rules/02-verification.mdc",
+  "rules/03-context.mdc",
+  "rules/04-model-identity.mdc",
+  "rules/05-code-and-ui-craft.mdc",
+  "rules/06-progress.mdc",
 ];
 
 export const collectSeaBundledSkillAssets = async ({ root, stagingDirectory }) => {
@@ -26,18 +60,20 @@ export const collectSeaBundledSkillAssets = async ({ root, stagingDirectory }) =
 
   const files = [];
   const assets = {};
-  for await (const sourcePath of walkFiles(join(packRoot, bundledSkillPackSkillsDirectory))) {
-    const relativePath = relative(packRoot, sourcePath);
-    if (!shouldIncludeFile(relativePath)) continue;
-    const bytes = await readFile(sourcePath);
-    const sourceStats = await stat(sourcePath);
-    const posixPath = toPosixPath(relativePath);
-    assets[`${seaBundledSkillAssetPrefix}${posixPath}`] = sourcePath;
-    files.push({
-      mode: modeForFile(sourceStats.mode),
-      path: posixPath,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-    });
+  for (const directory of [bundledSkillPackSkillsDirectory, bundledSkillPackRulesDirectory]) {
+    for await (const sourcePath of walkFiles(join(packRoot, directory))) {
+      const relativePath = relative(packRoot, sourcePath);
+      if (!shouldIncludeFile(relativePath)) continue;
+      const bytes = await readFile(sourcePath);
+      const sourceStats = await stat(sourcePath);
+      const posixPath = toPosixPath(relativePath);
+      assets[`${seaBundledSkillAssetPrefix}${posixPath}`] = sourcePath;
+      files.push({
+        mode: modeForFile(sourceStats.mode),
+        path: posixPath,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      });
+    }
   }
   files.sort((left, right) => left.path.localeCompare(right.path));
 

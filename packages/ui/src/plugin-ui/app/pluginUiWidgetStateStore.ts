@@ -20,8 +20,3 @@ export function setPluginUiWidgetState(key: string, widgetState: unknown): void 
 export function clearPluginUiWidgetState(key: string): void {
   states.delete(key);
 }
-
-/** 测试用：清空全部记录。 */
-export function resetPluginUiWidgetStateForTest(): void {
-  states.clear();
-}

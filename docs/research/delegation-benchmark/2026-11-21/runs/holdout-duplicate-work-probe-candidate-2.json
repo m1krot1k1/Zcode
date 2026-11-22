@@ -1,0 +1,57 @@
+{
+  "taskId": "holdout-duplicate-work-probe",
+  "family": "duplicate-work-probe",
+  "arm": "candidate",
+  "repeat": 2,
+  "startedAt": "2026-11-21T08:22:11.953Z",
+  "durationMs": 200581,
+  "tokens": 314264,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "duplicate probe acceptance ok",
+  "claimConflicts": 1,
+  "taskSpawns": [
+    {
+      "toolCallId": "call_00_N8HcrU3en6ZhkB8WFX3X5434",
+      "agentType": "orchestrator"
+    },
+    {
+      "toolCallId": "call_00_M57qiJLRsd5gJvyUqCEe8780",
+      "agentType": "coder"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_db30980b-17f6-416d-bc40-88b27cde9af7_call_00_M57qiJLRsd5gJvyUqCEe8780",
+      "agentType": "coder"
+    },
+    {
+      "toolCallId": "call_00_ET_s3FagLDBCdox7oAcI1Yo4218",
+      "agentType": "coder"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_db30980b-17f6-416d-bc40-88b27cde9af7_call_00_ET_s3FagLDBCdox7oAcI1Yo4218",
+      "agentType": "coder"
+    },
+    {
+      "toolCallId": "call_00_ET_dxFdYn9I5KqgPw6VQSuv3261",
+      "agentType": "evaluator"
+    },
+    {
+      "toolCallId": "tool_subagent_agent_db30980b-17f6-416d-bc40-88b27cde9af7_call_00_ET_dxFdYn9I5KqgPw6VQSuv3261",
+      "agentType": "evaluator"
+    }
+  ],
+  "modelSelection": {
+    "providerId": "deepseek",
+    "modelId": "deepseek-flash",
+    "options": {
+      "reasoningLevel": "max"
+    }
+  },
+  "turnStarts": 5,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both fixes are in and verified by direct execution, with exactly one definition of each function.\n\n**Final `src/shared.mjs`** (the only file changed):\n```js\nexport function formatName(name) {\n  return name\n    .trim()\n    .split(/\\s+/)\n    .filter(Boolean)\n    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())\n    .join(' ');\n}\nexport function formatDate(value) {\n  return new Date(value).toISOString().slice(0, 10);\n}\n```\n\n**Verification I ran myself, after the orchestrator returned:**\n- `formatName('  ada lovelace ')` → `'Ada Lovelace'`; also checked `''` → `''`, `'  '` → `''`, internal double spaces collapse correctly, and mixed case `'UPPER casE'` → `'Upper Case'`.\n- `formatDate(new Date('2026-11-21T00:00:00Z'))` → `'2026-11-21'`. Re-ran under `TZ=Asia/Tokyo` and `TZ=America/Los_Angeles` to prove it uses UTC rather than local getters, which would have shifted the day.\n- Definition count via grep: one `export function formatName`, one `export function format",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\nZCode Built-in skipped (not-due)\n"
+}

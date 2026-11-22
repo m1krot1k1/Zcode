@@ -6,12 +6,12 @@
 // → 宿主重算 task 行 → renderer 按事件频率重拉任务列表。ModelStreaming 早已因同样的理由被排除。
 
 /** 工作流进度事件的 fan-out 窗口：窗内的进度合并为窗末一次发布（侧栏运行行 ≤4Hz）。 */
-export const WORKFLOW_PROGRESS_INDEX_FANOUT_MS = 250;
+const WORKFLOW_PROGRESS_INDEX_FANOUT_MS = 250;
 
 /** 定时器句柄对调度逻辑不透明：生产用 setTimeout，测试可注入任意实现。 */
-export type FanoutTimerHandle = unknown;
+type FanoutTimerHandle = unknown;
 
-export interface SessionsIndexFanoutThrottleOptions {
+interface SessionsIndexFanoutThrottleOptions {
   /** 发布某会话当前摘要到 sessions-index（网关的 publishCurrentSummaryToIndex）。 */
   publish: (sessionId: string) => void;
   windowMs?: number;

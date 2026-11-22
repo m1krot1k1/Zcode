@@ -12,7 +12,13 @@ import type {
   SyntheticUserMessageSource,
   TodoItem,
 } from "../deps.js";
-import { ASK_USER_QUESTION_TOOL_NAME, EXIT_PLAN_MODE_TOOL_NAME } from "@zcode/contracts";
+import {
+  ASK_USER_QUESTION_TOOL_NAME,
+  EXIT_PLAN_MODE_TOOL_NAME,
+  type CodeIntelligencePort,
+  type TraceContext,
+} from "@zcode/contracts";
+import type { ReadFileStateMap } from "../../tool/types.js";
 import { EXPLORE_AGENT_TYPE } from "../../subagent/explore.js";
 
 export const RUNTIME_MODE_REMINDER_CONFIG = Object.freeze({
@@ -83,7 +89,7 @@ export const TODO_REMINDER_CONFIG = Object.freeze({
   TURNS_BETWEEN_REMINDERS: 10,
 });
 
-export interface TodoReminderTurnCounts {
+interface TodoReminderTurnCounts {
   turnsSinceLastTodoWrite: number;
   turnsSinceLastReminder: number;
 }
@@ -249,4 +255,101 @@ function countRuntimeModeReminders(entries: readonly RuntimeMessageEntry[]): num
     (count, entry) => count + (entry.metadata?.source === "runtime_mode" ? 1 : 0),
     0,
   );
+}
+
+function normalizeWorkspaceDirectory(value: string | undefined): string {
+  const trimmed = (value ?? ".").replace(/[\\/]+$/u, "");
+  return trimmed.length === 0 ? "." : trimmed;
+}
+
+function sameWorkspaceDirectory(
+  left: string | undefined,
+  right: string | undefined,
+): boolean {
+  return normalizeWorkspaceDirectory(left) === normalizeWorkspaceDirectory(right);
+}
+
+/** Может ли роль вообще применить подсказку указателя кода и каталог навыков. */
+export function hasCodeReadingTools(toolNames: Iterable<string>): boolean {
+  for (const name of toolNames) {
+    if (name === "Read" || name === "CodeIndex") return true;
+  }
+  return false;
+}
+
+export function hasSkillTools(toolNames: Iterable<string>): boolean {
+  for (const name of toolNames) {
+    if (name === "Skill" || name === "SkillSearch") return true;
+  }
+  return false;
+}
+
+/** Child runtimes in the same workspace reuse the parent's Read range cache. */
+export function sharedReadFileStateForChild(
+  parentDirectory: string | undefined,
+  childDirectory: string | undefined,
+  readFileState: ReadFileStateMap,
+): { sharedReadFileState: ReadFileStateMap } | Record<string, never> {
+  if (!sameWorkspaceDirectory(parentDirectory, childDirectory)) return {};
+  return { sharedReadFileState: readFileState };
+}
+
+// 800 мс не хватало: на первом обращении после старта Host семафор поиска отдавал
+// результат позже, и подсказка молча пропускалась. 2000 мс выше p95 локального поиска
+// и всё ещё незаметно для пользователя на старте хода.
+const CODE_INDEX_TURN_HINT_TIMEOUT_MS = 2_000;
+const HINT_HITS = 4;
+const HINT_CHAR_BUDGET = 12_000;
+
+export async function buildCodeIndexTurnHint(input: {
+  port: CodeIntelligencePort | undefined;
+  query: string;
+  signal: AbortSignal;
+  trace?: TraceContext;
+}): Promise<string | null> {
+  const query = input.query.trim().slice(0, 500);
+  if (!input.port || query.length < 2 || input.signal.aborted) return null;
+
+  const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  input.signal.addEventListener("abort", onParentAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, CODE_INDEX_TURN_HINT_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  const work = collectHint(input.port, query, controller.signal, input.trace).catch(() => null);
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    input.signal.removeEventListener("abort", onParentAbort);
+  }
+}
+
+async function collectHint(
+  port: CodeIntelligencePort,
+  query: string,
+  signal: AbortSignal,
+  trace?: TraceContext,
+): Promise<string | null> {
+  const status = await port.query({ action: "status" }, { signal, trace });
+  if (status.action !== "status" || status.status.state !== "ready") return null;
+  const search = await port.query(
+    { action: "search", query, limit: HINT_HITS, lexicalOnly: true },
+    { signal, trace },
+  );
+  if (search.action !== "search" || search.results.length === 0) return null;
+  const lines = search.results.slice(0, HINT_HITS).map((hit) => {
+    const title = `${hit.path}:${hit.startLine}-${hit.endLine}${hit.symbolName ? ` ${hit.symbolName}` : ""}${hit.excerptTruncated ? " excerpt-truncated" : ""}`;
+    return `${title}\n${hit.excerpt}`;
+  });
+  const body = [
+    "Local code-index hint. This is not a second source of truth and does not replace CodeIndex. Answer from these excerpts and path:startLine-endLine when the fact is already here. Read a range only to edit, open a test, or when the excerpt is truncated or missing the needed text. Use offset = startLine and a limit for that range.",
+    ...lines,
+  ].join("\n\n");
+  return body.length <= HINT_CHAR_BUDGET ? body : `${body.slice(0, HINT_CHAR_BUDGET)}\n[hint truncated]`;
 }

@@ -38,7 +38,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
  * 回填块：端口在场才写——没有 run 端口就不会有 run，窗里调什么都无处生效。模型那一格看目录端口：
  * 宿主解不了模型名，窗里就只让调上界（批准之后才因「这里选不了模型」失败，是把接线缺口记到用户头上）。
  */
-export function workflowAdjustableSettings(
+function workflowAdjustableSettings(
   context: ToolInputResolutionContext,
 ): WorkflowAdjustableSettings | undefined {
   const port = context.dynamicWorkflowRunPort;

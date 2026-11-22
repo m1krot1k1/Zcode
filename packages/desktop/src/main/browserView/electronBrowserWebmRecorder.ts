@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Electron capture authority、renderer 消息协议与文件清理属于同一个录制事务，拆开会让 abort/close 状态跨模块竞态。 */
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -10,11 +9,7 @@ import {
   type Session,
   type WebFrameMain,
 } from "electron";
-import type {
-  BrowserWebmRecorderFactoryInput,
-  BrowserWebmRecorderFactory,
-  BrowserWebmRecorderSession,
-} from "./browserVideoRecorder.js";
+import type { BrowserWebmRecorderFactoryInput, BrowserWebmRecorderSession } from "./browserVideoRecorder.js";
 
 const RECORDER_PORT_CHANNEL = "zcode-browser-video-recorder:port";
 const RECORDER_START_TIMEOUT_MS = 15_000;
@@ -436,7 +431,11 @@ export async function createElectronBrowserWebmRecorder(
     await recorderWindow.loadFile(recorderDocumentPath);
     await rm(recorderDocumentPath, { force: true }).catch(() => undefined);
     recorderWindow.webContents.postMessage(RECORDER_PORT_CHANNEL, null, [rendererPort]);
-    await withTimeout(ready.promise, RECORDER_START_TIMEOUT_MS, "recorder renderer did not become ready");
+    await withTimeout(
+      ready.promise,
+      RECORDER_START_TIMEOUT_MS,
+      "recorder renderer did not become ready",
+    );
     mainPort.postMessage({
       type: "start",
       fps: input.fps,
@@ -473,5 +472,3 @@ export async function createElectronBrowserWebmRecorder(
 }
 
 // 保持标准 factory 类型出口，调用方不注入诊断时不会产生按分片日志。
-export const defaultElectronBrowserWebmRecorder: BrowserWebmRecorderFactory =
-  createElectronBrowserWebmRecorder;

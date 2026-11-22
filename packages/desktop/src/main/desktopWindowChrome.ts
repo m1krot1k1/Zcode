@@ -1,6 +1,6 @@
-/* eslint-disable max-lines -- 桌面窗口 chrome、webview 安全策略和 popup 路由共享同一 BrowserWindow 生命周期上下文。 */
 import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen, shell } from "electron";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   ContextMenuParams,
   Input,
@@ -557,6 +557,177 @@ function buildTextContextMenuTemplate(
   return [];
 }
 
+/**
+ * 主窗口允许的同源导航判定。
+ *
+ * 生产包由 `loadFile(file://…/out/renderer/index.html)` 加载；渲染进程发起的真实导航
+ * （点击链接、location.href、reload）只允许留在 renderer 目录内的 file: 文档。
+ * 开发态由 Vite dev server 提供文档，只允许同 origin（含 HMR 导致的整页 reload）。
+ * 其余一律视为不可信，返回 deny；http(s) 额外标记可交给系统浏览器。
+ */
+export function resolveMainWindowNavigationDecision(input: {
+  url: string;
+  isPackaged: boolean;
+  rendererDir: string;
+  devServerOrigin?: string;
+}): { action: "allow" } | { action: "deny"; openExternal: boolean } {
+  let parsed: URL;
+  try {
+    parsed = new URL(input.url);
+  } catch {
+    return { action: "deny", openExternal: false };
+  }
+
+  if (isMainWindowTrustedUrl(parsed, input)) return { action: "allow" };
+
+  // 只有 http(s) 才交给系统浏览器；javascript:/data:/file:/未知 schema 既不加载也不外开。
+  const openExternal = parsed.protocol === "http:" || parsed.protocol === "https:";
+  return { action: "deny", openExternal };
+}
+
+function isMainWindowTrustedUrl(
+  parsed: URL,
+  input: {
+    isPackaged: boolean;
+    rendererDir: string;
+    devServerOrigin?: string;
+  },
+): boolean {
+  // 开发态：Vite dev server 同源允许（HMR 整页 reload）。
+  if (
+    !input.isPackaged &&
+    input.devServerOrigin !== undefined &&
+    parsed.origin === input.devServerOrigin
+  ) {
+    return true;
+  }
+  // 打包态，以及未配置 ELECTRON_RENDERER_URL 的开发态（loadWindow 退回 loadFile），
+  // 都只信任 renderer 目录内的 file: 文档。
+  if (parsed.protocol !== "file:") return false;
+  return isFileInsideRendererDir(parsed, input.rendererDir);
+}
+
+function isFileInsideRendererDir(parsed: URL, rendererDir: string): boolean {
+  try {
+    // loadFile/loadWindow 会给 index.html 带 query（restoreSession 等），fileURLToPath
+    // 只应看 pathname；显式清掉 search/hash，避免不同 Node 版本对带 query 的 file URL 行为差异。
+    const fileUrl = new URL(parsed.href);
+    fileUrl.search = "";
+    fileUrl.hash = "";
+    // fileURLToPath 负责 POSIX / Windows drive / UNC 差异；非本地 host 在 POSIX 抛错，
+    // Windows 的 UNC 会转换成 \\server\share 路径，随后由 relative 的包含检查判定。
+    const targetPath = fileURLToPath(fileUrl);
+    const relativePath = relative(rendererDir, targetPath);
+    return (
+      relativePath.length > 0 &&
+      !relativePath.startsWith("..") &&
+      !isAbsolute(relativePath) &&
+      !relativePath.split(sep).includes("..")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 主窗口 `window.open` / `target=_blank` 判定：永远返回 deny（不创建第二个
+ * BrowserWindow），http(s) 通过 `shell.openExternal` 交给系统浏览器。
+ */
+export function resolveMainWindowWindowOpenDecision(input: { url: string }): {
+  action: "deny";
+  openExternal: boolean;
+} {
+  try {
+    const parsed = new URL(input.url);
+    return {
+      action: "deny",
+      openExternal: parsed.protocol === "http:" || parsed.protocol === "https:",
+    };
+  } catch {
+    return { action: "deny", openExternal: false };
+  }
+}
+
+/** `ELECTRON_RENDERER_URL` 只在不打包时生效；origin 归一化后用于开发态白名单。 */
+function resolveDevServerOrigin(): string | undefined {
+  if (app.isPackaged) return undefined;
+  const rendererUrl = process.env["ELECTRON_RENDERER_URL"];
+  if (!rendererUrl) return undefined;
+  try {
+    return new URL(rendererUrl).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveRendererDir(): string {
+  // createBrowserWindow 的文档位于 ../renderer；与 loadWindow 的 loadFile 路径保持一致。
+  return join(import.meta.dirname, "../renderer");
+}
+
+function attachMainWindowNavigationGuards(options: {
+  targetWindow: BrowserWindow;
+  logger: { warn: (...args: unknown[]) => void };
+}): void {
+  const rendererDir = resolveRendererDir();
+  const isPackaged = app.isPackaged;
+  const devServerOrigin = resolveDevServerOrigin();
+
+  // will-navigate 覆盖用户/页面发起的主 frame 导航，却不覆盖服务器 30x 重定向；
+  // 两者共用同一判定，避免同源页面把主窗口重定向到外部文档。
+  // will-redirect 也会为子 frame 触发：子 frame 是沙箱 iframe，不属于主文档边界，
+  // 强制拦截反而会破坏 cloud-content 等内嵌内容的重定向，因此只处理主 frame。
+  const handleMainFrameNavigation = (event: {
+    url: string;
+    isMainFrame?: boolean;
+    preventDefault: () => void;
+  }) => {
+    if (event.isMainFrame === false) return;
+    const url = event.url;
+    const decision = resolveMainWindowNavigationDecision({
+      url,
+      isPackaged,
+      rendererDir,
+      devServerOrigin,
+    });
+    if (decision.action === "allow") return;
+
+    // 阻止不可信文档进入拥有 preload 的主窗口；外部 http(s) 才交给系统浏览器，
+    // 未知 schema 直接丢弃，避免把自定义协议交给 OS handler。
+    event.preventDefault();
+    if (decision.openExternal) {
+      void shell.openExternal(url).catch((error: unknown) => {
+        options.logger.warn("[desktop-window] failed to open external navigation", {
+          error: error instanceof Error ? error.message : String(error),
+          url,
+        });
+      });
+      return;
+    }
+    options.logger.warn(`[desktop-window] blocked untrusted main-window navigation: ${url}`);
+  };
+
+  // Electron 41 把 URL 放在事件对象上（第二个位置参数已标记 deprecated）。
+  options.targetWindow.webContents.on("will-navigate", handleMainFrameNavigation);
+  options.targetWindow.webContents.on("will-redirect", handleMainFrameNavigation);
+
+  options.targetWindow.webContents.setWindowOpenHandler((details) => {
+    const decision = resolveMainWindowWindowOpenDecision({ url: details.url });
+    // 主窗口文档永远不能创建新的 Electron 窗口：popup 一律 deny，合法外链走系统浏览器。
+    if (decision.openExternal) {
+      void shell.openExternal(details.url).catch((error: unknown) => {
+        options.logger.warn("[desktop-window] failed to open external popup", {
+          error: error instanceof Error ? error.message : String(error),
+          url: details.url,
+        });
+      });
+    } else {
+      options.logger.warn(`[desktop-window] blocked untrusted main-window popup: ${details.url}`);
+    }
+    return { action: decision.action };
+  });
+}
+
 export function createBrowserWindow(options: {
   iconPath: string;
   preloadPath: string;
@@ -632,6 +803,9 @@ export function createBrowserWindow(options: {
   win.on("maximize", () => syncDesktopWindowChromeState(win));
   win.on("unmaximize", () => syncDesktopWindowChromeState(win));
   attachWindowsWindowRepaint(win);
+  // 主窗口文档拥有 preload 暴露的全部 native API，必须限制它被导航到何处：
+  // 注册在 loadWindow 之前，覆盖渲染进程发起的所有真实导航与 popup。
+  attachMainWindowNavigationGuards({ targetWindow: win, logger: options.logger });
   // will-attach 与 did-attach 按顺序配对；队列元素记录 guest 种类，did-attach 据此分派策略。
   const pendingWebviewGuestKinds: Array<
     | { kind: "browser" | "codingPlan"; isRewards: boolean }

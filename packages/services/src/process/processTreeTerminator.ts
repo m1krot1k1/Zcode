@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Windows 进程树清理需要集中维护跨阶段的安全边界与 deadline。 */
 import type { ChildProcess } from "node:child_process";
 import {
   captureProcessGroupSnapshot,

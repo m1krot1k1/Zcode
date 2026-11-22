@@ -1,6 +1,6 @@
 import type { BrowserResponseMeta, SessionId, TurnId } from "@zcode/contracts";
 
-export interface BrowserTurnScreenshotCandidate {
+interface BrowserTurnScreenshotCandidate {
   browserGeneration: number;
   browserId: string;
 }

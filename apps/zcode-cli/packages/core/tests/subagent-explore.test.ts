@@ -1,33 +1,14 @@
-import { setup as setupProfileScenario, done as profileDone } from "./subagent-profile-scenario.js";
+import {
+  setup as setupProfileScenario,
+  done as profileDone,
+} from "./subagent-profile-scenario.js";
 import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
 import { describe, expect, it, vi } from "vitest";
 import { createTestModelSelection } from "./test-model-selection.js";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  CoreErrorType,
-  type HttpClientPort,
-  type McpPort,
-  type SkillContent,
-  type SkillLoadOutcome,
-  type SkillPort,
-  SEND_MESSAGE_TOOL_NAME,
-  RESPOND_TO_COORDINATOR_TOOL_NAME,
-  SessionEventType,
-  type SessionId,
-  type SessionEvent,
-  type SessionStorePort,
-  createModelId,
-  createModelProviderId,
-  createSessionEvent,
-  createSessionId,
-  createToolCallId,
-  createTraceId,
-  createTurnId,
-  isCoreError,
-  modelMessageContentToText,
-} from "@zcode/contracts";
+import {CoreErrorType, type HttpClientPort, type McpPort, type SkillContent, type SkillLoadOutcome, type SkillPort, SEND_MESSAGE_TOOL_NAME, RESPOND_TO_COORDINATOR_TOOL_NAME, SessionEventType, type SessionId, type SessionEvent, createModelId, createModelProviderId, createSessionEvent, createSessionId, createToolCallId, createTraceId, createTurnId, isCoreError, modelMessageContentToText} from "@zcode/contracts";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { toMcpToolName } from "../src/mcp/index.js";
 import { PermissionService } from "../src/permission/index.js";
@@ -58,6 +39,7 @@ Your strengths:
 - Reading and analyzing file contents
 
 Guidelines:
+- If CodeIndex is available, start with \`status\` and a targeted \`search\`; use \`context\`/\`impact\`/\`trace\` for relationships. Answer from the excerpt and path:startLine-endLine when the fact is already in the excerpt. Read only to edit, open a test, or when the excerpt is truncated, endLine is missing, or the needed text is absent. Issue those Reads in one parallel batch with offset = startLine and a limit covering the range — not the whole file and not every caller. Fall back to Glob/Grep when the index is unavailable, empty, stale, or does not cover the question. A partial index does not prove the code is absent.
 - Use \`find\` via Bash for broad file pattern matching
 - Use \`grep\` via Bash for searching file contents with regex
 - Use Read when you know the specific file path you need to read
@@ -68,7 +50,7 @@ Guidelines:
 
 NOTE: You are meant to be a fast agent that returns output as quickly as possible. In order to achieve this you must:
 - Make efficient use of the tools that you have at your disposal: be smart about how you search for files and implementations
-- Wherever possible you should try to spawn multiple parallel tool calls for grepping and reading files
+- Wherever possible, batch ranged Reads (offset = startLine, limit for the range) in one message. Do not grep the repository again after CodeIndex already returned the fact.
 
 Complete the user's search request efficiently and report your findings clearly.`;
 
@@ -95,7 +77,10 @@ const exploreSystemMessages = [
   `\n${exploreAgentPrompt}\n\n${subagentCommonNotes}\n\n${subagentEnvironmentContext}`,
 ];
 
-async function waitForCondition(check: () => boolean, timeoutMs = 1_000): Promise<void> {
+async function waitForCondition(
+  check: () => boolean,
+  timeoutMs = 1_000,
+): Promise<void> {
   const startedAt = Date.now();
   while (!check()) {
     if (Date.now() - startedAt > timeoutMs) {
@@ -111,7 +96,9 @@ describe("Explore subagent", () => {
     async (withFailedUsage) => {
       const sessionId = createSessionId("parent-usage");
       const traceId = createTraceId();
-      const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-usage-"));
+      const outputRootDir = await mkdtemp(
+        join(tmpdir(), "zcode-subagent-usage-"),
+      );
       const normalUsage = { inputTokens: 3, outputTokens: 1, totalTokens: 4 };
       const port = createExploreSubagentPort({
         outputRootDir,
@@ -123,24 +110,35 @@ describe("Explore subagent", () => {
             events: [
               ...(withFailedUsage
                 ? [
-                    createSessionEvent(SessionEventType.ModelNetworkStatus, request.sessionId, {
-                      type: "model_request_failed",
-                      reason: "context_exceeded",
-                      usage: {
-                        inputTokens: 80,
-                        outputTokens: 5,
-                        cacheReadTokens: 60,
-                        reasoningTokens: 5,
-                        serverToolUse: { webSearchRequests: 2, webFetchRequests: 1 },
+                    createSessionEvent(
+                      SessionEventType.ModelNetworkStatus,
+                      request.sessionId,
+                      {
+                        type: "model_request_failed",
+                        reason: "context_exceeded",
+                        usage: {
+                          inputTokens: 80,
+                          outputTokens: 5,
+                          cacheReadTokens: 60,
+                          reasoningTokens: 5,
+                          serverToolUse: {
+                            webSearchRequests: 2,
+                            webFetchRequests: 1,
+                          },
+                        },
                       },
-                    }),
+                    ),
                   ]
                 : []),
-              createSessionEvent(SessionEventType.ModelComplete, request.sessionId, {
-                content: "recovered",
-                stopReason: "stop",
-                usage: normalUsage,
-              }),
+              createSessionEvent(
+                SessionEventType.ModelComplete,
+                request.sessionId,
+                {
+                  content: "recovered",
+                  stopReason: "stop",
+                  usage: normalUsage,
+                },
+              ),
             ],
           };
         },
@@ -171,19 +169,25 @@ describe("Explore subagent", () => {
     },
   );
 
-  it("fails a foreground run after the child runner stays inactive", async () => {
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-inactive-"));
+  it("keeps the task running until an inactive child settles", async () => {
+    const outputRootDir = await mkdtemp(
+      join(tmpdir(), "zcode-subagent-inactive-"),
+    );
     const emittedEvents: any[] = [];
+    const stoppedEventEmitted = createDeferred<void>();
+    const childMaySettle = createDeferred<any>();
     const port = createExploreSubagentPort({
       createAgentId: () => "agent_inactive",
       inactivityTimeoutMs: 20,
       outputRootDir,
       async emitParentEvent(event) {
         emittedEvents.push(event);
+        if (event.type === SessionEventType.SubagentStopped)
+          stoppedEventEmitted.resolve();
       },
       runExploreAgent: async (request) => {
         await request.onSessionReady?.();
-        return new Promise(() => {});
+        return childMaySettle.promise;
       },
     });
 
@@ -208,10 +212,7 @@ describe("Explore subagent", () => {
         (error: unknown) => ({ error, kind: "failed" as const }),
       );
 
-    const result = await Promise.race([
-      runPromise,
-      new Promise<{ kind: "hung" }>((resolve) => setTimeout(() => resolve({ kind: "hung" }), 160)),
-    ]);
+    const result = await runPromise;
 
     expect(result.kind).toBe("failed");
     if (result.kind !== "failed") return;
@@ -219,19 +220,36 @@ describe("Explore subagent", () => {
     if (isCoreError(result.error)) {
       expect(result.error.type).toBe(CoreErrorType.ToolTimeout);
     }
+    expect((await port.getTask?.("agent_inactive"))?.status).toBe("running");
+    expect(
+      emittedEvents.some(
+        (event) => event.type === SessionEventType.SubagentStopped,
+      ),
+    ).toBe(false);
+
+    childMaySettle.resolve({
+      events: [],
+      response: "child settled after timeout",
+      traceId: createTraceId(),
+    });
+    expect((await port.waitForTask?.("agent_inactive"))?.status).toBe("killed");
+    await stoppedEventEmitted.promise;
     expect(
       emittedEvents.some(
         (event) =>
           event.type === SessionEventType.SubagentStopped &&
-          (event.payload as any).status === "failed",
+          (event.payload as any).status === "stopped",
       ),
     ).toBe(true);
   });
 
   it("fails a foreground run when the child stays inactive before session ready", async () => {
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-pre-ready-inactive-"));
+    const outputRootDir = await mkdtemp(
+      join(tmpdir(), "zcode-subagent-pre-ready-inactive-"),
+    );
     const emittedEvents: SessionEvent[] = [];
     const childStarted = createDeferred<void>();
+    const childMaySettle = createDeferred<any>();
     const port = createExploreSubagentPort({
       createAgentId: () => "agent_pre_ready_inactive",
       inactivityTimeoutMs: 20,
@@ -241,7 +259,7 @@ describe("Explore subagent", () => {
       },
       runExploreAgent: async () => {
         childStarted.resolve();
-        return new Promise(() => {});
+        return childMaySettle.promise;
       },
     });
 
@@ -269,7 +287,9 @@ describe("Explore subagent", () => {
 
     const result = await Promise.race([
       runPromise,
-      new Promise<{ kind: "hung" }>((resolve) => setTimeout(() => resolve({ kind: "hung" }), 160)),
+      new Promise<{ kind: "hung" }>((resolve) =>
+        setTimeout(() => resolve({ kind: "hung" }), 160),
+      ),
     ]);
 
     expect(result.kind).toBe("failed");
@@ -279,22 +299,47 @@ describe("Explore subagent", () => {
       expect(result.error.type).toBe(CoreErrorType.ToolTimeout);
     }
     expect(emittedEvents).toEqual([]);
-    await expect(port.getTask?.("agent_pre_ready_inactive")).resolves.toBeUndefined();
+    expect((await port.getTask?.("agent_pre_ready_inactive"))?.status).toBe(
+      "running",
+    );
+    childMaySettle.resolve({
+      events: [],
+      response: "child setup settled after timeout",
+      traceId: createTraceId(),
+    });
+    expect((await port.waitForTask?.("agent_pre_ready_inactive"))?.status).toBe(
+      "killed",
+    );
+    expect(emittedEvents).toEqual([]);
   });
 
   it("stops waiting when the parent aborts while the child runner is unresponsive", async () => {
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-abort-"));
+    const outputRootDir = await mkdtemp(
+      join(tmpdir(), "zcode-subagent-abort-"),
+    );
     const abortController = new AbortController();
     const emittedEvents: any[] = [];
+    const stoppedEventEmitted = createDeferred<void>();
+    const childMaySettle = createDeferred<any>();
+    const childObservedAbort = createDeferred<void>();
     const port = createExploreSubagentPort({
       createAgentId: () => "agent_unresponsive",
       outputRootDir,
       async emitParentEvent(event) {
         emittedEvents.push(event);
+        if (event.type === SessionEventType.SubagentStopped)
+          stoppedEventEmitted.resolve();
       },
-      runExploreAgent: async (request) => {
+      runExploreAgent: async (request, runOptions) => {
         await request.onSessionReady?.();
-        return new Promise(() => {});
+        runOptions?.signal?.addEventListener(
+          "abort",
+          () => childObservedAbort.resolve(),
+          {
+            once: true,
+          },
+        );
+        return childMaySettle.promise;
       },
     });
 
@@ -323,7 +368,9 @@ describe("Explore subagent", () => {
       );
 
     await waitForCondition(() =>
-      emittedEvents.some((event) => event.type === SessionEventType.SubagentSpawned),
+      emittedEvents.some(
+        (event) => event.type === SessionEventType.SubagentSpawned,
+      ),
     );
     abortController.abort(new Error("parent aborted unresponsive subagent"));
 
@@ -336,20 +383,42 @@ describe("Explore subagent", () => {
     if (isCoreError(result.error)) {
       expect(result.error.type).toBe(CoreErrorType.ToolCancelled);
     }
+    await childObservedAbort.promise;
+    expect((await port.getTask?.("agent_unresponsive"))?.status).toBe(
+      "running",
+    );
+    expect(
+      emittedEvents.some(
+        (event) => event.type === SessionEventType.SubagentStopped,
+      ),
+    ).toBe(false);
+
+    childMaySettle.resolve({
+      events: [],
+      response: "child settled after parent abort",
+      traceId: createTraceId(),
+    });
+    expect((await port.waitForTask?.("agent_unresponsive"))?.status).toBe(
+      "killed",
+    );
+    await stoppedEventEmitted.promise;
     expect(
       emittedEvents.some(
         (event) =>
           event.type === SessionEventType.SubagentStopped &&
-          (event.payload as any).status === "failed",
+          (event.payload as any).status === "stopped",
       ),
     ).toBe(true);
   });
 
   it("stops waiting when the parent aborts before the child session is ready", async () => {
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-pre-ready-abort-"));
+    const outputRootDir = await mkdtemp(
+      join(tmpdir(), "zcode-subagent-pre-ready-abort-"),
+    );
     const abortController = new AbortController();
     const emittedEvents: SessionEvent[] = [];
     const childStarted = createDeferred<void>();
+    const childMaySettle = createDeferred<any>();
     const port = createExploreSubagentPort({
       createAgentId: () => "agent_pre_ready_abort",
       outputRootDir,
@@ -358,7 +427,7 @@ describe("Explore subagent", () => {
       },
       runExploreAgent: async () => {
         childStarted.resolve();
-        return new Promise(() => {});
+        return childMaySettle.promise;
       },
     });
 
@@ -386,7 +455,9 @@ describe("Explore subagent", () => {
         (error: unknown) => ({ error, kind: "failed" as const }),
       );
     await childStarted.promise;
-    abortController.abort(new Error("parent aborted before child session ready"));
+    abortController.abort(
+      new Error("parent aborted before child session ready"),
+    );
 
     // 用用例超时检测无法取消；80ms 墙钟竞速会把并行测试的调度延迟误报成死锁。
     const result = await runPromise;
@@ -398,7 +469,58 @@ describe("Explore subagent", () => {
       expect(result.error.type).toBe(CoreErrorType.ToolCancelled);
     }
     expect(emittedEvents).toEqual([]);
-    await expect(port.getTask?.("agent_pre_ready_abort")).resolves.toBeUndefined();
+    expect((await port.getTask?.("agent_pre_ready_abort"))?.status).toBe(
+      "running",
+    );
+    childMaySettle.resolve({
+      events: [],
+      response: "child setup settled after parent abort",
+      traceId: createTraceId(),
+    });
+    expect((await port.waitForTask?.("agent_pre_ready_abort"))?.status).toBe(
+      "killed",
+    );
+    expect(emittedEvents).toEqual([]);
+  });
+
+  it("removes a child admission when runtime startup fails without cancellation", async () => {
+    const outputRootDir = await mkdtemp(
+      join(tmpdir(), "zcode-subagent-startup-failure-"),
+    );
+    const emittedEvents: SessionEvent[] = [];
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_startup_failure",
+      outputRootDir,
+      async emitParentEvent(event) {
+        emittedEvents.push(event);
+      },
+      runExploreAgent: async () => {
+        throw new Error("child runtime startup failed");
+      },
+    });
+
+    await expect(
+      port.run({
+        agentType: "Explore",
+        description: "Startup failure",
+        parentToolCallId: createToolCallId("call_startup_failure"),
+        prompt: "Start the child runtime.",
+        sessionId: createSessionId("parent_startup_failure"),
+        trace: {
+          traceId: createTraceId(),
+          sessionId: createSessionId("parent_startup_failure"),
+          turnId: createTurnId("turn_startup_failure"),
+        },
+        turnId: createTurnId("turn_startup_failure"),
+        workingDirectory: "/tmp",
+        workspaceRoot: "/tmp",
+      }),
+    ).rejects.toThrow("child runtime startup failed");
+
+    await expect(
+      port.getTask?.("agent_startup_failure"),
+    ).resolves.toBeUndefined();
+    expect(emittedEvents).toEqual([]);
   });
 
   it("runs through Agent with a read-only Explore tool pool and preserves trace context", async () => {
@@ -451,8 +573,12 @@ describe("Explore subagent", () => {
           async onSessionEvent(event) {
             liveEvents.push(event);
             if (event.type === SessionEventType.SubagentSpawned) {
-              const childSessionId = (event.payload as { childSessionId: string }).childSessionId;
-              const child = await sessionStore.getSession(childSessionId as SessionId);
+              const childSessionId = (
+                event.payload as { childSessionId: string }
+              ).childSessionId;
+              const child = await sessionStore.getSession(
+                childSessionId as SessionId,
+              );
               childPersistedAtSpawn.push(child?.taskType === "subagent_child");
             }
           },
@@ -461,7 +587,9 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           properties: { supportsNativeWebSearch: true },
           async generateText(request: any, observation) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               parentCallCount++;
@@ -519,7 +647,9 @@ describe("Explore subagent", () => {
       },
     );
 
-    const result = await runtime.executeTurn("Use an explore agent for this question");
+    const result = await runtime.executeTurn(
+      "Use an explore agent for this question",
+    );
     const parentEvents = await eventStore.getEvents(sessionId);
     const spawnEvent = parentEvents.find(
       (event) => event.type === SessionEventType.SubagentSpawned,
@@ -532,17 +662,24 @@ describe("Explore subagent", () => {
     );
     const childSessionId = (spawnEvent?.payload as any)?.childSessionId;
     const childEvents = await eventStore.getEvents(childSessionId);
-    const childPersistedMessages = await sessionStore.messages({ sessionID: childSessionId });
+    const childPersistedMessages = await sessionStore.messages({
+      sessionID: childSessionId,
+    });
     const childPersistedUserMessage = childPersistedMessages.find(
       (message) => message.info.role === "user",
     );
     const initialModelTimeline = childPersistedMessages
       .flatMap((message) => message.parts)
-      .find((part) => part.type === "timeline" && part.timelineType === "model_change");
+      .find(
+        (part) =>
+          part.type === "timeline" && part.timelineType === "model_change",
+      );
     const parentFirstRequestText = parentRequests[0].messages
       .map((message: any) => modelMessageContentToText(message.content))
       .join("\n");
-    const parentFirstToolNames = parentRequests[0].tools.map((tool: any) => tool.name);
+    const parentFirstToolNames = parentRequests[0].tools.map(
+      (tool: any) => tool.name,
+    );
     const childRequestText = childRequests[0].messages
       .map((message: any) => modelMessageContentToText(message.content))
       .join("\n");
@@ -558,9 +695,14 @@ describe("Explore subagent", () => {
     expect(parentFirstRequestText).not.toContain("- `test`: vitest");
     expect(parentFirstRequestText).toContain("# currentDate");
     expect(parentFirstToolNames).toContain("Agent");
-    expect(parentFirstToolNames).not.toContain("Task");
-    expect(parentFirstToolNames).not.toContain("Glob");
-    expect(parentFirstToolNames).not.toContain("Grep");
+    // Task — совместимый alias делегирования: interactive root регистрирует его вместе
+    // с Agent (includeTaskAlias в runtime-tools.ts), поэтому alias виден провайдеру.
+    expect(parentFirstToolNames).toContain("Task");
+    // Root — обычная рабочая сессия: поиск и запись доступны, в отличие от read-only
+    // Explore child, чей точный набор проверяется ниже.
+    expect(parentFirstToolNames).toEqual(
+      expect.arrayContaining(["Glob", "Grep", "Read", "Write", "Edit"]),
+    );
     expect(parentFirstToolNames).not.toContain("GoalRead");
     expect(childRequests).toHaveLength(1);
     expect(childRequestText).not.toContain("# agentsMd");
@@ -586,16 +728,36 @@ describe("Explore subagent", () => {
       "WebSearch",
       RESPOND_TO_COORDINATOR_TOOL_NAME,
     ]);
-    expect(
-      childRequests[0].messages
-        .filter((message: any) => message.role === "system")
-        .map((message: any) => message.content),
-    ).toEqual(exploreSystemMessages);
+    // Host передаёт уровень рекурсии и доступную конкурентную ёмкость; общего
+    // накопительного лимита на число запусков у дочерних агентов нет.
+    // context-builder добавляет \n перед agentPrompt; ожидаемый второй system message
+    // начинается с того же \n, поэтому конверт вставляется сразу после него.
+    const childSystemMessages = childRequests[0].messages
+      .filter((message: any) => message.role === "system")
+      .map((message: any) => message.content);
+    expect(childSystemMessages).toHaveLength(2);
+    expect(childSystemMessages[0]).toBe(exploreSystemMessages[0]);
+    expect(childSystemMessages[1]).toMatch(
+      /^\n<zcode-spawn-envelope level="1" max_parallel="\d+" \/>\n\n/,
+    );
+    expect(childSystemMessages[1]).toContain(
+      exploreSystemMessages[1]
+        .slice(1)
+        .replace(
+          "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc.",
+          "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc",
+        ),
+    );
+    expect(childSystemMessages[1]).not.toContain("remaining_spawns");
     expect(childRequests[0].messages[1].content).not.toContain(
       "You help the user with software engineering work in the current workspace.",
     );
-    expect(childPersistedUserMessage?.info.contextSnapshot?.envInfo?.shell).toBe("Git Bash");
-    expect(childObservations[0].invocationContext?.traceContext?.traceId).toBe(result.traceId);
+    expect(
+      childPersistedUserMessage?.info.contextSnapshot?.envInfo?.shell,
+    ).toBe("Git Bash");
+    expect(childObservations[0].invocationContext?.traceContext?.traceId).toBe(
+      result.traceId,
+    );
     if (!spawnEvent || !stoppedEvent || !toolResultEvent) {
       throw new Error("Expected subagent lifecycle events");
     }
@@ -605,6 +767,7 @@ describe("Explore subagent", () => {
     expect(spawnPayload.allowedTools).toEqual([
       "ToolSearch",
       "DeferredToolCall",
+      "CodeIndex",
       "Bash",
       "Read",
       "WebFetch",
@@ -647,15 +810,19 @@ describe("Explore subagent", () => {
       },
     });
     expect(
-      initialModelTimeline?.type === "timeline" ? initialModelTimeline.fromModel : "unexpected",
+      initialModelTimeline?.type === "timeline"
+        ? initialModelTimeline.fromModel
+        : "unexpected",
     ).toBeUndefined();
     expect(childPersistedAtSpawn).toEqual([true]);
     expect(
-      liveEvents.filter((event) => event.sessionId === childSessionId).map((event) => event.id),
+      liveEvents
+        .filter((event) => event.sessionId === childSessionId)
+        .map((event) => event.id),
     ).toEqual(childEvents.map((event) => event.id));
-    expect(new Set([...parentEvents, ...childEvents].map((event) => event.traceId))).toEqual(
-      new Set([result.traceId]),
-    );
+    expect(
+      new Set([...parentEvents, ...childEvents].map((event) => event.traceId)),
+    ).toEqual(new Set([result.traceId]));
   });
 
   it("reports child turn tool call count in the Agent result usage trailer", async () => {
@@ -679,7 +846,9 @@ describe("Explore subagent", () => {
         sessionStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any, observation) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               parentCallCount++;
@@ -749,7 +918,9 @@ describe("Explore subagent", () => {
       },
     );
 
-    const result = await runtime.executeTurn("Use an explore agent and report its usage");
+    const result = await runtime.executeTurn(
+      "Use an explore agent and report its usage",
+    );
     const parentEvents = await eventStore.getEvents(sessionId);
     const stoppedEvent = parentEvents.find(
       (event) => event.type === SessionEventType.SubagentStopped,
@@ -761,7 +932,9 @@ describe("Explore subagent", () => {
     expect(result.response).toBe("parent saw counted child tool use");
     expect(childRequests).toHaveLength(2);
     expect((stoppedEvent?.payload as any)?.totalToolUseCount).toBe(1);
-    expect(parentToolMessage.content).toContain("Child completed after one TodoWrite.");
+    expect(parentToolMessage.content).toContain(
+      "Child completed after one TodoWrite.",
+    );
     expect(parentToolMessage.content).toContain("tool_uses: 1");
     expect(parentToolMessage.content).not.toContain("tool_uses: 0");
   });
@@ -782,7 +955,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
@@ -807,7 +982,9 @@ describe("Explore subagent", () => {
 
               const toolResultText = request.messages
                 .filter((message: any) => message.role === "tool")
-                .map((message: any) => modelMessageContentToText(message.content))
+                .map((message: any) =>
+                  modelMessageContentToText(message.content),
+                )
                 .join("\n");
               expect(toolResultText).not.toContain("Unknown subagent type");
               return {
@@ -830,7 +1007,9 @@ describe("Explore subagent", () => {
       },
     );
 
-    const result = await runtime.executeTurn("Use explore to inspect the runtime");
+    const result = await runtime.executeTurn(
+      "Use explore to inspect the runtime",
+    );
 
     expect(result.response).toBe("parent used normalized explore result");
     expect(childRequests).toHaveLength(1);
@@ -874,9 +1053,13 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (!toolNames.includes("Agent")) {
-              throw new Error("Ambiguous subagent_type must not launch a child agent");
+              throw new Error(
+                "Ambiguous subagent_type must not launch a child agent",
+              );
             }
 
             const toolResultText = request.messages
@@ -884,7 +1067,9 @@ describe("Explore subagent", () => {
               .map((message: any) => modelMessageContentToText(message.content))
               .join("\n");
             if (toolResultText) {
-              expect(toolResultText).toContain("Agent type 'foo bar' is ambiguous");
+              expect(toolResultText).toContain(
+                "Agent type 'foo bar' is ambiguous",
+              );
               expect(toolResultText).toContain("foo-bar");
               expect(toolResultText).toContain("foo_bar");
               return {
@@ -946,9 +1131,13 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (!toolNames.includes("Agent")) {
-              throw new Error("Punctuation mismatch must not launch a child agent");
+              throw new Error(
+                "Punctuation mismatch must not launch a child agent",
+              );
             }
 
             const toolResultText = request.messages
@@ -956,7 +1145,9 @@ describe("Explore subagent", () => {
               .map((message: any) => modelMessageContentToText(message.content))
               .join("\n");
             if (toolResultText) {
-              expect(toolResultText).toContain("Agent type 'report.v2' not found");
+              expect(toolResultText).toContain(
+                "Agent type 'report.v2' not found",
+              );
               expect(toolResultText).toContain("report-v2");
               return {
                 finishReason: "stop",
@@ -1044,7 +1235,9 @@ describe("Explore subagent", () => {
           eventStore: createTestSessionEventStore(),
           modelFactory: createTestModelFactory({
             async generateText(request: any) {
-              const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+              const toolNames = (request.tools ?? []).map(
+                (tool: any) => tool.name,
+              );
               if (toolNames.includes("Agent")) {
                 parentCallCount++;
                 if (parentCallCount === 1) {
@@ -1103,29 +1296,46 @@ describe("Explore subagent", () => {
       // DWG-12：onDemand 父会话未激活时子代理没有工作流工具；父已激活则子出生即有
       // （launch.md「On demand: activation」Children 段）。
       {
-        parentConfig: { dynamicWorkflowEnabled: true, dynamicWorkflowToolsOnDemand: true },
+        parentConfig: {
+          dynamicWorkflowEnabled: true,
+          dynamicWorkflowToolsOnDemand: true,
+        },
         available: false,
       },
       {
-        parentConfig: { dynamicWorkflowEnabled: true, dynamicWorkflowToolsOnDemand: true },
+        parentConfig: {
+          dynamicWorkflowEnabled: true,
+          dynamicWorkflowToolsOnDemand: true,
+        },
         activateParentFirst: true,
         available: true,
       },
-    ])("parent %j", async ({ parentConfig, available, activateParentFirst }) => {
-      const { child, parent } = await childToolNamesForParent(parentConfig, {
-        activateParentFirst,
-      });
-      for (const name of ["CreateWorkflow", "ResumeWorkflowRun"]) {
-        expect({ name, inParent: parent.includes(name) }).toEqual({ name, inParent: available });
-        expect({ name, inChild: child.includes(name) }).toEqual({ name, inChild: available });
-      }
-      // 反向断言：profile 里其余工具在三种取值下都照常给到，门只碰工作流那几件。
-      expect(child).toContain("Read");
-    });
+    ])(
+      "parent %j",
+      async ({ parentConfig, available, activateParentFirst }) => {
+        const { child, parent } = await childToolNamesForParent(parentConfig, {
+          activateParentFirst,
+        });
+        for (const name of ["CreateWorkflow", "ResumeWorkflowRun"]) {
+          expect({ name, inParent: parent.includes(name) }).toEqual({
+            name,
+            inParent: available,
+          });
+          expect({ name, inChild: child.includes(name) }).toEqual({
+            name,
+            inChild: available,
+          });
+        }
+        // 反向断言：profile 里其余工具在三种取值下都照常给到，门只碰工作流那几件。
+        expect(child).toContain("Read");
+      },
+    );
   });
 
   it("routes Explore provider runtime headers refreshes through the parent session", async () => {
-    const sessionId = createSessionId("runtime-explore-provider-headers-parent-route");
+    const sessionId = createSessionId(
+      "runtime-explore-provider-headers-parent-route",
+    );
     const eventStore = createTestSessionEventStore();
     // 主 runtime 每次调用报自己的 sessionId；子 runtime 拿到的是父 runtime 派生的实例
     // （helpers/child-client-ports.ts），派生层把 sessionId 改写成父会话。
@@ -1167,11 +1377,15 @@ describe("Explore subagent", () => {
         },
         modelFactory: createTestModelFactory({
           async generateText(request: any, observation) {
-            await observation.invocationContext?.refreshRuntimeHeadersBeforeAttempt?.({
-              attempt: 1,
-              abortSignal: request.abortSignal,
-            });
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            await observation.invocationContext?.refreshRuntimeHeadersBeforeAttempt?.(
+              {
+                attempt: 1,
+                abortSignal: request.abortSignal,
+              },
+            );
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
@@ -1231,9 +1445,21 @@ describe("Explore subagent", () => {
     expect(childEvents.length).toBeGreaterThan(0);
     // 三次刷新（父两次 + 子一次）全部以父会话为路由身份到达端口。
     expect(refreshes).toEqual([
-      { providerId: "provider-start-plan", boundSessionId: sessionId, routedSessionId: sessionId },
-      { providerId: "provider-start-plan", boundSessionId: sessionId, routedSessionId: sessionId },
-      { providerId: "provider-start-plan", boundSessionId: sessionId, routedSessionId: sessionId },
+      {
+        providerId: "provider-start-plan",
+        boundSessionId: sessionId,
+        routedSessionId: sessionId,
+      },
+      {
+        providerId: "provider-start-plan",
+        boundSessionId: sessionId,
+        routedSessionId: sessionId,
+      },
+      {
+        providerId: "provider-start-plan",
+        boundSessionId: sessionId,
+        routedSessionId: sessionId,
+      },
     ]);
   });
 
@@ -1275,7 +1501,9 @@ describe("Explore subagent", () => {
         httpClientPort,
         modelFactory: createTestModelFactory({
           async generateText(request: any, observation) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               parentCallCount++;
@@ -1349,7 +1577,9 @@ describe("Explore subagent", () => {
       },
     );
 
-    const result = await runtime.executeTurn("Use an explore agent to fetch a URL");
+    const result = await runtime.executeTurn(
+      "Use an explore agent to fetch a URL",
+    );
 
     expect(result.response).toBe("parent saw Explore WebFetch result");
     expect(parentRequests).toHaveLength(2);
@@ -1393,7 +1623,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -1446,10 +1678,13 @@ describe("Explore subagent", () => {
       .join("\n");
     const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
     const parentAgentToolDescription =
-      parentRequests[0].tools.find((tool: any) => tool.name === "Agent")?.description ?? "";
+      parentRequests[0].tools.find((tool: any) => tool.name === "Agent")
+        ?.description ?? "";
 
     expect(result.response).toBe("父 agent 采纳了自定义 agent 的结论。");
-    expect(parentFirstRequestText).toContain("Available agent types for the Agent tool:");
+    expect(parentFirstRequestText).toContain(
+      "Available named agent types for Agent/Task tools:",
+    );
     expect(parentFirstRequestText).toContain("zcode-reviewer");
     expect(parentAgentToolDescription).toContain(
       "Available agent types are listed in <system-reminder> messages in the conversation.",
@@ -1484,7 +1719,9 @@ describe("Explore subagent", () => {
       transport: "stdio" as const,
       updatedAt: new Date(0).toISOString(),
     };
-    const callTool = vi.fn(async () => ({ content: [{ text: "found", type: "text" as const }] }));
+    const callTool = vi.fn(async () => ({
+      content: [{ text: "found", type: "text" as const }],
+    }));
     const mcpPort = createMockMcpPort({
       callTool,
       async connectConfiguredServers() {
@@ -1500,7 +1737,10 @@ describe("Explore subagent", () => {
       autoApproveHighRisk: false,
       allowMediumRiskInAutoMode: false,
     });
-    const checkPermission = vi.spyOn(parentPermissionService, "checkPermission");
+    const checkPermission = vi.spyOn(
+      parentPermissionService,
+      "checkPermission",
+    );
 
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -1535,7 +1775,9 @@ describe("Explore subagent", () => {
         permissionService: parentPermissionService,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -1602,10 +1844,13 @@ describe("Explore subagent", () => {
       .join("\n");
     const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
     const parentAgentToolDescription =
-      parentRequests[0].tools.find((tool: any) => tool.name === "Agent")?.description ?? "";
+      parentRequests[0].tools.find((tool: any) => tool.name === "Agent")
+        ?.description ?? "";
 
     expect(result.response).toBe("父 agent 采纳了自定义 agent 的结论。");
-    expect(parentFirstRequestText).toContain("Available agent types for the Agent tool:");
+    expect(parentFirstRequestText).toContain(
+      "Available named agent types for Agent/Task tools:",
+    );
     expect(parentFirstRequestText).toContain("自定义可写 Explore");
     expect(parentAgentToolDescription).toContain(
       "Available agent types are listed in <system-reminder> messages in the conversation.",
@@ -1613,7 +1858,9 @@ describe("Explore subagent", () => {
     expect(parentFirstRequestText).toContain(
       `- Explore: 自定义可写 Explore。 (Tools: Write, ${mcpToolName})`,
     );
-    expect(childRequestText).toContain("你是项目自定义 Explore，可以执行写入和 MCP 查询。");
+    expect(childRequestText).toContain(
+      "你是项目自定义 Explore，可以执行写入和 MCP 查询。",
+    );
     expect(childRequestText).not.toContain("READ-ONLY MODE");
     expect(childToolNames).toContain("Write");
     expect(childToolNames).toContain(mcpToolName);
@@ -1623,7 +1870,8 @@ describe("Explore subagent", () => {
     expect(callTool).toHaveBeenCalledTimes(1);
     expect(
       checkPermission.mock.calls.some(
-        ([context]) => context.toolName === mcpToolName && context.mode === "build",
+        ([context]) =>
+          context.toolName === mcpToolName && context.mode === "build",
       ),
     ).toBe(true);
   });
@@ -1634,7 +1882,9 @@ describe("Explore subagent", () => {
   ])(
     "keeps an empty-prompt custom Explore unrestricted when mcpServers is $label",
     async ({ label, mcpServers }) => {
-      const sessionId = createSessionId(`runtime-custom-explore-unrestricted-${label}`);
+      const sessionId = createSessionId(
+        `runtime-custom-explore-unrestricted-${label}`,
+      );
       const eventStore = createTestSessionEventStore();
       const parentRequests: any[] = [];
       const childRequests: any[] = [];
@@ -1659,7 +1909,11 @@ describe("Explore subagent", () => {
       }));
       const listTools = vi.fn(async () => []);
       const status = vi.fn(async () => ({}));
-      const mcpPort = createMockMcpPort({ connectConfiguredServers, listTools, status });
+      const mcpPort = createMockMcpPort({
+        connectConfiguredServers,
+        listTools,
+        status,
+      });
 
       const runtime = createTestAgentRuntime(
         sessionId,
@@ -1679,7 +1933,8 @@ describe("Explore subagent", () => {
             profiles: [
               {
                 name: "Explore",
-                description: "Custom Explore using the unrestricted parent MCP snapshot.",
+                description:
+                  "Custom Explore using the unrestricted parent MCP snapshot.",
                 source: "user",
                 systemPrompt: "",
                 tools: ["*"],
@@ -1693,8 +1948,14 @@ describe("Explore subagent", () => {
           mcpPort,
           modelFactory: createTestModelFactory({
             async generateText(request: any) {
-              const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-              if (toolNames.includes("Agent")) {
+              const toolNames = (request.tools ?? []).map(
+                (tool: any) => tool.name,
+              );
+              // Child с унаследованным * тоже видит Agent. Родителя отличает отсутствие канала координатора.
+              if (
+                toolNames.includes("Agent") &&
+                !toolNames.includes("RespondToCoordinator")
+              ) {
                 parentRequests.push(request);
                 if (parentRequests.length === 1) {
                   return {
@@ -1707,7 +1968,8 @@ describe("Explore subagent", () => {
                         name: "Agent",
                         input: {
                           description: "Test unrestricted MCP snapshot",
-                          prompt: "Confirm the custom Explore can use the parent MCP snapshot.",
+                          prompt:
+                            "Confirm the custom Explore can use the parent MCP snapshot.",
                           subagent_type: "Explore",
                         },
                       },
@@ -1740,7 +2002,9 @@ describe("Explore subagent", () => {
       const childRequestText = childRequests[0].messages
         .map((message: any) => modelMessageContentToText(message.content))
         .join("\n");
-      const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
+      const childToolNames = childRequests[0].tools.map(
+        (tool: any) => tool.name,
+      );
 
       expect(result.response).toBe("parent received the custom Explore result");
       expect(childRequests).toHaveLength(1);
@@ -1753,10 +2017,13 @@ describe("Explore subagent", () => {
   );
 
   it("removes plan-mode tools from custom wildcard subagents", async () => {
-    const sessionId = createSessionId("runtime-custom-subagent-no-plan-mode-tools");
+    const sessionId = createSessionId(
+      "runtime-custom-subagent-no-plan-mode-tools",
+    );
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
+    let nestedCalls = 0;
 
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -1769,7 +2036,8 @@ describe("Explore subagent", () => {
               name: "wildcard-reviewer",
               description: "Use every safe inherited tool.",
               source: "project",
-              systemPrompt: "Review with inherited tools, but do not enter planning mode.",
+              systemPrompt:
+                "Review with inherited tools, but do not enter planning mode.",
               tools: ["*"],
             },
           ],
@@ -1779,8 +2047,14 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
+            // Child с унаследованным * тоже видит Agent. Родителя отличает отсутствие канала координатора.
+            if (
+              toolNames.includes("Agent") &&
+              !toolNames.includes("RespondToCoordinator")
+            ) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 return {
@@ -1811,6 +2085,26 @@ describe("Explore subagent", () => {
             }
 
             childRequests.push(request);
+            if (toolNames.includes("Task") && nestedCalls === 0) {
+              nestedCalls += 1;
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  {
+                    id: "call_wildcard_nested_task",
+                    name: "Task",
+                    input: {
+                      description: "检查下一层 wildcard 继承",
+                      prompt: "继续使用继承的工具面完成只读检查。",
+                      subagent_type: "wildcard-reviewer",
+                    },
+                  },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
             return {
               finishReason: "stop",
               providerMetadata: undefined,
@@ -1824,18 +2118,23 @@ describe("Explore subagent", () => {
 
     const result = await runtime.executeTurn("让 wildcard-reviewer 跑一下");
     const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
+    const grandchildToolNames = childRequests[1].tools.map((tool: any) => tool.name);
 
     expect(result.response).toBe("父 agent 收到 wildcard 结果。");
     expect(childToolNames).toContain("Read");
     expect(childToolNames).toContain("Bash");
     expect(childToolNames).not.toContain("EnterPlanMode");
     expect(childToolNames).not.toContain("ExitPlanMode");
-    expect(childToolNames).not.toContain("Agent");
-    expect(childToolNames).not.toContain("Task");
+    expect(childToolNames).toContain("Agent");
+    expect(childToolNames).toContain("Task");
+    expect(grandchildToolNames).toContain("Agent");
+    expect(grandchildToolNames).toContain("Task");
   });
 
   it("removes plan-mode tools from explicit custom subagent tool lists", async () => {
-    const sessionId = createSessionId("runtime-explicit-custom-subagent-no-plan-tools");
+    const sessionId = createSessionId(
+      "runtime-explicit-custom-subagent-no-plan-tools",
+    );
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
@@ -1861,7 +2160,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -1907,18 +2208,21 @@ describe("Explore subagent", () => {
     const result = await runtime.executeTurn("让 explicit-reviewer 跑一下");
     const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
     const parentAgentToolDescription =
-      parentRequests[0].tools.find((tool: any) => tool.name === "Agent")?.description ?? "";
+      parentRequests[0].tools.find((tool: any) => tool.name === "Agent")
+        ?.description ?? "";
 
     expect(result.response).toBe("父 agent 收到 explicit 结果。");
     expect(
       modelMessageContentToText(
         parentRequests[0].messages.find((message: any) =>
           modelMessageContentToText(message.content).includes(
-            "Available agent types for the Agent tool:",
+            "Available named agent types for Agent/Task tools:",
           ),
         ).content,
       ),
-    ).toContain("- explicit-reviewer: Asks for an explicit tool subset. (Tools: Read)");
+    ).toContain(
+      "- explicit-reviewer: Asks for an explicit tool subset. (Tools: Read)",
+    );
     expect(parentAgentToolDescription).not.toContain("EnterPlanMode");
     expect(parentAgentToolDescription).not.toContain("ExitPlanMode");
     expect(childToolNames).toContain("Read");
@@ -1927,7 +2231,9 @@ describe("Explore subagent", () => {
   });
 
   it("inherits disabled native find and grep enhancements in child Bash", async () => {
-    const sessionId = createSessionId("runtime-subagent-native-search-disabled");
+    const sessionId = createSessionId(
+      "runtime-subagent-native-search-disabled",
+    );
     const eventStore = createTestSessionEventStore();
     const backend = {
       kind: "native-binaries" as const,
@@ -1986,7 +2292,9 @@ describe("Explore subagent", () => {
         },
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
@@ -2053,7 +2361,9 @@ describe("Explore subagent", () => {
   });
 
   it("does not let a subagent profile re-add tools removed by the parent runtime", async () => {
-    const sessionId = createSessionId("runtime-subagent-parent-disallowed-tools");
+    const sessionId = createSessionId(
+      "runtime-subagent-parent-disallowed-tools",
+    );
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
@@ -2082,7 +2392,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -2133,12 +2445,133 @@ describe("Explore subagent", () => {
     expect(childToolNames).not.toContain("Bash");
   });
 
+  it("keeps an ancestor tool allowlist through a nested Task profile", async () => {
+    const rootSessionId = createSessionId("runtime-subagent-nested-ancestor-allowlist");
+    const eventStore = createTestSessionEventStore();
+    const grandchildRequests: any[] = [];
+    let rootCalls = 0;
+    let delegatorCalls = 0;
+
+    const runtime = createTestAgentRuntime(
+      rootSessionId,
+      {
+        mode: "build",
+        toolAllowlist: ["Agent", "Task", "Read"],
+        workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "delegating-specialist",
+              description: "Delegates a focused check.",
+              source: "project",
+              systemPrompt: "Delegate with Task.",
+              tools: ["Task", "Read"],
+              maxTurns: 2,
+            },
+            {
+              name: "bash-specialist",
+              description: "Requests Bash and Read.",
+              source: "project",
+              systemPrompt: "Inspect the result.",
+              tools: ["Bash", "Read"],
+              maxTurns: 2,
+            },
+          ],
+        },
+      },
+      {
+        eventStore,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any, observation: any) {
+            const sessionId = observation.invocationContext?.traceContext?.sessionId;
+            if (sessionId === rootSessionId) {
+              rootCalls += 1;
+              if (rootCalls === 1) {
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [{
+                    id: "call_delegating_specialist",
+                    name: "Agent",
+                    input: {
+                      description: "Delegate the nested permission check",
+                      prompt: "Use Task for the permission check.",
+                      subagent_type: "delegating-specialist",
+                    },
+                  }],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Nested permission check completed.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            if (toolNames.includes("Task")) {
+              delegatorCalls += 1;
+              if (delegatorCalls === 1) {
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [{
+                    id: "call_bash_specialist",
+                    name: "Task",
+                    input: {
+                      description: "Check inherited permissions",
+                      prompt: "Run a read-only permission check.",
+                      subagent_type: "bash-specialist",
+                    },
+                  }],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Grandchild result received.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            grandchildRequests.push(request);
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "Permission check complete.",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Run the nested permission check.");
+    const grandchildTools = (grandchildRequests[0]?.tools ?? []).map(
+      (tool: any) => tool.name,
+    );
+
+    expect(result.response).toBe("Nested permission check completed.");
+    expect(delegatorCalls).toBe(2);
+    expect(grandchildRequests).toHaveLength(1);
+    expect(grandchildTools).toContain("Read");
+    expect(grandchildTools).not.toContain("Bash");
+  });
+
   it("auto-enables Skill and allows bare aliases for declared plugin skills", async () => {
     const sessionId = createSessionId("runtime-subagent-filtered-skills");
     const eventStore = createTestSessionEventStore();
     const loadedSkills: string[] = [];
     const allowedPluginSkill = {
-      ...skillMetadata("allowed-skill", "/plugins/superpowers/skills/allowed/SKILL.md"),
+      ...skillMetadata(
+        "allowed-skill",
+        "/plugins/superpowers/skills/allowed/SKILL.md",
+      ),
       pluginName: "superpowers",
       qualifiedName: "superpowers:allowed-skill",
       rootPath: "/plugins/superpowers/skills",
@@ -2146,7 +2579,10 @@ describe("Explore subagent", () => {
       source: "plugin" as const,
     };
     const conflictingPluginSkill = {
-      ...skillMetadata("allowed-skill", "/plugins/other/skills/allowed/SKILL.md"),
+      ...skillMetadata(
+        "allowed-skill",
+        "/plugins/other/skills/allowed/SKILL.md",
+      ),
       pluginName: "other-plugin",
       qualifiedName: "other-plugin:allowed-skill",
       rootPath: "/plugins/other/skills",
@@ -2168,7 +2604,8 @@ describe("Explore subagent", () => {
       },
       async loadSkill(request): Promise<SkillContent> {
         const metadata = skillOutcome.skills.find(
-          (skill) => skill.name === request.name || skill.qualifiedName === request.name,
+          (skill) =>
+            skill.name === request.name || skill.qualifiedName === request.name,
         );
         if (!metadata) throw new Error(`Skill not found: ${request.name}`);
         loadedSkills.push(metadata.qualifiedName ?? metadata.name);
@@ -2208,7 +2645,9 @@ describe("Explore subagent", () => {
         skillPort,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -2246,7 +2685,9 @@ describe("Explore subagent", () => {
               expect(toolNames).not.toContain("Agent");
               expect(toolNames).not.toContain("Task");
               const requestText = request.messages
-                .map((message: any) => modelMessageContentToText(message.content))
+                .map((message: any) =>
+                  modelMessageContentToText(message.content),
+                )
                 .join("\n");
               expect(requestText).toContain("superpowers:allowed-skill");
               expect(requestText).not.toContain("other-plugin:allowed-skill");
@@ -2284,8 +2725,117 @@ describe("Explore subagent", () => {
     expect(childRequests).toHaveLength(2);
   });
 
-  it("fails before the child request when a scoped MCP server is unavailable in the parent startup snapshot", async () => {
-    const sessionId = createSessionId("runtime-subagent-scoped-mcp-server-unavailable");
+  it("does not grant parent skills to a child with an explicit empty allowlist", async () => {
+    const sessionId = createSessionId("runtime-subagent-empty-skill-allowlist");
+    const eventStore = createTestSessionEventStore();
+    let loadedSkillCount = 0;
+    const skill = skillMetadata("parent-only-skill", "/skills/parent-only/SKILL.md");
+    const skillPort: SkillPort = {
+      async discoverSkills() {
+        return { diagnostics: [], skills: [skill], totalDiscovered: 1 };
+      },
+      async loadSkill() {
+        loadedSkillCount += 1;
+        return {
+          baseDirectory: skill.directory,
+          bytesRead: 10,
+          content: "must remain private to parent",
+          metadata: skill,
+          sizeBytes: 10,
+          truncated: false,
+        };
+      },
+    };
+    const childToolSets: string[][] = [];
+    let parentCallCount = 0;
+    let childCallCount = 0;
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [{
+            name: "no-skills-agent",
+            description: "Agent with no skill access.",
+            source: "project",
+            systemPrompt: "Do not load skills.",
+            tools: ["Read", "Skill"],
+            skills: [],
+          }],
+        },
+      },
+      {
+        eventStore,
+        skillPort,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any) {
+            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            if (toolNames.includes("Agent")) {
+              parentCallCount += 1;
+              if (parentCallCount === 1) {
+                return {
+                  finishReason: "tool-calls",
+                  providerMetadata: undefined,
+                  text: "",
+                  toolCalls: [{
+                    id: "call_no_skills_agent",
+                    name: "Agent",
+                    input: {
+                      description: "Check empty skill permissions",
+                      prompt: "Return a short result without loading skills.",
+                      subagent_type: "no-skills-agent",
+                    },
+                  }],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Child completed without a skill.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+
+            childToolSets.push(toolNames);
+            childCallCount += 1;
+            expect(toolNames).not.toContain("Skill");
+            if (childCallCount > 1) {
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Child completed without a skill.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "tool-calls",
+              providerMetadata: undefined,
+              text: "",
+              toolCalls: [{
+                id: "forged_parent_skill_call",
+                name: "Skill",
+                input: { skill: "parent-only-skill" },
+              }],
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("Run the no-skills agent.");
+
+    expect(result.response).toBe("Child completed without a skill.");
+    expect(childToolSets).toHaveLength(2);
+    expect(loadedSkillCount).toBe(0);
+  });
+
+  it("fails before the child request when a scoped MCP server is unavailable in the parent MCP snapshot", async () => {
+    const sessionId = createSessionId(
+      "runtime-subagent-scoped-mcp-server-unavailable",
+    );
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
@@ -2303,7 +2853,8 @@ describe("Explore subagent", () => {
               name: "mcp-agent",
               description: "需要 MCP server 的 agent。",
               source: "project",
-              systemPrompt: "已配置的 MCP server 在 parent 启动快照中不可用时不应该启动。",
+              systemPrompt:
+                "已配置的 MCP server 在 parent 启动快照中不可用时不应该启动。",
               mcpServers: ["required-server"],
             },
           ],
@@ -2314,7 +2865,9 @@ describe("Explore subagent", () => {
         mcpPort,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -2328,7 +2881,8 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "测试 scoped MCP server 不可用",
-                        prompt: "检查已配置的 MCP server 是否在 parent 启动快照中已连接。",
+                        prompt:
+                          "检查已配置的 MCP server 是否在 parent 启动快照中已连接。",
                         subagent_type: "mcp-agent",
                       },
                     },
@@ -2363,14 +2917,20 @@ describe("Explore subagent", () => {
       .map((message: any) => modelMessageContentToText(message.content))
       .join("\n");
 
-    expect(result.response).toBe("父 agent 看到了 scoped MCP server 不可用错误。");
+    expect(result.response).toBe(
+      "父 agent 看到了 scoped MCP server 不可用错误。",
+    );
     expect(childRequests).toEqual([]);
-    expect(secondParentRequestText).toContain("Required MCP server is not connected");
+    expect(secondParentRequestText).toContain(
+      "Required MCP server is not connected",
+    );
     expect(secondParentRequestText).toContain("required-server");
   });
 
-  it("fails fast when an explicitly allowed MCP descriptor is absent from the parent startup snapshot", async () => {
-    const sessionId = createSessionId("runtime-subagent-missing-mcp-descriptor");
+  it("fails fast when an explicitly allowed MCP descriptor is absent from the parent MCP snapshot", async () => {
+    const sessionId = createSessionId(
+      "runtime-subagent-missing-mcp-descriptor",
+    );
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
@@ -2388,7 +2948,8 @@ describe("Explore subagent", () => {
               name: "mcp-agent",
               description: "需要 MCP tool 的 agent。",
               source: "project",
-              systemPrompt: "如果显式 MCP tool 不在 parent 启动快照中就不应该启动。",
+              systemPrompt:
+                "如果显式 MCP tool 不在 parent 启动快照中就不应该启动。",
               tools: ["mcp__required-server__search"],
             },
           ],
@@ -2399,7 +2960,9 @@ describe("Explore subagent", () => {
         mcpPort,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -2413,7 +2976,8 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "测试 MCP descriptor 缺失",
-                        prompt: "检查显式 MCP tool 是否存在于 parent 启动快照。",
+                        prompt:
+                          "检查显式 MCP tool 是否存在于 parent 启动快照。",
                         subagent_type: "mcp-agent",
                       },
                     },
@@ -2450,12 +3014,12 @@ describe("Explore subagent", () => {
     expect(result.response).toBe("父 agent 看到了 MCP tool 缺失错误。");
     expect(childRequests).toEqual([]);
     expect(secondParentRequestText).toContain(
-      "Required MCP tool is not available in the parent startup snapshot",
+      "Required MCP tool is not available in the parent MCP snapshot",
     );
     expect(secondParentRequestText).toContain("mcp__required-server__search");
   });
 
-  it("starts a wildcard general-purpose subagent when plugin MCP status uses raw server names", async () => {
+  it("starts a wildcard subagent when plugin MCP status uses raw server names", async () => {
     const sessionId = createSessionId("runtime-subagent-wildcard-plugin-mcp");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -2513,14 +3077,30 @@ describe("Explore subagent", () => {
         },
         mode: "build",
         workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "plugin-mcp-worker",
+              description: "Wildcard worker for plugin MCP tools.",
+              source: "user",
+              systemPrompt: "Use every inherited tool within the configured MCP scope.",
+              tools: ["*"],
+            },
+          ],
+        },
       },
       {
         eventStore,
         mcpPort,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
+            if (
+              toolNames.includes("Agent") &&
+              !toolNames.includes("RespondToCoordinator")
+            ) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 expect(toolNames).toContain(
@@ -2532,12 +3112,12 @@ describe("Explore subagent", () => {
                   text: "",
                   toolCalls: [
                     {
-                      id: "call_general_purpose",
+                      id: "call_plugin_mcp_worker",
                       name: "Agent",
                       input: {
                         description: "测试 plugin MCP 名称",
-                        prompt: "确认 general-purpose 可以启动。",
-                        subagent_type: "general-purpose",
+                        prompt: "确认 wildcard worker 可以启动。",
+                        subagent_type: "plugin-mcp-worker",
                       },
                     },
                   ],
@@ -2548,20 +3128,22 @@ describe("Explore subagent", () => {
               return {
                 finishReason: "stop",
                 providerMetadata: undefined,
-                text: "父 agent 收到了 general-purpose 结果。",
+                text: "父 agent 收到了 plugin-mcp-worker 结果。",
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
 
             childRequests.push(request);
-            const childToolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const childToolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             expect(childToolNames).toContain(
               "mcp__plugin_android-emulator_android-emulator__android_preflight",
             );
             return {
               finishReason: "stop",
               providerMetadata: undefined,
-              text: "general-purpose 正常启动。",
+              text: "plugin-mcp-worker 正常启动。",
               usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
             };
           },
@@ -2569,17 +3151,19 @@ describe("Explore subagent", () => {
       },
     );
 
-    const result = await runtime.executeTurn("让 general-purpose 跑一下");
+    const result = await runtime.executeTurn("让 wildcard worker 跑一下");
     const secondParentRequestText = parentRequests[1].messages
       .map((message: any) => modelMessageContentToText(message.content))
       .join("\n");
 
-    expect(result.response).toBe("父 agent 收到了 general-purpose 结果。");
+    expect(result.response).toBe("父 agent 收到了 plugin-mcp-worker 结果。");
     expect(childRequests).toHaveLength(1);
-    expect(secondParentRequestText).not.toContain("Required MCP server is not connected");
+    expect(secondParentRequestText).not.toContain(
+      "Required MCP server is not connected",
+    );
   });
 
-  it("scopes custom Explore wildcard MCP tools to the fixed parent startup snapshot", async () => {
+  it("scopes custom Explore wildcard MCP tools to the parent MCP snapshot", async () => {
     const sessionId = createSessionId("runtime-custom-explore-wildcard-mcp");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -2653,7 +3237,8 @@ describe("Explore subagent", () => {
               name: "Explore",
               description: "Custom wildcard Explore.",
               source: "user",
-              systemPrompt: "Use every inherited tool within the configured MCP scope.",
+              systemPrompt:
+                "Use every inherited tool within the configured MCP scope.",
               tools: ["*"],
               disallowedTools: [blockedMcpToolName],
               mcpServers: ["alpha__server"],
@@ -2666,8 +3251,14 @@ describe("Explore subagent", () => {
         mcpPort,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
+            // Child с унаследованным * тоже видит Agent. Родителя отличает отсутствие канала координатора.
+            if (
+              toolNames.includes("Agent") &&
+              !toolNames.includes("RespondToCoordinator")
+            ) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 return {
@@ -2680,7 +3271,8 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "测试 wildcard MCP snapshot",
-                        prompt: "确认 custom Explore 只看到 scoped startup snapshot。",
+                        prompt:
+                          "确认 custom Explore 只看到 scoped MCP snapshot。",
                         subagent_type: "Explore",
                       },
                     },
@@ -2698,13 +3290,15 @@ describe("Explore subagent", () => {
             }
 
             childRequests.push(request);
-            const childToolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const childToolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             expect(childToolNames).toContain(allowedMcpToolName);
             expect(childToolNames).not.toContain(blockedMcpToolName);
             expect(childToolNames).not.toContain(outOfScopeMcpToolName);
             expect(childToolNames).not.toContain(lateMcpToolName);
-            expect(childToolNames).not.toContain("Agent");
-            expect(childToolNames).not.toContain("Task");
+            expect(childToolNames).toContain("Agent");
+            expect(childToolNames).toContain("Task");
             expect(childToolNames).not.toContain("EnterPlanMode");
             expect(childToolNames).not.toContain("ExitPlanMode");
             return {
@@ -2728,7 +3322,9 @@ describe("Explore subagent", () => {
   });
 
   it("does not require an MCP server for a parent-denied subagent tool", async () => {
-    const sessionId = createSessionId("runtime-subagent-parent-denied-mcp-tool");
+    const sessionId = createSessionId(
+      "runtime-subagent-parent-denied-mcp-tool",
+    );
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
@@ -2747,7 +3343,8 @@ describe("Explore subagent", () => {
               name: "mcp-agent",
               description: "声明了会被 parent deny 的 MCP tool。",
               source: "project",
-              systemPrompt: "被 parent 移除的 MCP tool 不应该触发 server 检查。",
+              systemPrompt:
+                "被 parent 移除的 MCP tool 不应该触发 server 检查。",
               tools: ["mcp__required-server__search", "Read"],
             },
           ],
@@ -2758,7 +3355,9 @@ describe("Explore subagent", () => {
         mcpPort,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -2772,7 +3371,8 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "测试被 deny 的 MCP tool",
-                        prompt: "检查被 parent deny 的 MCP tool 是否还会要求 server。",
+                        prompt:
+                          "检查被 parent deny 的 MCP tool 是否还会要求 server。",
                         subagent_type: "mcp-agent",
                       },
                     },
@@ -2810,13 +3410,17 @@ describe("Explore subagent", () => {
     expect(result.response).toBe("父 agent 收到了 mcp-agent 结果。");
     expect(childToolNames).toContain("Read");
     expect(childToolNames).not.toContain("mcp__required-server__search");
-    expect(secondParentRequestText).not.toContain("Required MCP server is not connected");
+    expect(secondParentRequestText).not.toContain(
+      "Required MCP server is not connected",
+    );
   });
 
   it("returns after launching background Explore and consumes notification on the next turn", async () => {
     const sessionId = createSessionId("runtime-background-explore-join");
     const eventStore = createTestSessionEventStore();
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-output-"));
+    const outputRootDir = await mkdtemp(
+      join(tmpdir(), "zcode-subagent-output-"),
+    );
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
     let releaseChild!: () => void;
@@ -2837,7 +3441,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -2851,7 +3457,8 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "Find runtime join",
-                        prompt: "Find whether the parent turn waits for background results.",
+                        prompt:
+                          "Find whether the parent turn waits for background results.",
                         run_in_background: true,
                         subagent_type: "Explore",
                       },
@@ -2891,19 +3498,27 @@ describe("Explore subagent", () => {
     );
 
     let firstTurnSettled = false;
-    const turnPromise = runtime.executeTurn("Use a background explore agent").then((value) => {
-      firstTurnSettled = true;
-      return value;
-    });
-    await waitForCondition(() => parentRequests.length === 2 && childRequests.length === 1);
+    const turnPromise = runtime
+      .executeTurn("Use a background explore agent")
+      .then((value) => {
+        firstTurnSettled = true;
+        return value;
+      });
+    await waitForCondition(
+      () => parentRequests.length === 2 && childRequests.length === 1,
+    );
     await waitForCondition(() => firstTurnSettled);
 
     const eventsBeforeChildCompletes = await eventStore.getEvents(sessionId);
     expect(
-      eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.TurnComplete),
+      eventsBeforeChildCompletes.some(
+        (event) => event.type === SessionEventType.TurnComplete,
+      ),
     ).toBe(true);
     expect(
-      eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.SubagentStopped),
+      eventsBeforeChildCompletes.some(
+        (event) => event.type === SessionEventType.SubagentStopped,
+      ),
     ).toBe(false);
 
     expect(
@@ -2916,11 +3531,15 @@ describe("Explore subagent", () => {
     releaseChild();
     await waitForCondition(async () => {
       const events = await eventStore.getEvents(sessionId);
-      return events.some((event) => event.type === SessionEventType.SubagentStopped);
+      return events.some(
+        (event) => event.type === SessionEventType.SubagentStopped,
+      );
     });
     await waitForCondition(async () => {
       const events = await eventStore.getEvents(sessionId);
-      return events.some((event) => event.type === SessionEventType.BackgroundTaskCompleted);
+      return events.some(
+        (event) => event.type === SessionEventType.BackgroundTaskCompleted,
+      );
     });
     await waitForCondition(() => parentRequests.length === 3);
     const parentThirdRequestText = parentRequests[2].messages
@@ -2934,29 +3553,43 @@ describe("Explore subagent", () => {
     expect(launchResult.response).toBe("background explore launched");
     expect(parentRequests).toHaveLength(3);
     expect(parentThirdRequestText).toContain("<task-notification>");
-    expect(parentThirdRequestText).toContain("<tool-use-id>call_background_explore</tool-use-id>");
-    expect(parentThirdRequestText).not.toContain("<task-type>local_agent</task-type>");
+    expect(parentThirdRequestText).toContain(
+      "<tool-use-id>call_background_explore</tool-use-id>",
+    );
+    expect(parentThirdRequestText).not.toContain(
+      "<task-type>local_agent</task-type>",
+    );
     expect(parentThirdRequestText).toContain("<output-file>");
     expect(parentThirdRequestText).toContain("<status>completed</status>");
     expect(parentThirdRequestText).toContain("<usage>");
     expect(parentThirdRequestText).toContain("<subagent_tokens>");
     expect(parentThirdRequestText).toContain("<tool_uses>");
     expect(parentThirdRequestText).toContain("<duration_ms>");
-    expect(parentThirdRequestText).toContain("Background Explore found the join boundary");
+    expect(parentThirdRequestText).toContain(
+      "Background Explore found the join boundary",
+    );
     expect(stoppedIndex).toBeGreaterThanOrEqual(0);
 
     const stoppedPayload = events[stoppedIndex]?.payload as any;
-    const agentOutputDir = join(outputRootDir, sessionId, stoppedPayload.agentId);
-    await expect(readFile(join(agentOutputDir, "output.txt"), "utf8")).resolves.toContain(
-      "Background Explore found the join boundary",
+    const agentOutputDir = join(
+      outputRootDir,
+      sessionId,
+      stoppedPayload.agentId,
     );
-    await expect(readFile(join(agentOutputDir, "task.output"), "utf8")).resolves.toContain(
-      "Background Explore found the join boundary",
-    );
-    await expect(readFile(join(agentOutputDir, "transcript.jsonl"), "utf8")).rejects.toMatchObject({
+    await expect(
+      readFile(join(agentOutputDir, "output.txt"), "utf8"),
+    ).resolves.toContain("Background Explore found the join boundary");
+    await expect(
+      readFile(join(agentOutputDir, "task.output"), "utf8"),
+    ).resolves.toContain("Background Explore found the join boundary");
+    await expect(
+      readFile(join(agentOutputDir, "transcript.jsonl"), "utf8"),
+    ).rejects.toMatchObject({
       code: "ENOENT",
     });
-    const metadata = JSON.parse(await readFile(join(agentOutputDir, "metadata.json"), "utf8"));
+    const metadata = JSON.parse(
+      await readFile(join(agentOutputDir, "metadata.json"), "utf8"),
+    );
     expect(metadata).toMatchObject({
       agentId: stoppedPayload.agentId,
       parentSessionId: sessionId,
@@ -2984,7 +3617,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -3039,10 +3674,12 @@ describe("Explore subagent", () => {
     );
 
     let turnSettled = false;
-    const turnPromise = runtime.executeTurn("Use parallel foreground agents").then((value) => {
-      turnSettled = true;
-      return value;
-    });
+    const turnPromise = runtime
+      .executeTurn("Use parallel foreground agents")
+      .then((value) => {
+        turnSettled = true;
+        return value;
+      });
 
     await waitFor(async () => childRequests.length === 2);
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -3050,7 +3687,9 @@ describe("Explore subagent", () => {
     const eventsBeforeChildCompletes = await eventStore.getEvents(sessionId);
     expect(turnSettled).toBe(false);
     expect(
-      eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.TurnComplete),
+      eventsBeforeChildCompletes.some(
+        (event) => event.type === SessionEventType.TurnComplete,
+      ),
     ).toBe(false);
     expect(
       eventsBeforeChildCompletes.some(
@@ -3064,27 +3703,43 @@ describe("Explore subagent", () => {
       .map((message: any) => modelMessageContentToText(message.content))
       .join("\n");
     const events = await eventStore.getEvents(sessionId);
-    const spawnEvents = events.filter((event) => event.type === SessionEventType.SubagentSpawned);
+    const spawnEvents = events.filter(
+      (event) => event.type === SessionEventType.SubagentSpawned,
+    );
 
     expect(result.response).toBe("foreground parallel subagents completed");
     expect(childRequests).toHaveLength(2);
     expect(parentRequests).toHaveLength(2);
-    expect(finalParentRequestText).toContain("Parallel foreground child 1 finished.");
-    expect(finalParentRequestText).toContain("Parallel foreground child 2 finished.");
+    expect(finalParentRequestText).toContain(
+      "Parallel foreground child 1 finished.",
+    );
+    expect(finalParentRequestText).toContain(
+      "Parallel foreground child 2 finished.",
+    );
     expect(spawnEvents).toHaveLength(2);
-    expect(spawnEvents.every((event) => (event.payload as any).background !== true)).toBe(true);
-    expect(events.some((event) => event.type === SessionEventType.BackgroundTaskStarted)).toBe(
-      false,
-    );
-    expect(events.some((event) => event.type === SessionEventType.BackgroundTaskCompleted)).toBe(
-      false,
-    );
+    expect(
+      spawnEvents.every((event) => (event.payload as any).background !== true),
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) => event.type === SessionEventType.BackgroundTaskStarted,
+      ),
+    ).toBe(false);
+    expect(
+      events.some(
+        (event) => event.type === SessionEventType.BackgroundTaskCompleted,
+      ),
+    ).toBe(false);
   });
 
   it("can SendMessage to a running background local_agent", async () => {
-    const sessionId = createSessionId("runtime-background-local-agent-send-message");
+    const sessionId = createSessionId(
+      "runtime-background-local-agent-send-message",
+    );
     const eventStore = createTestSessionEventStore();
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-output-"));
+    const outputRootDir = await mkdtemp(
+      join(tmpdir(), "zcode-subagent-output-"),
+    );
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
     let capturedAgentId = "";
@@ -3106,7 +3761,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
@@ -3149,7 +3806,8 @@ describe("Explore subagent", () => {
                       input: {
                         to: capturedAgentId,
                         summary: "补充检查目标",
-                        message: "请把检查目标改成权限链路，并在最终回答里说明已收到消息。",
+                        message:
+                          "请把检查目标改成权限链路，并在最终回答里说明已收到消息。",
                       },
                     },
                   ],
@@ -3204,15 +3862,16 @@ describe("Explore subagent", () => {
     expect(launchResult.response).toBe("background launched");
     expect(sendResult.response).toBe("message sent");
     expect(capturedAgentId).toMatch(/^agent_/u);
-    expect(childRequests[1].messages.slice(-2).map((message: any) => message.role)).toEqual([
-      "assistant",
-      "user",
-    ]);
+    expect(
+      childRequests[1].messages.slice(-2).map((message: any) => message.role),
+    ).toEqual(["assistant", "user"]);
     expect(secondChildRequestText).toContain(
       "The coordinator sent a message while you were working:",
     );
     expect(secondChildRequestText).toContain("补充检查目标");
-    expect(secondChildRequestText).toContain("Address this before completing your current task.");
+    expect(secondChildRequestText).toContain(
+      "Address this before completing your current task.",
+    );
     expect(secondChildRequestText).toContain("请把检查目标改成权限链路");
   });
 
@@ -3228,14 +3887,30 @@ describe("Explore subagent", () => {
       {
         mode: "build",
         workingDirectory: "/workspace/project",
+        subagents: {
+          profiles: [
+            {
+              name: "permission-reviewer",
+              description: "Checks permission chains and reports progress to the coordinator.",
+              source: "user",
+              systemPrompt: "Check permission chains and report progress.",
+              tools: ["Read", "TodoRead"],
+            },
+          ],
+        },
       },
       {
         eventStore,
         sessionStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
+            if (
+              toolNames.includes("Agent") &&
+              !toolNames.includes("RespondToCoordinator")
+            ) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
                 return {
@@ -3248,8 +3923,9 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "检查权限链路",
-                        prompt: "检查权限链路，并在收到询问时回复进度后继续任务。",
-                        subagent_type: "general-purpose",
+                        prompt:
+                          "检查权限链路，并在收到询问时回复进度后继续任务。",
+                        subagent_type: "permission-reviewer",
                       },
                     },
                   ],
@@ -3336,14 +4012,18 @@ describe("Explore subagent", () => {
     expect(finalParentRequestText).toContain(
       "<message>已完成前半段检查，正在继续剩余权限分支。</message>",
     );
-    expect(finalParentRequestText).toContain("child completed the remaining permission work");
+    expect(finalParentRequestText).toContain(
+      "child completed the remaining permission work",
+    );
   });
 
-  it("ignores a legacy call model and runs the built-in general-purpose agent on its configured model", async () => {
-    const sessionId = createSessionId("runtime-general-purpose-built-in-model-override");
+  it("rejects a legacy Agent call without an explicit role instead of selecting general-purpose", async () => {
+    const sessionId = createSessionId(
+      "runtime-general-purpose-built-in-model-override",
+    );
     const eventStore = createTestSessionEventStore();
     const childRequests: any[] = [];
-    const childObservations: TestModelExecutionObservation[] = [];
+    const parentRequests: any[] = [];
     let parentCallCount = 0;
     const runtime = createTestAgentRuntime(
       sessionId,
@@ -3367,9 +4047,15 @@ describe("Explore subagent", () => {
       {
         eventStore,
         modelFactory: createTestModelFactory({
-          async generateText(request: any, observation) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+          async generateText(request: any) {
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
+            if (
+              toolNames.includes("Agent") &&
+              !toolNames.includes("RespondToCoordinator")
+            ) {
+              parentRequests.push(request);
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {
@@ -3400,7 +4086,6 @@ describe("Explore subagent", () => {
             }
 
             childRequests.push(request);
-            childObservations.push(observation);
             return {
               finishReason: "stop",
               providerMetadata: undefined,
@@ -3414,15 +4099,19 @@ describe("Explore subagent", () => {
 
     await runtime.executeTurn("Use the default Agent");
 
-    expect(childRequests).toHaveLength(1);
-    expect(childObservations[0].model).toMatchObject({
-      providerId: "custom-openai",
-      modelId: "gpt-5.4",
-    });
+    expect(childRequests).toHaveLength(0);
+    expect(parentRequests).toHaveLength(2);
+    const retryText = parentRequests[1].messages
+      .map((message: any) => modelMessageContentToText(message.content))
+      .join("\n");
+    expect(retryText).toContain("subagent_type");
+    expect(retryText).not.toContain("general-purpose");
   });
 
   it("ignores a legacy call model and uses the built-in Explore override for child request, spawn event, and tool branch capability", async () => {
-    const sessionId = createSessionId("runtime-explore-built-in-model-override");
+    const sessionId = createSessionId(
+      "runtime-explore-built-in-model-override",
+    );
     const eventStore = createTestSessionEventStore();
     const childRequests: any[] = [];
     const childObservations: TestModelExecutionObservation[] = [];
@@ -3447,7 +4136,9 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           properties: { supportsNativeWebSearch: true },
           async generateText(request: any, observation) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
@@ -3496,7 +4187,9 @@ describe("Explore subagent", () => {
     await runtime.executeTurn("Use an explore agent");
 
     const events = await eventStore.getEvents(sessionId);
-    const spawnEvent = events.find((event) => event.type === SessionEventType.SubagentSpawned);
+    const spawnEvent = events.find(
+      (event) => event.type === SessionEventType.SubagentSpawned,
+    );
     const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
     expect(childRequests).toHaveLength(1);
     expect(childObservations[0].model).toMatchObject({
@@ -3542,7 +4235,10 @@ describe("Explore subagent", () => {
               description: "Review code",
               source: "user",
               systemPrompt: "Review carefully.",
-              modelSelection: { providerId: "custom-openai", modelId: "gpt-5.4" },
+              modelSelection: {
+                providerId: "custom-openai",
+                modelId: "gpt-5.4",
+              },
               tools: ["Read"],
             },
           ],
@@ -3552,12 +4248,15 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           maxOutputTokens: (input) =>
-            input.selection.providerId === "custom-openai" && input.selection.modelId === "gpt-5.4"
+            input.selection.providerId === "custom-openai" &&
+            input.selection.modelId === "gpt-5.4"
               ? currentMaxOutputTokens
               : 32_000,
           properties: { contextWindow: 128_000 },
           async generateText(request: any, observation) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               if (parentCallCount <= 2) {
@@ -3632,7 +4331,9 @@ describe("Explore subagent", () => {
       options: { reasoningLevel: "high" },
     };
     let effective = { ...original, providerId: "account:team" };
-    const resolveEffectiveModelSelection = vi.fn(() => ({ effectiveSelection: effective }));
+    const resolveEffectiveModelSelection = vi.fn(() => ({
+      effectiveSelection: effective,
+    }));
     const requests: string[] = [];
     const requestMessages: unknown[] = [];
     const runtime = createTestAgentRuntime(
@@ -3643,7 +4344,8 @@ describe("Explore subagent", () => {
         subagents: {
           profiles: [
             {
-              name: "reviewer",
+              // built-in владеет именем reviewer; custom-профиль должен иметь уникальное имя.
+              name: "review-specialist",
               description: "Review",
               source: "user",
               systemPrompt: "Review",
@@ -3672,9 +4374,13 @@ describe("Explore subagent", () => {
     );
     const port = (runtime as any).subagentPort;
     const turnId = createTurnId("effective-resume-turn");
-    const trace = { traceId: createTraceId("effective-resume-trace"), sessionId, turnId };
+    const trace = {
+      traceId: createTraceId("effective-resume-trace"),
+      sessionId,
+      turnId,
+    };
     const first = await port.run({
-      agentType: "reviewer",
+      agentType: "review-specialist",
       description: "Review",
       parentToolCallId: "first",
       prompt: "Review first",
@@ -3768,7 +4474,9 @@ describe("Explore subagent", () => {
       summary: "Retry",
       parentToolCallId: "same-turn",
     });
-    expect((await internal.subagentPort.waitForTask(first.agentId))?.status).toBe("failed");
+    expect(
+      (await internal.subagentPort.waitForTask(first.agentId))?.status,
+    ).toBe("failed");
     expect(requests.at(-1)?.model).toBe("old");
     await prepare();
     const resumed = await internal.subagentPort.sendMessage({
@@ -3805,8 +4513,13 @@ describe("Explore subagent", () => {
         type: "runtime/model_selection",
       })
     ).at(-1);
-    expect(modelEntry?.data).toMatchObject({ modelId: "new", options: { reasoningLevel: "high" } });
-    const history = await sessionStore.messages({ sessionID: task.childSessionId });
+    expect(modelEntry?.data).toMatchObject({
+      modelId: "new",
+      options: { reasoningLevel: "high" },
+    });
+    const history = await sessionStore.messages({
+      sessionID: task.childSessionId,
+    });
     expect(history.flatMap((message) => message.parts)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -3828,11 +4541,15 @@ describe("Explore subagent", () => {
       parentToolCallId: "third",
     });
     expect(missing.status).toBe("failed");
-    expect(JSON.stringify(missing)).toContain("profile reviewer is unavailable");
+    expect(JSON.stringify(missing)).toContain(
+      "profile reviewer is unavailable",
+    );
     scenario.update(profile("new"));
     await prepare();
     const childSessions = async () =>
-      (await sessionStore.listSessions({} as never)).filter((session) => session.id !== sessionId);
+      (await sessionStore.listSessions({} as never)).filter(
+        (session) => session.id !== sessionId,
+      );
     const sessionsBeforeMissingHistory = await childSessions();
     sessionStore.messages = async () => [];
     await expect(
@@ -3873,14 +4590,19 @@ describe("Explore subagent", () => {
         },
         modelContextBudgetStrategy: "legacy",
         subagents: {
-          outputRootDir: await mkdtemp(join(tmpdir(), "zcode-subagent-compact-budget-")),
+          outputRootDir: await mkdtemp(
+            join(tmpdir(), "zcode-subagent-compact-budget-"),
+          ),
           profiles: [
             {
               name: "compact-reviewer",
               description: "Review code with compact continuity",
               source: "user",
               systemPrompt: "Review carefully.",
-              modelSelection: { providerId: "custom-openai", modelId: "gpt-5.4" },
+              modelSelection: {
+                providerId: "custom-openai",
+                modelId: "gpt-5.4",
+              },
               tools: ["Read"],
             },
           ],
@@ -3985,7 +4707,9 @@ describe("Explore subagent", () => {
 
     expect(
       childRequests.filter(
-        (request) => request.querySource === "subagent" || request.querySource === "compact",
+        (request) =>
+          request.querySource === "subagent" ||
+          request.querySource === "compact",
       ),
     ).toEqual([
       {
@@ -4070,7 +4794,10 @@ describe("Explore subagent", () => {
               description: "Review code",
               source: "user",
               systemPrompt: "Review carefully.",
-              modelSelection: { providerId: "missing-provider", modelId: "missing-model" },
+              modelSelection: {
+                providerId: "missing-provider",
+                modelId: "missing-model",
+              },
               tools: ["Read"],
             },
           ],
@@ -4089,7 +4816,9 @@ describe("Explore subagent", () => {
         })(
           createTestModelFactory({
             async generateText(request: any) {
-              const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+              const toolNames = (request.tools ?? []).map(
+                (tool: any) => tool.name,
+              );
               if (toolNames.includes("Agent")) {
                 parentRequests.push(request);
                 parentCallCount++;
@@ -4138,7 +4867,9 @@ describe("Explore subagent", () => {
     const toolBatchCompleteEvent = result.events.find(
       (event) => event.type === SessionEventType.ToolBatchComplete,
     );
-    const toolMessage = parentRequests[1]?.messages.find((message: any) => message.role === "tool");
+    const toolMessage = parentRequests[1]?.messages.find(
+      (message: any) => message.role === "tool",
+    );
 
     expect(toolMessage).toMatchObject({
       content: "Invalid subagent model configuration",
@@ -4171,11 +4902,15 @@ describe("Explore subagent", () => {
         modelFactory: createTestModelFactory({
           properties: { supportsNativeWebSearch: true },
           async generateText() {
-            throw new Error("generateText should not be used when modelStreaming is on");
+            throw new Error(
+              "generateText should not be used when modelStreaming is on",
+            );
           },
           async *streamText(request: any) {
             streamRequests.push(request);
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
@@ -4199,7 +4934,10 @@ describe("Explore subagent", () => {
                 return;
               }
 
-              yield { type: "text_delta", text: "parent used streamed explore result" };
+              yield {
+                type: "text_delta",
+                text: "parent used streamed explore result",
+              };
               yield {
                 type: "finish",
                 finishReason: "stop",
@@ -4209,7 +4947,10 @@ describe("Explore subagent", () => {
             }
 
             childStreamRequests.push(request);
-            yield { type: "text_delta", text: "Explore streamed child result." };
+            yield {
+              type: "text_delta",
+              text: "Explore streamed child result.",
+            };
             yield {
               type: "finish",
               finishReason: "stop",
@@ -4220,7 +4961,9 @@ describe("Explore subagent", () => {
       },
     );
 
-    const result = await runtime.executeTurn("Use an explore agent with streaming");
+    const result = await runtime.executeTurn(
+      "Use an explore agent with streaming",
+    );
 
     expect(result.response).toBe("parent used streamed explore result");
     expect(streamRequests).toHaveLength(3);
@@ -4261,7 +5004,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any, observation) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
@@ -4337,7 +5082,9 @@ describe("Explore subagent", () => {
         eventStore,
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
-            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            const toolNames = (request.tools ?? []).map(
+              (tool: any) => tool.name,
+            );
             if (toolNames.includes("Agent")) {
               parentCallCount++;
               parentRequests.push(request);
@@ -4352,7 +5099,8 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "Find queue",
-                        prompt: "Find where background notifications should be queued.",
+                        prompt:
+                          "Find where background notifications should be queued.",
                         run_in_background: true,
                         subagent_type: "Explore",
                       },
@@ -4366,7 +5114,9 @@ describe("Explore subagent", () => {
                 finishReason: "stop",
                 providerMetadata: undefined,
                 text:
-                  parentCallCount === 2 ? "background launched" : "parent saw background result",
+                  parentCallCount === 2
+                    ? "background launched"
+                    : "parent saw background result",
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
@@ -4385,27 +5135,37 @@ describe("Explore subagent", () => {
     );
 
     let firstTurnSettled = false;
-    const firstTurnPromise = runtime.executeTurn("Start background explore").then((value) => {
-      firstTurnSettled = true;
-      return value;
-    });
-    await waitFor(async () => parentRequests.length === 2 && childRequests.length === 1);
+    const firstTurnPromise = runtime
+      .executeTurn("Start background explore")
+      .then((value) => {
+        firstTurnSettled = true;
+        return value;
+      });
+    await waitFor(
+      async () => parentRequests.length === 2 && childRequests.length === 1,
+    );
     await waitFor(async () => firstTurnSettled);
 
     const eventsBeforeChildCompletes = await eventStore.getEvents(sessionId);
     expect(
-      eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.TurnComplete),
+      eventsBeforeChildCompletes.some(
+        (event) => event.type === SessionEventType.TurnComplete,
+      ),
     ).toBe(true);
 
     childGate.resolve();
 
     await waitFor(async () => {
       const events = await eventStore.getEvents(sessionId);
-      return events.some((event) => event.type === SessionEventType.SubagentStopped);
+      return events.some(
+        (event) => event.type === SessionEventType.SubagentStopped,
+      );
     });
     await waitFor(async () => {
       const events = await eventStore.getEvents(sessionId);
-      return events.some((event) => event.type === SessionEventType.BackgroundTaskCompleted);
+      return events.some(
+        (event) => event.type === SessionEventType.BackgroundTaskCompleted,
+      );
     });
     const firstTurn = await firstTurnPromise;
 
@@ -4423,7 +5183,12 @@ describe("Explore subagent", () => {
       (event) => event.type === SessionEventType.ToolCallResult,
     );
 
-    if (!spawnEvent || !backgroundStartedEvent || !backgroundCompletedEvent || !toolResultEvent) {
+    if (
+      !spawnEvent ||
+      !backgroundStartedEvent ||
+      !backgroundCompletedEvent ||
+      !toolResultEvent
+    ) {
       throw new Error("Expected background subagent lifecycle events");
     }
     const spawnPayload = spawnEvent.payload as any;
@@ -4434,14 +5199,24 @@ describe("Explore subagent", () => {
     expect(spawnPayload.background).toBe(true);
     expect(backgroundStartedPayload.toolName).toBe("Agent");
     expect(backgroundStartedPayload.taskKind).toBe("subagent");
-    expect(backgroundStartedPayload.childSessionId).toBe(spawnPayload.childSessionId);
+    expect(backgroundStartedPayload.childSessionId).toBe(
+      spawnPayload.childSessionId,
+    );
     expect(backgroundStartedPayload.cancellable).toBe(true);
     expect(backgroundCompletedPayload.taskKind).toBe("subagent");
-    expect(backgroundCompletedPayload.childSessionId).toBe(spawnPayload.childSessionId);
+    expect(backgroundCompletedPayload.childSessionId).toBe(
+      spawnPayload.childSessionId,
+    );
     expect(backgroundCompletedPayload.status).toBe("completed");
-    expect(toolResultPayload.result.content).toContain("Async agent launched successfully.");
-    expect(toolResultPayload.result.content).toContain("internal ID - do not mention to user");
-    expect(toolResultPayload.result.content).toContain("Use SendMessage with to:");
+    expect(toolResultPayload.result.content).toContain(
+      "Async agent launched successfully.",
+    );
+    expect(toolResultPayload.result.content).toContain(
+      "internal ID - do not mention to user",
+    );
+    expect(toolResultPayload.result.content).toContain(
+      "Use SendMessage with to:",
+    );
     expect(toolResultPayload.result.content).toContain("output_file:");
 
     await waitForCondition(() => parentRequests.length === 3);
@@ -4453,12 +5228,18 @@ describe("Explore subagent", () => {
     expect(firstTurn.response).toBe("background launched");
     expect(parentRequests).toHaveLength(3);
     expect(finalRequestMessages).toContain("<task-notification>");
-    expect(finalRequestMessages).toContain("Background child completed with async result");
+    expect(finalRequestMessages).toContain(
+      "Background child completed with async result",
+    );
     const notificationMessage = finalRequest.messages.find((message: any) =>
-      modelMessageContentToText(message.content).includes("<task-notification>"),
+      modelMessageContentToText(message.content).includes(
+        "<task-notification>",
+      ),
     );
     expect(notificationMessage?.role).toBe("user");
-    const notificationText = modelMessageContentToText(notificationMessage?.content ?? "");
+    const notificationText = modelMessageContentToText(
+      notificationMessage?.content ?? "",
+    );
     expect(notificationText).toMatch(
       /^<system-reminder>\n\[SYSTEM NOTIFICATION - NOT USER INPUT\]\n/,
     );
@@ -4518,7 +5299,10 @@ async function waitFor(
   throw new Error("Timed out waiting for condition");
 }
 
-function skillMetadata(name: string, path: string): SkillLoadOutcome["skills"][number] {
+function skillMetadata(
+  name: string,
+  path: string,
+): SkillLoadOutcome["skills"][number] {
   return {
     description: `${name} description`,
     directory: path.slice(0, path.lastIndexOf("/")),

@@ -1,16 +1,26 @@
 import {
   AccountProviderService,
+  LocalAuthAccessConfig,
+  ModelConfig,
   MutableAccountProviderConfigSource,
+  ProviderApiConfig,
+  ProviderConfig,
+  createRegistryModelConfig,
+  createRegistryProviderConfig,
   parseAccountProviderConfigMap,
   type AccountProviderConfigSnapshot,
   type AccountProviderStates,
+  type Provider,
+  type ProviderSource,
+  type RuntimeProviderCatalogSnapshot,
 } from "@zcode/provider";
 import {
   isBuiltinModelProviderId,
   resolveRuntimeZCodeEndpointOrigin,
   ZCODE_VERSION,
+  zcodeProviderUpdateRuntimeCatalogParamsSchema,
 } from "@zcode/shared";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import {
   NodeModelSelectionConfigRepository,
   NodeProviderRegistryRuntime,
@@ -52,6 +62,7 @@ export async function startProcessProviderRegistryRuntime(
   }
 
   const accountSource = new MutableAccountProviderConfigSource();
+  const runtimeProviderSource = new MutableRuntimeProviderCatalogSource();
   const credentialStore = options.standalone
     ? (options.standalone.credentialStore ?? createSharedZCodeCredentialStore({ env: { ...env } }))
     : undefined;
@@ -85,6 +96,7 @@ export async function startProcessProviderRegistryRuntime(
       : {}),
     onZCodeBuiltinRefreshError: options.standalone?.onBuiltinRefreshError,
     accountSource,
+    runtimeProviderSource,
     ...(credentialStore
       ? {
           createAccountSource(configService) {
@@ -120,11 +132,9 @@ export async function startProcessProviderRegistryRuntime(
     ...(options.standalone
       ? {
           importLegacy: () =>
-            readLegacyCliPersonalProviderConfig({
-              ...(options.standalone?.legacyCliUserConfigFilePath
+            readLegacyCliPersonalProviderConfig((options.standalone?.legacyCliUserConfigFilePath
                 ? { filePath: options.standalone.legacyCliUserConfigFilePath }
-                : {}),
-            }),
+                : {})),
         }
       : {}),
   });
@@ -166,11 +176,18 @@ export async function startProcessProviderRegistryRuntime(
           await runtime.registryService.refresh("host-account-config");
           return changed;
         },
+        async syncRuntimeProviderCatalog(next: RuntimeProviderCatalogSnapshot): Promise<boolean> {
+          const changed = runtimeProviderSource.replace(next, "host-runtime-catalog");
+          // 和 account overlay 一样，replace 的去重不能代替成功应用的回执；重交时仍刷新。
+          await runtime.registryService.refresh("host-runtime-catalog");
+          return changed;
+        },
         dispose() {
           disposeCredentialSubscription?.();
           standaloneHeaders?.clearProjectTokens();
           disposeRecovery?.();
           standaloneAccount?.dispose();
+          runtimeProviderSource.dispose();
           modelSelectionConfigRepository.dispose();
           runtime.dispose();
         },
@@ -193,8 +210,148 @@ export async function startProcessProviderRegistryRuntime(
     disposeCredentialSubscription?.();
     disposeRecovery?.();
     standaloneAccount?.dispose();
+    runtimeProviderSource.dispose();
     runtime.dispose();
     throw error;
+  }
+}
+
+/**
+ * 解析 Host 的 local-auth Provider 信封为本地领域对象。
+ * Worker 只接受固定 OpenCode provider ID 与无凭据的 SDK 配置；未知字段由 strict schema 拒绝。
+ */
+export function parseProcessRuntimeProviderCatalogSnapshot(
+  input: unknown,
+): RuntimeProviderCatalogSnapshot {
+  const envelope = zcodeProviderUpdateRuntimeCatalogParamsSchema.parse(input);
+  const providers: Provider[] = envelope.providers.map((candidate) => {
+    if (candidate.providerId !== "opencode") {
+      throw new Error(`Недопустимый runtime provider ID: ${candidate.providerId}`);
+    }
+    const models = candidate.models.map(({ modelId, config }) => {
+      const result = createRegistryModelConfig(ModelConfig.fromData(config), [
+        "runtime-provider",
+        candidate.providerId,
+        "models",
+        modelId,
+      ]);
+      if (!result.ok) {
+        throw new Error(`Неполная конфигурация OpenCode model ${modelId}`);
+      }
+      return Object.freeze({ modelId, config: result.config });
+    });
+    const config = new ProviderConfig({
+      group: candidate.config.group,
+      ...(candidate.config.logo === undefined ? {} : { logo: candidate.config.logo }),
+      access: new LocalAuthAccessConfig(),
+      api: new ProviderApiConfig({ type: "opencode-sdk" }),
+      ...(candidate.config.builtinModelIds === undefined
+        ? {}
+        : { builtinModelIds: candidate.config.builtinModelIds }),
+      ...(candidate.config.personalModelIds === undefined
+        ? {}
+        : { personalModelIds: candidate.config.personalModelIds }),
+      ...(candidate.config.modelOrder === undefined
+        ? {}
+        : { modelOrder: candidate.config.modelOrder }),
+      ...(candidate.config.visibility === undefined
+        ? {}
+        : { visibility: candidate.config.visibility }),
+    });
+    const providerConfig = createRegistryProviderConfig(config, [
+      "runtime-provider",
+      candidate.providerId,
+    ]);
+    if (!providerConfig.ok) {
+      throw new Error("OpenCode runtime provider config не прошёл полную валидацию");
+    }
+    return Object.freeze({
+      providerId: candidate.providerId,
+      providerName: candidate.providerName,
+      ...(candidate.templateId ? { templateId: candidate.templateId } : {}),
+      config: providerConfig.config,
+      models: Object.freeze(models),
+    });
+  });
+  if (new Set(providers.map((provider) => provider.providerId)).size !== providers.length) {
+    throw new Error("Runtime Provider Catalog содержит повторяющийся provider ID");
+  }
+  if (providers.length > 0 && !envelope.cliExecutablePath) {
+    throw new Error("Для включённого OpenCode CLI требуется абсолютный путь к executable");
+  }
+  if (envelope.cliExecutablePath && !isAbsolute(envelope.cliExecutablePath)) {
+    throw new Error("OpenCode CLI executable path должен быть абсолютным");
+  }
+  return Object.freeze({
+    revision: envelope.revision.trim(),
+    providers: Object.freeze(providers),
+    ...(envelope.cliExecutablePath
+      ? { cliExecutablePath: envelope.cliExecutablePath }
+      : {}),
+  });
+}
+
+class MutableRuntimeProviderCatalogSource
+  implements ProviderSource<RuntimeProviderCatalogSnapshot>
+{
+  readonly #listeners = new Set<(reason: string) => void>();
+  #snapshot: RuntimeProviderCatalogSnapshot = Object.freeze({
+    revision: "empty-runtime-provider-catalog-v1",
+    providers: Object.freeze([]),
+  });
+  readonly #originalPath = process.env.PATH;
+  #injectedPath: string | undefined;
+
+  async read(): Promise<RuntimeProviderCatalogSnapshot> {
+    return this.#snapshot;
+  }
+
+  onDidChange(listener: (reason: string) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  replace(snapshot: RuntimeProviderCatalogSnapshot, reason = "replace"): boolean {
+    if (snapshot.revision === this.#snapshot.revision) return false;
+    this.#restorePathIfOwned();
+    // A resolver may retain the detected path while the user disables the provider.
+    // Only an enabled catalog is allowed to alter this worker's PATH.
+    const activeCliExecutablePath = snapshot.providers.some(
+      (provider) => provider.providerId === "opencode",
+    )
+      ? snapshot.cliExecutablePath
+      : undefined;
+    if (activeCliExecutablePath) {
+      const executableDirectory = dirname(activeCliExecutablePath);
+      const existing = (this.#originalPath ?? "").split(delimiter);
+      const nextPath = [executableDirectory, ...existing.filter((entry) => entry !== executableDirectory)]
+        .filter(Boolean)
+        .join(delimiter);
+      process.env.PATH = nextPath;
+      this.#injectedPath = nextPath;
+    }
+    this.#snapshot = Object.freeze({
+      revision: snapshot.revision,
+      providers: Object.freeze([...snapshot.providers]),
+      ...(activeCliExecutablePath
+        ? { cliExecutablePath: activeCliExecutablePath }
+        : {}),
+    });
+    for (const listener of this.#listeners) listener(reason);
+    return true;
+  }
+
+  dispose(): void {
+    this.#restorePathIfOwned();
+    this.#listeners.clear();
+  }
+
+  #restorePathIfOwned(): void {
+    if (this.#injectedPath !== undefined && process.env.PATH === this.#injectedPath) {
+      if (this.#originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = this.#originalPath;
+    }
+    this.#injectedPath = undefined;
   }
 }
 

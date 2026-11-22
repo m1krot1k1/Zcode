@@ -42,6 +42,25 @@ describe("MCP store status diagnostics", () => {
     expect(mergeMcpServerStatusSnapshots([server], {})[0]).not.toHaveProperty("serverRequestId");
   });
 
+  it("keeps an untrusted project server actionable as requires_approval", () => {
+    expect(
+      mergeMcpServerStatusSnapshots([server], {
+        demo: {
+          error: "Project MCP server requires explicit connection before use.",
+          failureKind: "status_unavailable",
+          status: "untrusted",
+          toolCount: 0,
+          transport: "stdio",
+          updatedAt: "2026-11-11T00:00:00.000Z",
+        },
+      })[0],
+    ).toMatchObject({
+      error: "Project MCP server requires explicit connection before use.",
+      failureKind: "status_unavailable",
+      status: "requires_approval",
+    });
+  });
+
   it("clears stale diagnostics when a later snapshot is connected", () => {
     const failedServer: ZCodeMcpServer = {
       ...server,

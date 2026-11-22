@@ -6,8 +6,8 @@ let createDispatch: (
   deps: Record<string, unknown>,
 ) => (request: Record<string, unknown>) => Promise<unknown>;
 beforeAll(async () => {
-  // 装载生产函数，隔离 host 启动副作用；不复制派发实现。
-  const path = new URL("../src/host/index.ts", import.meta.url);
+  // 装载生产函数，隔离 host 启动副作用；不复制派发实现（Host 入口拆分后函数归属 hostCronDispatch）。
+  const path = new URL("../src/host/hostCronDispatch.ts", import.meta.url);
   const source = ts.createSourceFile(
     path.pathname,
     await readFile(path, "utf8"),
@@ -19,7 +19,7 @@ beforeAll(async () => {
       ts.isFunctionDeclaration(node) && node.name?.text === "dispatchCronRun",
   );
   if (!fn) throw new Error("dispatchCronRun missing");
-  const code = ts.transpileModule(fn.getText(source), {
+  const code = ts.transpileModule(fn.getText(source).replace(/^export\s+/, ""), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
   createDispatch = (deps) =>

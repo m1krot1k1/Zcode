@@ -61,7 +61,7 @@ export function isPrimaryFollowupModifierPressed({
   return isApplePlatform ? metaKey : ctrlKey;
 }
 
-export interface FollowupModifierTooltip {
+interface FollowupModifierTooltip {
   delivery: "startNow" | "queue";
   shortcut: string;
   titleId: "chat.followup.sendNow" | "chat.followup.addToQueue";

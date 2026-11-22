@@ -1,0 +1,72 @@
+{
+  "project": "PRISM-INFINITY",
+  "version": "10.0",
+  "status": "protocol_and_local_gate_not_live_llm_benchmarked",
+  "core": "PRISM_10.0_CORE_RU.md",
+  "full_master": "PRISM_INFINITY_10.0_FULL_MASTER_RU.md",
+  "modules": {
+    "intent_security": {
+      "path": "modules/intent_security.md",
+      "purpose": "mission invariants and permission boundaries"
+    },
+    "evidence_quality": {
+      "path": "modules/evidence_quality.md",
+      "purpose": "outcome verification and holdout evals"
+    },
+    "swarm_execution": {
+      "path": "modules/swarm_execution.md",
+      "purpose": "live execution swarm and critical path"
+    },
+    "runtime_engineering": {
+      "path": "modules/runtime_engineering.md",
+      "purpose": "real tool operations, state and Git"
+    },
+    "diagnostic_evolution": {
+      "path": "modules/diagnostic_evolution.md",
+      "purpose": "bottleneck diagnosis and proof-carrying upgrades"
+    },
+    "recursive_research": {
+      "path": "modules/recursive_research.md",
+      "purpose": "falsifiable recursive discovery experiment lifecycle"
+    }
+  },
+  "profiles": {
+    "fast": [],
+    "research": [
+      "intent_security",
+      "evidence_quality"
+    ],
+    "coding": [
+      "intent_security",
+      "evidence_quality",
+      "runtime_engineering"
+    ],
+    "swarm": [
+      "intent_security",
+      "evidence_quality",
+      "runtime_engineering",
+      "swarm_execution"
+    ],
+    "evolution": [
+      "intent_security",
+      "evidence_quality",
+      "runtime_engineering",
+      "diagnostic_evolution",
+      "recursive_research"
+    ],
+    "all": [
+      "intent_security",
+      "evidence_quality",
+      "runtime_engineering",
+      "swarm_execution",
+      "diagnostic_evolution",
+      "recursive_research"
+    ],
+    "discovery": [
+      "intent_security",
+      "evidence_quality",
+      "diagnostic_evolution",
+      "recursive_research"
+    ]
+  }
+}

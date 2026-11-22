@@ -17,6 +17,7 @@ import { realUserRuntimeMetadata } from "../../agent/message-history.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { ControlOnlyTurnRuntimeCommand } from "../command-queue.js";
 import { buildProjectionAnchor } from "./projection-anchor.js";
+import { getMetadataTools } from "./config.js";
 import { maybeStartGoalSummaryTitleGeneration } from "./goal-summary-title.js";
 import { maybeStartSessionTitleGeneration } from "./session-title.js";
 
@@ -159,7 +160,9 @@ export async function persistWorkflowLaunchUserMessage(
       source: "workflow_launch",
       system: this.config.systemPrompt,
       synthetic: true,
-      tools: Object.fromEntries(this.getTools().map((tool) => [tool.name, true])),
+      // control-only 轮没有可调用的 Active Model，工具清单只是元数据；无模型证据时
+      // 不能把条件工具 WebSearch 写成可用。
+      tools: Object.fromEntries(getMetadataTools.call(this).map((tool) => [tool.name, true])),
       visibility: "user-visible",
     },
     options.traceContext,

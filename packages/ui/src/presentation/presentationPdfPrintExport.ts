@@ -14,8 +14,8 @@ const STYLE_ATTRIBUTE = "data-zcode-pptx-print-style";
 /** 单图解码失败不阻塞导出（预览同样会失败），整体解码等待设上限 */
 const IMAGE_DECODE_TIMEOUT_MS = 10_000;
 
-export type PrintableFontScript = "latin" | "cjk" | "symbol";
-export type PrintableFontAvailability = (family: string, script: PrintableFontScript) => boolean;
+type PrintableFontScript = "latin" | "cjk" | "symbol";
+type PrintableFontAvailability = (family: string, script: PrintableFontScript) => boolean;
 
 const GENERIC_FONT_FAMILIES = new Set([
   "serif",

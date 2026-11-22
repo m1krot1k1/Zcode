@@ -18,7 +18,7 @@ const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
 /** 留白 id 里十六进制的位数；协议侧的 id 上界（64）与它无关，这里只是让 id 短而固定。 */
-export const HOLE_ID_HEX_LENGTH = 8;
+const HOLE_ID_HEX_LENGTH = 8;
 
 /** 留白站点 id 的形状。UI 与稳定性复核靠它认出「这个 id 是一个留白」。 */
 export const HOLE_SITE_ID_PATTERN = /^hole#[0-9a-f]{8}$/u;

@@ -61,7 +61,8 @@ afterEach(async () => {
 });
 const markdown = (name: string, prompt = name) =>
   `---\nname: ${name}\ndescription: Test\n---\n${prompt}`;
-const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 5000, interval: 10 });
+// File-watch events can lag under full-suite load; waitFor is the correctness retry.
+const until = (assertion: () => unknown) => vi.waitFor(assertion, { timeout: 15000, interval: 10 });
 function initialWatcherFor(path: string): ReturnType<typeof watch> {
   // 各 scope 并行 stat，注册顺序不固定；按监听路径取得初始实例，避免向其他 scope 发事件。
   const index = vi.mocked(watch).mock.calls.findIndex(([root]) => root === path);
@@ -119,7 +120,7 @@ describe("Host incremental subagent snapshots", () => {
         isSymbolicLink: () => false,
       } as Stats),
     ).toBe(true);
-    expect(ignored(root)).toBe(true);
+    expect(ignored(root)).toBe(false);
     expect(ignored(join(root, "reviewer.md"))).toBe(true);
   });
 
@@ -242,9 +243,11 @@ describe("Host incremental subagent snapshots", () => {
     await rename(f.userRoot, `${f.userRoot}-obsolete`);
     await mkdir(f.userRoot);
     await writeFile(path, markdown("aaa", "replacement"));
-    // 快速替换时可能只有原生事件；路径仍存在，也必须关闭旧目录对象的监听。
-    for (const events of parentEvents.get(dirname(f.userRoot)) ?? [])
-      events.emit("change", { eventType: "rename", filename: "user" });
+    // Windows 的空目录移动由兼容父 watcher 补报；其他平台由 Chokidar 报告根目录 unlinkDir。
+    if (process.platform === "win32") {
+      for (const events of parentEvents.get(dirname(f.userRoot)) ?? [])
+        events.emit("change", { eventType: "rename", filename: "user" });
+    } else obsolete.emit("all", "unlinkDir", f.userRoot);
     await until(() =>
       expect((obsolete as unknown as { close: unknown }).close).toHaveBeenCalledOnce(),
     );

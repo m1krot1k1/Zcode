@@ -7,6 +7,7 @@ import {
 describe("RemoteWorkspaceRpcContract v1", () => {
   it("requires the complete R3 full-forward channel set", () => {
     expect(REMOTE_WORKSPACE_RPC_CHANNELS).toContain("genUiService");
+    expect(REMOTE_WORKSPACE_RPC_CHANNELS).toContain("proactiveSuggestionService");
     const contract = Object.fromEntries(
       REMOTE_WORKSPACE_RPC_CHANNELS.map((channel) => [channel, {}]),
     );

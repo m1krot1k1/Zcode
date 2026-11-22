@@ -6194,7 +6194,9 @@ test("returns from a headless prompt when managed browser close never settles", 
   assert.equal(exitCode, 0);
   assert.equal(appCloseCount, 1);
   assert.equal(browserCloseCount, 1);
-  assert.ok(Date.now() - startedAt < 200);
+  // Смысл теста — не зависнуть на never-settling close. Жёсткие 200 мс ловили
+  // планировщик CI, а не регрессию: зависание не уложится и в 1.5 с.
+  assert.ok(Date.now() - startedAt < 1_500);
 });
 
 test("forces the existing exit code when the CLI watchdog deadline is reached", async () => {

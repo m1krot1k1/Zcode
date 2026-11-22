@@ -1,6 +1,6 @@
 const WSL_UNC_PATH_PATTERN = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)(?:[\\/](.*))?$/iu;
 
-export interface WslUncWorkspacePath {
+interface WslUncWorkspacePath {
   distro: string;
   linuxPath: string;
   originalPath: string;

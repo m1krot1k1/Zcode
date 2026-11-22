@@ -46,6 +46,18 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
     normalizedPatch.httpProxy = trimmedHttpProxy.length > 0 ? trimmedHttpProxy : undefined;
   }
 
+  if ("httpProxyList" in normalizedPatch && typeof normalizedPatch.httpProxyList === "string") {
+    // Список хранит один URL на строку. Модельные запросы читают его как кольцо,
+    // а выбранный httpProxy остаётся стартовой точкой и маршрутом renderer/MCP.
+    const normalizedProxyList = normalizedPatch.httpProxyList
+      .split(/\r?\n/u)
+      .map((proxy) => proxy.trim())
+      .filter(Boolean)
+      .join("\n");
+    normalizedPatch.httpProxyList =
+      normalizedProxyList.length > 0 ? normalizedProxyList : undefined;
+  }
+
   if (
     "httpProxyNoProxy" in normalizedPatch &&
     typeof normalizedPatch.httpProxyNoProxy === "string"

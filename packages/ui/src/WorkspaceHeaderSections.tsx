@@ -9,7 +9,6 @@ import {
 } from "@/lib/remoteConnectionPresentation.js";
 import { WorkspaceContextPath } from "@/WorkspaceHeaderSections/WorkspaceContextPath.js";
 import { WorkspaceLastActivity } from "@/WorkspaceHeaderSections/WorkspaceLastActivity.js";
-/* eslint-disable max-lines -- Header 标题区当前同时承载 task 菜单、路径上下文和 workspace 级状态提示，先保持单文件收口，避免菜单链路迁移时再引入回归。 */
 import {
   parseRemoteWorkspaceIdentity,
   remoteHostIdFromWorkspaceIdentity,
@@ -68,13 +67,11 @@ import { useMcpStore } from "@/store/mcpStore.js";
 import { useSourceServerDisplayNames } from "@/hooks/useSourceServerDisplayNames.js";
 import { useRemoteDevicePresentationInput } from "@/hooks/useSourceServerStatuses.js";
 
-export type { WorkspaceHeaderState, WorkspaceHeaderTitleSectionProps };
+export type { WorkspaceHeaderState};
 export {
-  WorkspaceHeaderActionSection,
-  type WorkspaceHeaderActionSectionProps,
-} from "@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js";
+  WorkspaceHeaderActionSection} from "@/WorkspaceHeaderSections/WorkspaceHeaderActionSection.js";
 
-export function shouldShowRemoteSkillSyncAction(params: {
+function shouldShowRemoteSkillSyncAction(params: {
   remoteSessionId?: string | null;
   remoteTarget?: RemoteTarget | null;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
@@ -469,8 +466,8 @@ export function WorkspaceHeaderTitleSection({
                                 presentation.recovery.values,
                               )
                             : intl.formatMessage({ id: presentation.shortMessageId })}
-                    </span>
-                  ) : null}
+                        </span>
+                      ) : null}
                     </span>
                   ) : null}
                   {workspaceContextOpen && isRemoteWorkspace ? (
@@ -537,17 +534,17 @@ export function WorkspaceHeaderTitleSection({
         </ControlHintTooltip>
       ) : null}
       {!isDraftNewTask ? (
-      <h1
-        data-testid={TID_WORKSPACE_TITLE}
-        className={cn(
-          "flex min-w-12 max-w-100 shrink items-center gap-2 truncate font-semibold text-foreground @max-[560px]/workspace-header:max-w-[30vw] @max-[420px]/workspace-header:max-w-[22vw]",
-          simplifyForNarrowRemote && "max-md:max-w-[42vw]",
-          compact ? "text-[0.92rem]" : "text-ui-base",
-        )}
-        title={activeTaskTitle}
-      >
-        <span className="min-w-0 truncate">{activeTaskTitle}</span>
-        {/* {activeTaskChangeSummary ? (
+        <h1
+          data-testid={TID_WORKSPACE_TITLE}
+          className={cn(
+            "flex min-w-12 max-w-100 shrink items-center gap-2 truncate font-semibold text-foreground @max-[560px]/workspace-header:max-w-[30vw] @max-[420px]/workspace-header:max-w-[22vw]",
+            simplifyForNarrowRemote && "max-md:max-w-[42vw]",
+            compact ? "text-[0.92rem]" : "text-ui-base",
+          )}
+          title={activeTaskTitle}
+        >
+          <span className="min-w-0 truncate">{activeTaskTitle}</span>
+          {/* {activeTaskChangeSummary ? (
           <>
             {activeTaskChangeSummary.added > 0 ? (
               <span className="text-diff-added">
@@ -561,7 +558,7 @@ export function WorkspaceHeaderTitleSection({
             ) : null}
           </>
         ) : null} */}
-      </h1>
+        </h1>
       ) : null}
       <div className="flex min-w-0 shrink-0 items-center gap-1">
         {!isDraftNewTask ? (

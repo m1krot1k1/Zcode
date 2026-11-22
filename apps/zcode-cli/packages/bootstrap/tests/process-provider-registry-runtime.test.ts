@@ -8,7 +8,10 @@ import {
   ZhipuAccountAccessConfig,
   createAccountProviderConfigSnapshot,
 } from "@zcode/provider";
-import { zcodeProviderUpdateAccountConfigParamsSchema } from "@zcode/shared";
+import {
+  zcodeProviderUpdateAccountConfigParamsSchema,
+  zcodeProviderUpdateRuntimeCatalogParamsSchema,
+} from "@zcode/shared";
 import {
   ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV,
   ZCODE_PERSONAL_PROVIDER_CONFIG_FILE_ENV,
@@ -22,6 +25,7 @@ import {
 } from "@zcode/adapters/auth";
 import {
   parseProcessAccountProviderConfigSnapshot,
+  parseProcessRuntimeProviderCatalogSnapshot,
   startProcessProviderRegistryRuntime,
 } from "../src/app/process-provider-registry-runtime.js";
 import {
@@ -41,6 +45,82 @@ afterEach(async () => {
 });
 
 describe("process provider registry runtime", () => {
+  it("принимает только безопасный runtime OpenCode snapshot и атомарно публикует/снимает его", async () => {
+    const root = await temporaryDirectory();
+    const runtime = await startProcessProviderRegistryRuntime({
+      [ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV]: fileURLToPath(
+        new URL("../../../../../config/provider/zcode-builtin.json", import.meta.url),
+      ),
+      [ZCODE_PERSONAL_PROVIDER_CONFIG_FILE_ENV]: join(root, "personal.json"),
+    });
+    const originalPath = process.env.PATH;
+    try {
+      const snapshot = parseProcessRuntimeProviderCatalogSnapshot({
+        revision: "opencode-catalog:1",
+        cliExecutablePath: "/opt/opencode/bin/opencode",
+        providers: [
+          {
+            providerId: "opencode",
+            providerName: "OpenCode CLI",
+            config: {
+              group: "standard-personal",
+              access: { type: "local-auth" },
+              api: { type: "opencode-sdk" },
+            },
+            models: [
+              {
+                modelId: "anthropic/claude-sonnet-4-5",
+                config: completeZCodeBuiltinModelConfig(),
+              },
+            ],
+          },
+        ],
+      });
+      await runtime.syncRuntimeProviderCatalog(snapshot);
+      expect(runtime.runtime.registryService.getProvider("opencode")?.models).toHaveLength(1);
+      expect(runtime.runtime.registryService.getProvider("opencode")?.models[0]?.modelId).toBe(
+        "anthropic/claude-sonnet-4-5",
+      );
+      expect(
+        runtime.runtime.registryService.validateSelection({
+          providerId: "opencode",
+          modelId: "anthropic/claude-sonnet-4-5",
+          options: { reasoningLevel: "disabled" },
+        }),
+      ).toEqual({ ok: true });
+      expect(process.env.PATH?.split(":")[0]).toBe("/opt/opencode/bin");
+
+      await runtime.syncRuntimeProviderCatalog({
+        revision: "opencode-catalog:2",
+        providers: [],
+        // Наличие установленного CLI не означает, что выключенный provider должен менять PATH.
+        cliExecutablePath: "/opt/opencode/bin/opencode",
+      });
+      expect(runtime.runtime.registryService.getProvider("opencode")).toBeUndefined();
+      expect(process.env.PATH).toBe(originalPath);
+
+      expect(() =>
+        zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+          revision: "bad",
+          providers: [
+            {
+              providerId: "opencode",
+              providerName: "OpenCode CLI",
+              config: {
+                access: { type: "local-auth" },
+                api: { type: "opencode-sdk" },
+                apiKey: "must-not-cross-the-process-boundary",
+              },
+              models: [],
+            },
+          ],
+        }),
+      ).toThrow();
+    } finally {
+      runtime.dispose();
+      process.env.PATH = originalPath;
+    }
+  });
   it("Standalone 长生命周期下载 URL Release 后跟进 Registry；Managed Worker 不下载", async () => {
     const root = await temporaryDirectory();
     const builtin = JSON.parse(
@@ -786,6 +866,32 @@ function completeZCodeBuiltinModelRule() {
           map: '{"max_completion_tokens":maxOutputTokens}',
         },
       },
+    },
+  } as const;
+}
+
+function completeZCodeBuiltinModelConfig() {
+  return {
+    enabled: true,
+    properties: {
+      requiresMfjsToolSchema: false,
+      contextWindow: 32_000,
+      inputFormat: {
+        supportsText: true,
+        supportsImage: false,
+        supportsVideo: false,
+        supportsAudio: false,
+        supportsPdf: false,
+      },
+      outputFormat: { supportsText: true },
+      supportsToolCall: true,
+      supportsJsonSchemaOutput: false,
+      supportsNativeWebSearch: false,
+      supportsMidConversationSystem: false,
+    },
+    optionSpecs: {
+      reasoningLevel: { values: ["disabled"], map: "{}" },
+      maxOutputTokens: { max: 4_000, map: "{}" },
     },
   } as const;
 }

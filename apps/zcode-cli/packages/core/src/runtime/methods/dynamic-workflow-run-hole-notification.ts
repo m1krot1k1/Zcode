@@ -20,7 +20,7 @@ import { formatWorkflowHoleNotification } from "../../runtime-task/workflow-noti
 import type { AgentRuntimeInternal } from "../internal.js";
 
 /** 留白到达的事件种类（引擎的 `RunEvent.type`）。 */
-export const HOLE_REACHED_EVENT_TYPE = "hole-reached";
+const HOLE_REACHED_EVENT_TYPE = "hole-reached";
 
 /** manifest 载荷与通知里 prompt 的界（spec：4000 字符，截断以 `…` 收尾，与升级通知同界）。 */
 const WORKFLOW_HOLE_PROMPT_MAX_CHARS = 4_000;

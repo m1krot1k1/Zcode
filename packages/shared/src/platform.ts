@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 跨端 platform contract 集中声明 renderer 能力；OAuth 与 browser lifecycle 必须保持 desktop/web 类型合同，本 MR 不拆分平台边界。 */
 import type {
   DockerConnectOptions,
   RemoteTarget,
@@ -24,6 +23,7 @@ import type {
   WebRemoteControlWorkspaceTarget,
 } from "./web-remote-control.js";
 import type { AppSettings, Locale } from "./protocol.js";
+import type { VoiceDictationPort } from "./voice-dictation/index.js";
 import type { ArmsCustomEventPayload, RendererTelemetryEventPayload } from "./telemetry.js";
 import type {
   RendererActionTraceBatchV1,
@@ -681,6 +681,9 @@ export type CuaOsSupport =
  * 业务服务（文件、终端、凭据等）走 IServiceAccessor 的 RPC 通道。
  */
 export interface IPlatformService {
+  /** Desktop-only local voice dictation backed by the bundled Hex engine. */
+  voiceDictation?: VoiceDictationPort;
+
   /** 是否支持当前客户端本机文件的默认应用与目录操作；Web 不具备此能力。 */
   canOpenLocalFiles?: boolean;
 
@@ -701,6 +704,14 @@ export interface IPlatformService {
 
   /** 打开系统文件选择框，返回选中文件路径或 null */
   selectFile(): Promise<string | null>;
+
+  /** Desktop-only: проверить указанный proxy endpoint и вернуть наблюдаемый внешний IP. */
+  testProxyConnectivity?(
+    proxyEndpoint: string,
+  ): Promise<
+    | { ok: true; outboundIp: string }
+    | { ok: false; reason: "invalid_proxy" | "connection_failed" | "timeout" | "invalid_response" }
+  >;
 
   /** 打开系统多文件选择框，返回选中的文件路径；取消时返回空数组 */
   selectFiles?(): Promise<string[]>;

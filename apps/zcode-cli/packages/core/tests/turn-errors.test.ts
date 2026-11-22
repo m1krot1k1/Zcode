@@ -3,10 +3,49 @@ import { SessionEventType } from "@zcode/contracts";
 import { appendEvent } from "../src/runtime/methods/events.js";
 import {
   appendTurnOutcomeEvent,
+  childAssistantResultText,
   createExternalTurnFaultError,
   createTurnFailureError,
   projectExecutionErrorPayload,
+  SWARM_RECONCILED_RESULT_MAX_CHARS,
 } from "../src/runtime/helpers/turn-errors.js";
+
+describe("child assistant result text", () => {
+  it("keeps the last assistant reply and drops tool, reasoning, and user text", () => {
+    const text = childAssistantResultText([
+      { info: { role: "user" }, parts: [{ type: "text", text: "USER_PROMPT_MARKER" }] },
+      {
+        info: { role: "assistant" },
+        parts: [
+          { type: "text", text: "first" },
+          { type: "tool", text: "TOOL_SECRET_OUTPUT" },
+          { type: "reasoning", text: "REASONING_MARKER" },
+          { type: "text", text: "ignored aside", ignored: true },
+        ],
+      },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "  final answer  " }] },
+    ]);
+    expect(text).toBe("final answer");
+  });
+
+  it("returns undefined when the child never wrote assistant text", () => {
+    expect(
+      childAssistantResultText([
+        { info: { role: "assistant" }, parts: [{ type: "tool", text: "only a tool" }] },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("caps the copied reply at the journal limit", () => {
+    const text = childAssistantResultText([
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: "я".repeat(SWARM_RECONCILED_RESULT_MAX_CHARS + 25) }],
+      },
+    ]);
+    expect(text).toHaveLength(SWARM_RECONCILED_RESULT_MAX_CHARS);
+  });
+});
 
 describe("turn abort outcome", () => {
   it.each([
@@ -197,6 +236,27 @@ describe("projectExecutionErrorPayload", () => {
       underlyingErrorMessage: "primary failure",
       underlyingErrorDetail: "primary detail",
     });
+  });
+
+  it("suppresses the OpenCode SDK model-ID guess from nested error details", () => {
+    const sdkError = new Error(
+      'OpenCode returned no response data for model "opencode/deepseek-v4.1-flash-free". This usually means the configured provider/model ID is invalid or unavailable. Original error: Unexpected server error.',
+    );
+    const modelError = Object.assign(
+      new Error(
+        "OpenCode's local server failed while processing the request. Check the OpenCode CLI logs; the model ID has not been identified as the cause.",
+        { cause: sdkError },
+      ),
+      { code: "model_request_failed" },
+    );
+
+    const projection = projectExecutionErrorPayload(modelError);
+    const visible = JSON.stringify(projection);
+
+    expect(projection.message).toContain("local server failed");
+    expect(projection.underlyingErrorMessage).toContain("model ID has not been identified as the cause");
+    expect(visible).not.toContain("configured provider/model ID is invalid");
+    expect(visible).not.toContain("Original error: Unexpected server error");
   });
 
   it("uses model/network cause as the visible message and keeps low-level detail", () => {

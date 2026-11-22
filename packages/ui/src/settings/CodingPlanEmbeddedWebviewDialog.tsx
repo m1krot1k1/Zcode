@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- Coding Plan webview 容器集中维护凭据注入、购买完成回传、三方支付导航和错误兜底。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
 import { usePlatform } from "@/hooks/usePlatform.js";
@@ -12,25 +11,11 @@ import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { normalizeThemePreference, resolveTheme } from "@/useTheme.js";
 import type { CodingPlanProviderId } from "@/settings/model-provider-section/constants.js";
 import type { CodingPlanFunnelContext } from "@/lib/codingPlanFunnelTelemetry.js";
-import {
-  buildCodingPlanEmbeddedWebviewUrl,
-  buildCodingPlanEmbeddedReportContext,
-  createCodingPlanAuthInjectionScript,
-  createCodingPlanCredentialClearScript,
-  createCodingPlanLangInjectionScript,
-  createCodingPlanScrollbarHideScript,
-  getCodingPlanCredentialKeys,
-  isTrustedCodingPlanEmbeddedWebviewUrl,
-  resolveCodingPlanEmbeddedOrigin,
-  resolveCodingPlanWebsiteProvider,
-  type CodingPlanEmbeddedCredentials,
-  type CodingPlanEmbeddedTheme,
-  type CodingPlanPurchaseAudience,
-  CODING_PLAN_WEBVIEW_OVERRIDE_ENV_KEY,
-} from "@/settings/model-provider-section/codingPlanEmbeddedWebview.js";
+import { buildCodingPlanEmbeddedWebviewUrl, buildCodingPlanEmbeddedReportContext, createCodingPlanAuthInjectionScript, createCodingPlanCredentialClearScript, createCodingPlanLangInjectionScript, createCodingPlanScrollbarHideScript, getCodingPlanCredentialKeys, isTrustedCodingPlanEmbeddedWebviewUrl, resolveCodingPlanEmbeddedOrigin, resolveCodingPlanWebsiteProvider, type CodingPlanEmbeddedCredentials, type CodingPlanEmbeddedTheme, type CodingPlanPurchaseAudience } from "@/settings/model-provider-section/codingPlanEmbeddedWebview.js";
 import {
   CodingPlanWebviewChannels,
   type CodingPlanPurchaseCompletePayload,
+  toLegacyBilingualLocale,
   ZCODE_ENV,
   ZCODE_VERSION,
 } from "@zcode/shared";
@@ -92,8 +77,8 @@ export function CodingPlanEmbeddedWebviewDialog({
   const webviewRef = useRef<ElectronWebviewTag | null>(null);
   const onOpenResultRef = useRef(onOpenResult);
   onOpenResultRef.current = onOpenResult;
-  // 当前 locale 作为 webview 语言 hint / 注入值；Locale 与 CodingPlanWebviewLocale 同构。
-  const webviewLocale = locale;
+  // 官网 webview 目前只接受中英；俄语只保留在 ZCode 外层界面。
+  const webviewLocale = toLegacyBilingualLocale(locale);
   const webviewCleanupRef = useRef<(() => void) | null>(null);
   // webview 是否已 dom-ready：executeJavaScript 只在 ready 后调用，
   // 否则会抛 "WebView must be attached to the DOM and dom-ready emitted"。
@@ -520,4 +505,4 @@ export function CodingPlanEmbeddedWebviewDialog({
   );
 }
 
-export { CODING_PLAN_WEBVIEW_OVERRIDE_ENV_KEY };
+

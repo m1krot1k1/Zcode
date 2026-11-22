@@ -13,7 +13,7 @@ export interface ComposerEffectiveBindings {
 }
 
 /** Enter 族事件在 composer 内的最终动作。 */
-export type ComposerKeyAction = "send" | "newline";
+type ComposerKeyAction = "send" | "newline";
 
 /**
  * 按生效表解析 composer 动作（改绑层，统一开放策略）。

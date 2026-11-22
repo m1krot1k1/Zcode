@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { once } from "node:events";
 import { AddressInfo } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -80,6 +81,7 @@ describe("static route path containment", () => {
       spaFallback: true,
     });
     servers.push(server);
+    if (!server.listening) await once(server, "listening");
     return (server.address() as AddressInfo).port;
   }
 
@@ -87,6 +89,12 @@ describe("static route path containment", () => {
     const port = await startStaticServer();
     expect((await fetch(`http://127.0.0.1:${port}/Z:/marker.txt`)).status).toBe(404);
     expect((await fetch(`http://127.0.0.1:${port}/Z%3A/marker.txt`)).status).toBe(404);
+  });
+
+  it("битый percent-encoding даёт 404, а не 500 со stack trace", async () => {
+    const port = await startStaticServer();
+    const response = await fetch(`http://127.0.0.1:${port}/%E0%A4%A`);
+    expect(response.status).toBe(404);
   });
 
   it("编码形式的 .. 在 WHATWG URL 归一化后落回根内，未命中时走 SPA fallback 而非越界", async () => {

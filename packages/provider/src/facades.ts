@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- Settings/Selection Facade 共享同一套 Registry 投影与写入边界。 */
 import type { ConfigValidationIssue } from "./config-overlay.js";
 import type { ProviderModelMembership } from "./config-service.js";
 import type {
@@ -244,7 +243,7 @@ export class ProviderSettingsFacade {
         snapshot.config.zcodeBuiltinModelRules,
         snapshot.config.personalModels,
       );
-      const config = modelRules.resolve({
+      const config = modelRules.resolveForModelApi({
         providerId: input.providerId,
         templateId: provider.templateId,
         modelId: input.modelId,
@@ -261,7 +260,7 @@ export class ProviderSettingsFacade {
     }
 
     const personalConfig = parseModelConfig(input.personalConfig);
-    const inheritedConfig = snapshot.config.zcodeBuiltinModelRules.resolve({
+    const inheritedConfig = snapshot.config.zcodeBuiltinModelRules.resolveForModelApi({
       providerId: input.providerId,
       templateId: provider.templateId,
       modelId: input.modelId,
@@ -281,7 +280,7 @@ export class ProviderSettingsFacade {
     const config = ModelConfigRules.composeEffective(
       snapshot.config.zcodeBuiltinModelRules,
       personalRules,
-    ).resolve({
+    ).resolveForModelApi({
       providerId: input.providerId,
       templateId: provider.templateId,
       modelId: input.modelId,
@@ -670,6 +669,8 @@ function createProviderSettingsView(input: {
     providerTemplates: Object.freeze(
       (input.zcodeBuiltinProviderTemplates ?? ProviderTemplateMap.empty())
         .entries()
+        // 兼容项只服务已保存的连接；不能再次作为新建入口暴露给用户。
+        .filter(([, template]) => !template.deprecated)
         .map(([templateId, template]) =>
           Object.freeze({
             templateId,

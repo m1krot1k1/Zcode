@@ -120,7 +120,7 @@ function getReservedCanonicalKeys(): {
   return reservedCanonicalKeysCache;
 }
 
-export interface ShortcutBindingConflict {
+interface ShortcutBindingConflict {
   kind: "reserved" | "occupied";
   /** occupied 时的占用命令。 */
   ownerCommandId?: ShortcutCommandId;

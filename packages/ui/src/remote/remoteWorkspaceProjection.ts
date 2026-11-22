@@ -1,11 +1,4 @@
-import {
-  parseRemoteWorkspaceIdentity,
-  type SourceServerConnectionStateSnapshot,
-  type SourceServerManagementSnapshot,
-  type SourceServerRecord,
-  type SourceServerWorkspaceHistoryEntry,
-  type WorkspacePurpose,
-} from "@zcode/shared";
+import { parseRemoteWorkspaceIdentity, type SourceServerManagementSnapshot, type SourceServerRecord, type SourceServerWorkspaceHistoryEntry, type WorkspacePurpose } from "@zcode/shared";
 import {
   buildAggregatedSourceStatusMap,
   type AggregatedSourceStatus,
@@ -52,7 +45,7 @@ export type WorkspaceAttachmentViewState =
   | "recovering"
   | "failed";
 
-export interface RemoteWorkspaceAttachmentFact {
+interface RemoteWorkspaceAttachmentFact {
   remoteSessionId: string;
   workspaceKey: string;
   sourceServerId?: string;
@@ -99,7 +92,7 @@ export interface RemoteWorkspaceProjection {
   executionContexts: RemoteExecutionContextView[];
 }
 
-export interface RemoteWorkspaceProjectionInput {
+interface RemoteWorkspaceProjectionInput {
   managementSnapshot?: SourceServerManagementSnapshot | null;
   tabs: readonly WorkspaceTabState[];
   attachments?: readonly RemoteWorkspaceAttachmentFact[];
@@ -123,7 +116,7 @@ function stateForOpenWorkspace(
   return "attaching";
 }
 
-export function isRemoteWorkspaceTab(tab: WorkspaceTabState): boolean {
+function isRemoteWorkspaceTab(tab: WorkspaceTabState): boolean {
   return Boolean(tab.remoteSessionId || tab.remoteTarget || tab.workspaceIdentity);
 }
 
@@ -214,20 +207,4 @@ export function buildRemoteWorkspaceProjection(
   });
 
   return { devices, openWorkspaces, projectHistory, executionContexts };
-}
-
-export function resolveSourceStatus(
-  snapshot: SourceServerManagementSnapshot | null | undefined,
-  sourceServerId: string,
-): AggregatedSourceStatus {
-  return buildAggregatedSourceStatusMap(snapshot).get(sourceServerId) ?? "offline";
-}
-
-export function isSourceConnectionStateOnline(
-  states: readonly SourceServerConnectionStateSnapshot[],
-  sourceServerId: string,
-): boolean {
-  return states.some(
-    (state) => state.sourceServerId === sourceServerId && state.state === "online",
-  );
 }

@@ -6,6 +6,7 @@ import {
   ModelOptionSpecsConfig,
   ModelOutputFormatConfig,
   ModelPropertiesConfig,
+  LocalAuthAccessConfig,
   ProviderApiConfig,
   ProviderConfig,
   ZhipuAccountAccessConfig,
@@ -32,7 +33,7 @@ interface LegacyTestProviderConfig {
   readonly createLanguageModel?: (modelId: string) => unknown;
   readonly accountMode?: ZhipuAccountMode;
   readonly headers?: Readonly<Record<string, string>>;
-  readonly kind: "anthropic" | "custom" | "openai" | "openai-compatible";
+  readonly kind: "anthropic" | "custom" | "openai" | "openai-compatible" | "opencode-sdk";
   readonly name?: string;
   readonly providerOptions?: Readonly<Record<string, unknown>>;
 }
@@ -89,6 +90,7 @@ export class TestProviderConfigFixture {
   resolve(
     selection: ModelSelection | string,
     options: ModelOptions = { maxOutputTokens: 32_000, reasoningLevel: "disabled" },
+    modelApi?: RegistryModelConfig["api"],
   ): AiSdkResolvedModel {
     const resolvedSelection = parseTestSelection(selection, this.config.defaultProvider);
     const resolved = this.resolveConfig(resolvedSelection);
@@ -96,6 +98,7 @@ export class TestProviderConfigFixture {
     if (!source) throw new Error(`Unknown test provider: ${resolvedSelection.providerId}`);
     const bound = this.execution.bindModel({
       ...resolved,
+      modelApi,
       supportsJsonSchemaOutput: false,
       optionSpecs: defaultOptionSpecs(resolved.providerConfig.api.type),
     });
@@ -108,6 +111,10 @@ export class TestProviderConfigFixture {
   executionConfig(): AiSdkModelExecutionConfig {
     const { providers: _providers, defaultProvider: _defaultProvider, ...execution } = this.config;
     return execution;
+  }
+
+  dispose(): Promise<void> {
+    return this.execution.dispose();
   }
 }
 
@@ -206,6 +213,8 @@ function createRegistryModelConfig(
 
 function maxOutputTokensMap(apiType: RegistryProviderConfig["api"]["type"]): string {
   switch (apiType) {
+    case "opencode-sdk":
+      return "{}";
     case "anthropic-messages":
       return '{"max_tokens": maxOutputTokens}';
     case "openai-chat-completions":
@@ -243,13 +252,17 @@ function toRegistryProviderConfig(
 ): RegistryProviderConfig {
   const effectiveAccountMode = accountMode ?? source.accountMode;
   const apiType =
-    source.kind === "anthropic"
+    source.kind === "opencode-sdk"
+      ? "opencode-sdk"
+      : source.kind === "anthropic"
       ? "anthropic-messages"
       : source.kind === "openai"
         ? "openai-responses"
         : "openai-chat-completions";
   return new ProviderConfig({
-    access: effectiveAccountMode
+    access: source.kind === "opencode-sdk"
+      ? new LocalAuthAccessConfig()
+      : effectiveAccountMode
       ? new ZhipuAccountAccessConfig({
           accountType: "zai",
           mode: effectiveAccountMode,
@@ -257,11 +270,15 @@ function toRegistryProviderConfig(
       : source.apiKey
         ? new ApiKeyAccessConfig({ apiKey: source.apiKey })
         : new ApiKeyAccessConfig({ apiKey: "test-api-key" }),
-    api: new ProviderApiConfig({
-      baseUrl: source.baseURL ?? "https://adapter.test/v1",
-      headers: source.headers,
-      type: apiType,
-    }),
+    api: new ProviderApiConfig(
+      apiType === "opencode-sdk"
+        ? { type: apiType }
+        : {
+            baseUrl: source.baseURL ?? "https://adapter.test/v1",
+            headers: source.headers,
+            type: apiType,
+          },
+    ),
     builtinModelIds: [],
     enabled: true,
     id: providerId,

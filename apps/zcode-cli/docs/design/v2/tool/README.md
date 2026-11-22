@@ -134,7 +134,7 @@ provider-visible `<tool_use_error>`，不得按 tool name 分支或解析英文 
 
 `inputSchema` 和 `outputSchema` 是 provider-neutral JSON Schema，不是 Zod 对象；但内置 tool 的 JSON Schema 不应再手写维护。内置 tool 必须以 Zod runtime schema 作为唯一源，通过 `packages/contracts/src/tools/json-schema.ts` 的统一转换入口派生 provider-neutral JSON Schema。这样可以避免 `enum` 缺少 `type`、optional 字段 required 漂移、嵌套 object 约束不一致等问题。
 
-外部 tool（例如 MCP、dynamic tool）可以携带原生 JSON Schema，但进入 registry 或 provider adapter 前必须经过同一类 schema normalization：补齐 object `properties`、为 `enum` / `const` 推断显式 `type`、移除 provider 不消费的 `$schema` / `$ref` / `definitions` 等生成细节。provider adapter 只能消费归一化后的 JSON Schema，不直接透传未知来源 schema。
+外部 tool（例如 MCP、dynamic tool）可以携带原生 JSON Schema。内置 Zod 转换仍去掉 `$schema` / `$ref` / `definitions` 等生成细节，因为 `$refStrategy: none` 已经内联引用。provider 发送路径不重复做这步删除：`toAiSdkTools` 先深拷贝，只递归去掉 `propertyNames`，保留 `additionalProperties` 和外部 schema 里的 `$ref` / `$defs` / `definitions`；只有 MFJS 投影才在副本上归一化并提升本地引用。`Record<string, T>` 保留 `additionalProperties`，不得额外生成或透传 `propertyNames`：OpenCode Go Responses 的严格函数编译器会拒绝该关键字，导致整个请求失败。
 
 Zod、Effect Schema 或其他 runtime schema 可以作为 `runtimeInputSchema` / `runtimeOutputSchema` 保留给 executor 后续校验使用；当前内置 tool 先统一使用 Zod。禁止为同一个内置 tool 长期并行维护一份手写 JSON Schema 和一份 Zod schema。
 

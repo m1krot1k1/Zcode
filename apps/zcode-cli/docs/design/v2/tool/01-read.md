@@ -43,6 +43,7 @@
 
 - 文本内容必须通过专用模型可见序列化输出，不能走通用 `JSON.stringify(output)`。
 - 文本内容会加行号，格式类似 `cat -n`，当前 provider-visible 格式为 `<lineNumber>\t<fileContentLine>`。
+- `offset`/`limit` 只读取文件范围。范围未覆盖整份文件时，结果同时明确显示实际行号范围和 Read 统计的总行数；模型不得把返回行数当作文件总行数。需要独立核实 `wc -l` 等行数口径时，使用完整文件计数结果。
 - 行号和第一个 tab 是 Read 视图前缀，不属于文件内容；第一个 tab 之后的所有字符，包括额外 tab 和空格缩进，才是后续 `Edit.old_string` 应复制的真实内容。
 - 文本读取结果是 filesystem adapter 解码后的 Unicode 逻辑文本。adapter 必须自动识别 UTF-8、UTF-16LE 以及常见中文 legacy 编码（GB2312 / GBK / GB18030），并把原始编码保存在 metadata 中供后续 mutation tool 保真写回；模型不需要也不应该通过 shell 或脚本转码后再编辑。
 - 为兼容历史 session、日志回放和模型缓存，`Edit` 行号前缀剥离必须同时接受 `<lineNumber>\t<fileContentLine>` 和 `<lineNumber>: <fileContentLine>`；当前 `Read` 输出使用前者以保持 provider-visible 基线一致。

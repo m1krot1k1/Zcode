@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- HTTP、WebSocket 与静态资源路由集中注册，保持同一鉴权顺序。 */
 import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
@@ -139,7 +138,7 @@ function setupChannelServer(
   });
 }
 
-export interface HttpServerOptions {
+interface HttpServerOptions {
   topicResourcePeers?: TopicResourcePeers;
   serverId?: string;
   virtualProjects?: boolean;
@@ -152,6 +151,11 @@ export interface HttpServerOptions {
   spaFallback?: boolean;
   staticRoot?: string;
   workspaces?: ServerRemoteWorkspaceInfo[];
+  /**
+   * 仅在“能连到本 server 的对端都是受信 TLS 终止代理”时开启，才允许根据
+   * X-Forwarded-Proto 给 lite-token cookie 加 Secure。默认 false，避免伪造头。
+   */
+  trustProxy?: boolean;
 }
 
 function readTrimmedEnv(name: string): string | undefined {
@@ -186,7 +190,7 @@ function createServerInfo(options: HttpServerOptions): ServerRemoteInfo {
       : {}),
     version: ZCODE_VERSION,
     protocolVersion: SERVER_REMOTE_PROTOCOL_VERSION,
-    authRequired: options.authRequired ?? Boolean(readTrimmedEnv("ZCODE_SERVER_TOKEN")),
+    authRequired: options.authRequired ?? Boolean(options.authToken?.trim()),
     workspaces: resolveServerWorkspaces(options),
     compatibility: ZCODE_COMPATIBILITY_MANIFEST,
     migration: { failedPathCount: options.migrationFailedPathCount ?? 0 },
@@ -201,6 +205,77 @@ function createServerInfo(options: HttpServerOptions): ServerRemoteInfo {
 }
 
 const zcodeLiteTokenCookieName = "zcode_lite_token";
+const ZCODE_SERVER_TRUST_PROXY_ENV = "ZCODE_SERVER_TRUST_PROXY";
+
+// 显式浏览器端过期：服务端令牌是长期有效的，session cookie 会在浏览器会话结束后消失，
+// 行为不一致。30 天与常见“保持登录”语义一致。
+const LITE_TOKEN_COOKIE_MAX_AGE_SECONDS = 2_592_000;
+
+/**
+ * 读取可信代理开关。只有显式 1/true/yes 才开启；未知值一律 false，
+ * 避免把任意部署误判成“前面一定有受信 TLS 代理”。
+ */
+export function resolveTrustProxyFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const raw = env[ZCODE_SERVER_TRUST_PROXY_ENV]?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+/**
+ * 判定 lite-token cookie 是否应带 Secure。
+ *
+ * 不使用 `c.req.url` 的 scheme：Node/Hono adapter 接受 absolute-form request target
+ * （`GET https://host/path HTTP/1.1`），plain socket 上的客户端可以借此伪造 https:。
+ * 只信真实 socket 的加密状态，或显式开启 trustProxy 后的 X-Forwarded-Proto。
+ * 多值代理链取最后一个 hop：它由最近的可信代理写入，最左侧才是客户端可伪造的原始值。
+ */
+export function isLiteTokenCookieSecure(input: {
+  /** 真实 Node socket 是否 TLS；来自连接本身，不可由请求头伪造。 */
+  socketEncrypted: boolean;
+  /** 是否显式信任前置 TLS 代理（HttpServerOptions.trustProxy）。 */
+  trustProxy: boolean;
+  /** 原始 X-Forwarded-Proto；只有 trustProxy 为 true 时才参与判定。 */
+  forwardedProto: string | undefined;
+}): boolean {
+  if (input.socketEncrypted) {
+    return true;
+  }
+  if (!input.trustProxy) {
+    return false;
+  }
+  const hops = input.forwardedProto?.split(",") ?? [];
+  const nearestHop = hops.at(-1)?.trim().toLowerCase();
+  return nearestHop === "https";
+}
+
+export function buildLiteTokenSetCookie(token: string, options: { secure: boolean }): string {
+  const attributes = [
+    `${zcodeLiteTokenCookieName}=${encodeURIComponent(token)}`,
+    "Path=/",
+    `Max-Age=${LITE_TOKEN_COOKIE_MAX_AGE_SECONDS}`,
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (options.secure) {
+    attributes.push("Secure");
+  }
+  return attributes.join("; ");
+}
+
+interface NodeRequestBindings {
+  incoming?: { socket?: { encrypted?: boolean } };
+}
+
+function readRequestSocketEncrypted(c: Context): boolean {
+  // @hono/node-server 把 Node HttpBindings 放在 c.env；socket.encrypted 只有真实 TLS 连接为 true。
+  const bindings: unknown = c.env;
+  if (typeof bindings !== "object" || bindings === null) {
+    return false;
+  }
+  const incoming = (bindings as NodeRequestBindings).incoming;
+  return incoming?.socket?.encrypted === true;
+}
 
 const staticMimeTypes: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -240,7 +315,7 @@ function parseCookieHeader(header: string | undefined): Map<string, string> {
   return cookies;
 }
 
-function hasValidLiteToken(c: Context, token: string): boolean {
+function hasValidLiteToken(c: Context, token: string, trustProxy: boolean): boolean {
   const authorization = c.req.header("authorization");
   if (
     authorization?.startsWith("Bearer ") &&
@@ -252,7 +327,13 @@ function hasValidLiteToken(c: Context, token: string): boolean {
   if (url.searchParams.get("token") === token) {
     c.header(
       "Set-Cookie",
-      `${zcodeLiteTokenCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`,
+      buildLiteTokenSetCookie(token, {
+        secure: isLiteTokenCookieSecure({
+          socketEncrypted: readRequestSocketEncrypted(c),
+          trustProxy,
+          forwardedProto: c.req.header("x-forwarded-proto"),
+        }),
+      }),
     );
     return true;
   }
@@ -295,7 +376,16 @@ async function resolveStaticFile(
 ): Promise<string | null> {
   const root = resolve(staticRoot);
   const normalizedPathname = pathname === "/" ? "/index.html" : pathname;
-  const relativePath = decodeURIComponent(normalizedPathname).replace(/^\/+/, "");
+  // 修复原因：битый percent-encoding (`/%E0%A4%A`) выбрасывал URIError мимо try/catch
+  // вызывающего кода → HTTP 500 и stack trace в stderr. Такого файла не существует,
+  // поэтому отвечаем штатным 404.
+  let decodedPathname: string;
+  try {
+    decodedPathname = decodeURIComponent(normalizedPathname);
+  } catch {
+    return null;
+  }
+  const relativePath = decodedPathname.replace(/^\/+/, "");
   // 盘符路径必须在 resolve 之前拦截（含 %3A 解码后的形式），否则 Windows 上会解析到
   // 静态根所在盘之外的路径；直接 404，也不进入 SPA fallback。
   if (isPathDriveQualified(relativePath)) {
@@ -339,6 +429,16 @@ function staticContentType(filePath: string): string {
   return staticMimeTypes[extname(filePath).toLowerCase()] ?? "application/octet-stream";
 }
 
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized === "[::1]" ||
+    normalized === "localhost"
+  );
+}
+
 export function createHttpServer(
   services: ServiceCollection,
   port = 3030,
@@ -348,11 +448,20 @@ export function createHttpServer(
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
   const hostCapabilities = createHostCapabilityStore();
 
+  const host = options.host?.trim() || "127.0.0.1";
   const authToken = options.authToken?.trim();
+  // 非回环监听会把 file/terminal/git 等全部已注册服务暴露到网络；没有 token 时必须拒绝启动，
+  // 不能依赖调用方记得设置 ZCODE_SERVER_AUTH_TOKEN。
+  if (!isLoopbackHost(host) && !authToken) {
+    throw new Error(
+      `Non-loopback host ${host} requires authentication; set ZCODE_SERVER_AUTH_TOKEN or pass authToken`,
+    );
+  }
   if (authToken) {
+    const trustProxy = options.trustProxy === true;
     app.use("*", async (c, next) => {
       const pathname = new URL(c.req.url).pathname;
-      const validToken = hasValidLiteToken(c, authToken);
+      const validToken = hasValidLiteToken(c, authToken, trustProxy);
       if (!isTokenProtectedPath(pathname) || validToken) {
         await next();
         return;
@@ -467,11 +576,10 @@ export function createHttpServer(
     });
   }
 
-  const server = serve({ fetch: app.fetch, hostname: options.host, port }, () => {
+  const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
     const address = server.address();
     const listenPort = typeof address === "object" && address ? address.port : port;
-    const listenHost = options.host?.trim() || "localhost";
-    log(`http://${listenHost}:${listenPort}`);
+    log(`http://${host}:${listenPort}`);
   });
 
   injectWebSocket(server);

@@ -6,7 +6,11 @@ import type {
   BrowserPoint,
 } from "@zcode/contracts";
 import type { ElementHandle, Page } from "playwright-core";
-import { executeManagedPlaywrightAction, evaluatePage } from "./playwright-command.js";
+import {
+  executeManagedPlaywrightAction,
+  evaluatePage,
+  type ManagedPlaywrightContext,
+} from "./playwright-command.js";
 import {
   captureManagedCdpSnapshot,
   resolveSnapshotElement,
@@ -17,13 +21,24 @@ type PartialResult = Omit<BrowserCommandResult, "elapsedMs">;
 
 const NAVIGATION_TIMEOUT_MS = 30_000;
 
+/**
+ * Разрешённые схемы навигации.
+ *
+ * `file:` и `data:` исключены осознанно: они позволяют читать локальные файлы и
+ * обходить изоляцию origin. `about:blank` разрешён точечно, потому что это не ресурс.
+ */
 export function isAllowedManagedBrowserUrl(rawUrl: string): boolean {
+  let url: URL;
   try {
-    const url = new URL(rawUrl);
-    return url.protocol === "http:" || url.protocol === "https:" || url.href === "about:blank";
+    url = new URL(rawUrl);
   } catch {
     return false;
   }
+  if (url.href === "about:blank") return true;
+  if (url.protocol === "http:" || url.protocol === "https:") return true;
+  // `blob:` и `filesystem:` не считаем навигацией: они наследуют origin документа,
+  // носят уже загруженные данные и не дают доступа к ФС.
+  return false;
 }
 
 function normalizedModifier(modifier: BrowserKeyModifier): "Alt" | "Control" | "Meta" | "Shift" {
@@ -72,7 +87,7 @@ async function pointFor(
   throw new Error("Browser action requires a ref or x/y coordinates");
 }
 
-export async function readManagedPageState(page: Page): Promise<BrowserPageState> {
+async function readManagedPageState(page: Page): Promise<BrowserPageState> {
   const client = await page.context().newCDPSession(page);
   try {
     const history = (await client.send("Page.getNavigationHistory")) as {
@@ -130,6 +145,7 @@ async function dragPath(page: Page, path: BrowserPoint[]): Promise<void> {
 export async function executeManagedPageCommand(
   page: Page,
   command: BrowserCommand,
+  context: ManagedPlaywrightContext = {},
 ): Promise<PartialResult> {
   switch (command.method) {
     case "navigate":
@@ -285,7 +301,7 @@ export async function executeManagedPageCommand(
       return { ok: true };
     }
     case "playwright":
-      return await executeManagedPlaywrightAction(page, command.action);
+      return await executeManagedPlaywrightAction(page, command.action, context);
     case "playwrightWaitForTimeout":
       await new Promise<void>((resolve) => setTimeout(resolve, command.timeoutMs));
       return { ok: true };

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-swarm-composer",
+  "spec": "./test/e2e/conversation-session/conversation-session-swarm-composer.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-swarm-composer.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "swarm-composer-root-plan",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "Deterministic JSON response exercises runtime-owned swarm dispatch without a real model request. Non-streaming planner calls require the Anthropic JSON message envelope."
+    },
+    {
+      "id": "swarm-composer-alpha-result",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "Hold the alpha model response at a local gate until beta is also waiting, proving the two child requests overlap."
+    },
+    {
+      "id": "swarm-composer-beta-result",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "Hold the beta model response at a local gate until alpha is also waiting, proving the two child requests overlap."
+    },
+    {
+      "id": "swarm-composer-root-synthesis",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "Separate local gate holds root synthesis before any text so the test can assert live child previews while the root remains running."
+    }
+  ]
+}

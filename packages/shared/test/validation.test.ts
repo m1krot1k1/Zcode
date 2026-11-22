@@ -597,7 +597,19 @@ describe("hostResponseMessageSchema", () => {
 
     expect(parsed.toolGroupingExploreEnabled).toBe(true);
     expect(parsed.toolGroupingTerminalEnabled).toBe(true);
-    expect(parsed.toolGroupingChangesEnabled).toBe(false);
+    expect(parsed.toolGroupingChangesEnabled).toBe(true);
+    expect(parsed.toolGroupingChangesMigrationVersion).toBe(1);
+    // Старый default false без отметки миграции включается один раз.
+    expect(
+      appSettingsSchema.parse({ toolGroupingChangesEnabled: false }).toolGroupingChangesEnabled,
+    ).toBe(true);
+    // Явное выключение после миграции сохраняется.
+    expect(
+      appSettingsSchema.parse({
+        toolGroupingChangesEnabled: false,
+        toolGroupingChangesMigrationVersion: 1,
+      }).toolGroupingChangesEnabled,
+    ).toBe(false);
     expect(patch).toMatchObject({
       toolGroupingExploreEnabled: false,
       toolGroupingTerminalEnabled: false,
@@ -636,20 +648,24 @@ describe("hostResponseMessageSchema", () => {
   it("accepts explicit HTTP proxy and custom CA settings", () => {
     const parsed = appSettingsSchema.parse({
       httpProxy: "http://127.0.0.1:7890",
+      httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
       httpProxyNoProxy: "localhost,127.0.0.1",
       httpProxyCaCertPath: "/tmp/root-ca.pem",
     });
     const patch = appSettingsPatchSchema.parse({
       httpProxy: "http://127.0.0.1:7890",
+      httpProxyList: "http://127.0.0.1:7890\nsocks5://127.0.0.1:1080",
       httpProxyNoProxy: "localhost,127.0.0.1",
       httpProxyCaCertPath: "/tmp/root-ca.pem",
     });
 
     expect(parsed.httpProxy).toBe("http://127.0.0.1:7890");
+    expect(parsed.httpProxyList).toBe("http://127.0.0.1:7890\nsocks5://127.0.0.1:1080");
     expect(parsed.httpProxyNoProxy).toBe("localhost,127.0.0.1");
     expect(parsed.httpProxyCaCertPath).toBe("/tmp/root-ca.pem");
     expect(patch.httpProxyNoProxy).toBe("localhost,127.0.0.1");
     expect(patch.httpProxyCaCertPath).toBe("/tmp/root-ca.pem");
+    expect(patch.httpProxyList).toBe("http://127.0.0.1:7890\nsocks5://127.0.0.1:1080");
   });
 
   it("defaults the embedded Browser insecure certificate switch to off and accepts patches", () => {
@@ -723,6 +739,14 @@ describe("hostResponseMessageSchema", () => {
 
     expect(parsed.enabledBuiltinAgentCliProviders).toEqual(["glm"]);
     expect(patch.enabledBuiltinAgentCliProviders).toEqual(["glm"]);
+  });
+
+  it("stores OpenCode CLI provider enablement independently from API provider settings", () => {
+    expect(appSettingsSchema.parse({}).openCodeCliEnabled).toBe(false);
+    expect(appSettingsSchema.parse({ openCodeCliEnabled: true }).openCodeCliEnabled).toBe(true);
+    expect(appSettingsPatchSchema.parse({ openCodeCliEnabled: false }).openCodeCliEnabled).toBe(
+      false,
+    );
   });
 
   it("preserves SSH remote asset install mode and drops historical resource packages", () => {

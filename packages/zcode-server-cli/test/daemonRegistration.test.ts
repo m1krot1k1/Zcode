@@ -26,7 +26,8 @@ vi.mock("../src/platform/serviceManager.js", async (importOriginal) => ({
   unregisterService: serviceMocks.unregisterService,
 }));
 
-import { runServerCli } from "../src/cli.js";
+import { DAEMON_READY_WAIT_TIMEOUT_MS, runServerCli } from "../src/cli.js";
+import { CORE_READY_TIMEOUT_MS } from "../src/contracts.js";
 import { createControlServer } from "../src/ipc/controlServer.js";
 import { createServiceDescriptor } from "../src/platform/serviceManager.js";
 import { resolveCanonicalServerLayout, resolveServerLayout } from "../src/runtime/paths.js";
@@ -108,6 +109,55 @@ describe("daemon service registration", () => {
     });
     expect(serviceMocks.registerService).not.toHaveBeenCalled();
     expect(serviceMocks.fork).toHaveBeenCalledOnce();
+  });
+
+  it("waits longer than the supervisor core-ready budget for a cold daemon", () => {
+    expect(DAEMON_READY_WAIT_TIMEOUT_MS).toBeGreaterThan(CORE_READY_TIMEOUT_MS);
+  });
+
+  it("reports the persisted crash reason when daemon startup enters crash-loop-stopped", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-r2-daemon-crash-"));
+    const layout = resolveServerLayout(join(root, "server"));
+    const errors: string[] = [];
+    const output: string[] = [];
+    await mkdir(layout.runDir, { recursive: true });
+    const crashStatus = {
+      protocolVersion: 1 as const,
+      state: "crash-loop-stopped" as const,
+      pid: null,
+      port: null,
+      host: null,
+      version: "test",
+      generation: 1,
+      startedAt: Date.now(),
+      lastExitReason: "cannot load native module",
+      serviceRegistered: false,
+      runningTaskCount: 0,
+      crashBudget: { crashCount: 5, nextRestartDelayMs: 0, exhausted: true },
+      updatedAt: Date.now() + 1,
+    };
+    serviceMocks.isServiceManagerAvailable.mockResolvedValueOnce(false);
+    serviceMocks.fork.mockImplementationOnce(() => {
+      setTimeout(() => void writeStatusSnapshot(layout.statusFile, crashStatus), 0);
+      return {
+        unref: vi.fn(),
+        disconnect: vi.fn(),
+        once: vi.fn(),
+      };
+    });
+
+    const exit = await runServerCli(
+      ["serve", "--daemon", "--server-root", layout.serverRoot, "--json"],
+      {
+        stdout: { write: (value) => output.push(value) },
+        stderr: { write: (value) => errors.push(value) },
+      },
+    );
+
+    expect(exit).toBe(1);
+    const cliOutput = [...output, ...errors].join("");
+    expect(cliOutput).toContain("crash-loop-stopped");
+    expect(cliOutput).toContain("cannot load native module");
   });
 
   it("returns registration failure without starting a disguised fallback", async () => {

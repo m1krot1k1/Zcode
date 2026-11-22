@@ -51,8 +51,9 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
     ACTIVE_STATUSES.has(child.toolCall.status),
   );
   const latestChild = latestActiveChild ?? childToolCalls.at(-1);
-  const latestCommand =
-    !isOfficeMode && latestChild ? getExecuteSecondaryText(latestChild.toolCall.input) : undefined;
+  const latestCommand = latestChild
+    ? getExecuteSecondaryText(latestChild.toolCall.input)
+    : undefined;
   const runningActionLabel = latestCommand
     ? intl.formatMessage({ id: "chat.toolCall.execute.running" })
     : undefined;
@@ -117,7 +118,7 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
         id: "chat.toolCall.executeGroup.label",
       })}
       primaryText={isRunning && runningActionLabel ? runningPrimaryText : completedSummary}
-      secondaryText={isRunning ? runningSecondaryText : undefined}
+      secondaryText={isOfficeMode ? undefined : isRunning ? runningSecondaryText : undefined}
       summaryContentSeparator="·"
       expandedPrimaryText={completedSummary}
       // ToolLayout 默认会在展开态沿用 secondaryText，导致命令数量后残留当前命令。

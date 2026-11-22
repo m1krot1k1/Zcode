@@ -117,7 +117,10 @@ describe("闲时 Runtime 生命周期接入", () => {
         if (takeover) await runtime.clearAllPendingInputs(runtime.rootTraceContext);
         await expect.poll(() => events.filter((e) => e.type === "completed").length).toBe(1);
         expect(children).toEqual(["idle", takeover ? "paid" : "idle"]);
-        expect(main.slice(2).every((provider) => provider === (takeover ? "paid" : "idle"))).toBe(
+        // После завершения idle-исполнения main-запросы продолжаются уже на
+        // пользовательской модели: возобновлённый ребёнок сохраняет idle-модель,
+        // но сам main-turn больше не принадлежит off-peak исполнению.
+        expect(main.slice(2).every((provider) => provider === (takeover ? "paid" : "user"))).toBe(
           true,
         );
         const childId = Object.values(registry.all())[0]!.childSessionId!;

@@ -4,9 +4,11 @@ import {
   createCoreError,
   getCurrentModelInvocationContext,
   runWithModelInvocationContext,
+  SessionEventType,
   type Model,
   type ModelInvocationContext,
   type ModelRequest,
+  type SessionEvent,
 } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelFactoryInput } from "../types.js";
@@ -26,12 +28,18 @@ export function createRuntimeModel(
      * 目前只有带 selectionFallback 声明的执行作用域 Selection 使用 single-attempt。
      */
     retryBudget?: ModelRetryBudget;
+    /** Explicitly use the low-priority queue for background sidecars. */
+    admissionPriority?: "main" | "background";
   },
 ): Model {
-  const { retryBudget, scope = "session", ...factoryInput } = input;
+  const { admissionPriority = "main", retryBudget, scope = "session", ...factoryInput } = input;
   // 未绑定 Session 可恢复历史；仅在执行入口拒绝缺失选择，Factory 契约仍严格。
-  if (!factoryInput.selection) {
-    throw createCoreError(CoreErrorType.ConfigurationError, "Select a model before continuing", {
+  // Bugfix：历史快照与未校验的协议输入会传 `{ providerId: "glm", modelId: null | "" }`，
+  // 旧守卫只判断 selection 是否存在，这种空模型会一路走到 registry（model-not-found 被包成
+  // protocol error）或 `selection.options!` 的 TypeError，本轮既不失败也不结束，只能等超时。
+  // 修复依据：执行入口只接受 providerId 与 modelId 都非空的完整选择。
+  if (!isCompleteModelSelection(factoryInput.selection)) {
+    throw createCoreError(CoreErrorType.NoModelSelected, "Select a model before continuing", {
       recoverable: true,
     });
   }
@@ -42,8 +50,39 @@ export function createRuntimeModel(
       ? "other"
       : resolveModelRequestSessionTypeFromTaskType(runtime.config.taskType),
     retryBudget,
+    admissionPriority,
   );
   return getOffPeakModelBinding(input.requestDependencies)?.wrap(model) ?? model;
+}
+
+/**
+ * 判断 Selection 是否指向一个真实模型。
+ *
+ * Selection 可能来自历史快照或未校验的协议输入，类型声明（`providerId: string`）不保证运行时
+ * 非空：`{ providerId: "glm", modelId: null }` 在日志里就是 `model = NULL` 的那次挂起。
+ */
+function isCompleteModelSelection(
+  selection: { readonly providerId?: string | null; readonly modelId?: string | null } | undefined,
+): selection is RuntimeModelFactoryInput["selection"] {
+  const providerId = typeof selection?.providerId === "string" ? selection.providerId.trim() : "";
+  const modelId = typeof selection?.modelId === "string" ? selection.modelId.trim() : "";
+  return providerId.length > 0 && modelId.length > 0;
+}
+
+/** Возвращает ID реально завершившейся успешной provider-попытки для ModelComplete. */
+export function getLatestCompletedModelRequestId(
+  events: readonly SessionEvent[],
+): string | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.type !== SessionEventType.ModelNetworkStatus) continue;
+    const payload = event.payload as { type?: string; requestId?: unknown };
+    if (payload.type !== "model_request_completed") continue;
+    return typeof payload.requestId === "string" && payload.requestId.length > 0
+      ? payload.requestId
+      : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -61,16 +100,22 @@ function withRuntimeInvocationLayer(
   model: Model,
   sessionType: ModelRequestSessionType,
   retryBudget?: ModelRetryBudget,
+  admissionPriority: "main" | "background" = "main",
 ): Model {
+  const admission =
+    admissionPriority === "background"
+      ? (runtime.backgroundModelRequestAdmission ?? runtime.modelRequestAdmission)
+      : runtime.modelRequestAdmission;
   const layer: ModelInvocationContext = {
+    // Bugfix: вспомогательные запросы OpenCode (инструменты, compaction, заголовки) обходили
+    // основной turn wrapper и теряли workspace. Привязываем каталог к каждому runtime model handle.
+    workingDirectory: runtime.workingDirectory,
     // 原因：标题、Memory、工具调用曾按用途覆写 other，丢失宿主分类。
     // 会话类型统一绑定在句柄上；工作区独立请求即使借用会话 runtime 也保持 other。
     modelRequestSessionType: sessionType,
     // 带退回声明的执行句柄显式传入 single-attempt，其余沿用 taskType 默认预算。
     modelRetryBudget: retryBudget ?? resolveModelRetryBudgetFromTaskType(runtime.config.taskType),
-    ...(runtime.modelRequestAdmission === undefined
-      ? {}
-      : { modelRequestAdmission: runtime.modelRequestAdmission }),
+    ...(admission === undefined ? {} : { modelRequestAdmission: admission }),
   };
   return withModelInvocationContext(model, () => layer);
 }

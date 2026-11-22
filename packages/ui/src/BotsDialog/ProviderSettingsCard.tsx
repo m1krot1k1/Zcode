@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- ProviderSettingsCard 集中维护 Bot 凭据、二维码和绑定状态机展示；后续拆分 provider 子组件后移除。 */
 import {
   CircleAlert,
   Clock3,

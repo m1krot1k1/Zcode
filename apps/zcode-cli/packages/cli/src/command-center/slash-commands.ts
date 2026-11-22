@@ -14,7 +14,7 @@ import { isWorkflowModeEnabled } from "../workflow-mode.js";
 
 const WORKFLOW_COMMAND_NAME = "workflow";
 
-export type SlashCommandSurfaceOptions = {
+type SlashCommandSurfaceOptions = {
   /** 缺席不设门（单测、嵌入方）；CLI 入口总会传入解析后的 `--workflow-mode`。 */
   workflowMode?: DynamicWorkflowMode;
 };
@@ -35,7 +35,6 @@ export function listAvailableCommandNames(options?: SlashCommandSurfaceOptions):
   return visibleHelpEntries(options).map((entry) => `/${entry.name}`);
 }
 
-const SKILL_COMMAND_USAGE = "Usage: /skill [<skill-name> [task]]";
 
 export function parseSlashCommand(input: string): SlashCommand | null {
   if (!input.startsWith("/")) return null;
@@ -51,6 +50,15 @@ export function parseSlashCommand(input: string): SlashCommand | null {
     return {
       args,
       name: "compact",
+      rawName,
+      type: "known",
+    };
+  }
+
+  if (rawName === "enhance") {
+    return {
+      args,
+      name: "enhance",
       rawName,
       type: "known",
     };
@@ -263,10 +271,6 @@ export function buildManualSkillPrompt(skillName: string, task: string): string 
     "",
     taskBlock,
   ].join("\n");
-}
-
-export function manualSkillCommandUsage(): string {
-  return SKILL_COMMAND_USAGE;
 }
 
 export function listSlashCommandSuggestions(

@@ -99,9 +99,13 @@ function createInputValidationError(
   errors: string[],
   modelContent?: string,
 ): Error {
+  const message =
+    entry.metadata.name === "CodeIndex"
+      ? `CodeIndex input failed its action schema: ${errors.slice(0, 3).join("; ")}. Use one of status, search, context, impact, or trace and provide that action's required fields.`
+      : "Tool input failed inputSchema validation";
   return createCoreError(
     CoreErrorType.ToolExecutionFailed,
-    "Tool input failed inputSchema validation",
+    message,
     {
       context: {
         errors: errors.slice(0, 20),

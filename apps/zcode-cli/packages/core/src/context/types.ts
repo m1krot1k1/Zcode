@@ -7,12 +7,16 @@ import type {
   Model,
   ModelInputMessage,
   ProjectContext,
+  ResolvedHarnessRule,
   ResolvedUserInstructions,
+  ResolvedWorkspaceRule,
   SkillLoadOutcome,
   UserInstructionsOptions,
 } from "@zcode/contracts";
+import type { ContextLedgerSnapshot } from "./sections/memory.js";
 import type { AutoCompactPolicyConfig } from "../compact/index.js";
 import type { AgentProfile } from "../subagent/profile.js";
+import type { PromptDepthProfile } from "./cognitive-protocols.js";
 
 export type {
   EnvInfo,
@@ -21,6 +25,8 @@ export type {
   ProjectType,
   ResolvedUserInstructionSource,
   ResolvedUserInstructions,
+  ResolvedHarnessRule,
+  ResolvedWorkspaceRule,
   UserInstructionsOptions,
 } from "@zcode/contracts";
 
@@ -37,6 +43,7 @@ export type ContextSource =
   | "tools" // 工具定义
   | "request_user_context" // request-level user context provider-visible 组合块
   | "memory" // 长期 memory read path
+  | "context_ledger" // 当前任务的 compact working set
   | "current_date" // 当前日期
   | "custom_system_prompt" // 自定义 stable system body
   | "workflow_actor_identity" // 动态工作流子代理身份：契约 + persona 叠加
@@ -47,7 +54,8 @@ export type ContextSource =
   | "session_guidance" // 当前可用内置能力指导
   | "output_style" // 输出风格
   | "context_management" // 长上下文管理提示
-  | "desktop_context"; // ZCode Desktop 渲染与交互协议
+  | "desktop_context" // ZCode Desktop 渲染与交互协议
+  | "workspace_facts"; // Обогащённые факты workspace из cache-снимка адаптера
 
 export type ContextInjectionTarget = "system" | "meta_user";
 
@@ -109,9 +117,20 @@ export interface ContextBuilderConfig {
   genUiOutputDirectory?: string;
   currentDate?: string;
   userInstructions?: ResolvedUserInstructions;
+  bundledHarnessRules?: readonly ResolvedHarnessRule[];
+  workspaceRules?: readonly ResolvedWorkspaceRule[];
   projectContext?: ProjectContext;
   memoryRoot?: string;
   memoryIndexContent?: string;
+  /** Компактный рабочий набор задачи из `.zcode/context-ledger.json`. */
+  contextLedger?: ContextLedgerSnapshot;
+  /** Canary-selected prompt profile; explicit value wins over env. */
+  promptProfile?: string;
+  /**
+   * Профиль глубины рассуждений (инкремент 4.4). Владелец — настройки сессии;
+   * влияет на стабильный блок когнитивных протоколов и на параметры thinking/maxOutputTokens.
+   */
+  promptDepth?: PromptDepthProfile;
   skills?: SkillLoadOutcome;
   agentProfiles?: readonly AgentProfile[];
   embeddedSearchEnabled?: boolean;
@@ -127,6 +146,8 @@ export interface ContextBuilderConfig {
   outputStyle?: OutputStylePromptConfig;
   compact?: AutoCompactPolicyConfig;
   guidanceToolNames?: readonly string[];
+  /** Agent DAG is optional on SubagentPort; only advertise it when the owning runtime can execute it. */
+  taskDagAvailable?: boolean;
 }
 
 /**

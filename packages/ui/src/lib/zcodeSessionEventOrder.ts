@@ -2,18 +2,18 @@ import type { ZCodeSessionEvent } from "@zcode/shared";
 
 const MAX_TRACKED_SESSION_EVENT_IDS = 10_000;
 
-export interface ZCodeSessionEventGap {
+interface ZCodeSessionEventGap {
   expectedSeq: number;
   receivedSeq: number;
 }
 
-export interface ZCodeSessionEventOrderResult {
+interface ZCodeSessionEventOrderResult {
   duplicate?: boolean;
   gap?: ZCodeSessionEventGap;
   readyEvents: ZCodeSessionEvent[];
 }
 
-export interface ZCodeSessionEventOrderGate {
+interface ZCodeSessionEventOrderGate {
   clearPendingAfterGap(): void;
   getGap(): ZCodeSessionEventGap | undefined;
   markSnapshotSeq(seq: number, options?: { preservePendingEvents?: boolean }): ZCodeSessionEvent[];

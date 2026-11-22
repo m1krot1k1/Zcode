@@ -65,6 +65,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from libreoffice_discovery import find_soffice
+
 # ═══════════════════════════════════════════════════════════════
 #  Section 0: Framework — Output, @cmd registry, CLI parser
 # ═══════════════════════════════════════════════════════════════
@@ -264,22 +266,7 @@ def _probe_python() -> tuple[str, str]:
 
 
 def _probe_libreoffice() -> tuple[str, str]:
-    candidates = [
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-        os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-        "/usr/bin/soffice",
-        "/usr/local/bin/soffice",
-        "/usr/lib/libreoffice/program/soffice",
-        "/opt/libreoffice/program/soffice",
-        "/snap/bin/libreoffice.soffice",
-    ]
-    for c in candidates:
-        if Path(c).is_file():
-            return ("ok", "")
-    for alias in ("soffice", "libreoffice"):
-        if shutil.which(alias):
-            return ("ok", "")
-    return ("missing", "")
+    return ("ok", "") if _locate_soffice() else ("missing", "")
 
 
 def _probe_tectonic() -> tuple[str, str]:
@@ -1786,27 +1773,9 @@ _CONVERTIBLE_EXTENSIONS = frozenset({
     ".txt", ".html", ".htm",
 })
 
-_SOFFICE_CANDIDATES = [
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-    "/usr/bin/soffice",
-    "/usr/local/bin/soffice",
-    "/usr/lib/libreoffice/program/soffice",
-    "/opt/libreoffice/program/soffice",
-    "/snap/bin/libreoffice.soffice",
-]
-
-
 def _locate_soffice() -> str | None:
     """Search for a working soffice binary."""
-    for candidate in _SOFFICE_CANDIDATES:
-        if Path(candidate).is_file():
-            return candidate
-    for alias in ("soffice", "libreoffice"):
-        found = shutil.which(alias)
-        if found:
-            return found
-    return None
+    return find_soffice()
 
 
 @cmd("convert.office")

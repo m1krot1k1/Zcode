@@ -9,7 +9,6 @@ export function createAnthropicCompatFetch(baseFetch: ProviderFetch): ProviderFe
   };
 }
 
-export const createAnthropicStreamCompatFetch = createAnthropicCompatFetch;
 
 function applyAnthropicRequestBodyCompatibility(
   init: RequestInit | undefined,

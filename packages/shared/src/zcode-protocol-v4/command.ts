@@ -29,7 +29,7 @@ import {
 } from "../zcode-protocol/index.js";
 import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
-import { conversationInputSourceSchema } from "./input-intent.js";
+import { conversationInputSourceSchema, sendTextExecutionRouteSchema } from "./input-intent.js";
 export type { SharedContextRef } from "./shared-context-ref.js";
 export * from "./workflow-command-rejections.js";
 
@@ -48,36 +48,120 @@ function requireModelSelectionForExecution(
   }
 }
 
+/** ACP owns a separate agent loop: its input must not carry ZCode execution/config payloads. */
+function validateOpenCodeAgentRoute(
+  payload: {
+    text: string;
+    executionRoute: z.infer<typeof sendTextExecutionRouteSchema>;
+    attachments?: unknown[];
+    requestedDelivery?: string;
+    browserAmbientContext?: unknown;
+    context_refs?: unknown[];
+    source?: unknown;
+    heldQueueDisposition?: unknown;
+    expectedHeldQueueItemIds?: unknown[];
+    modelSelection?: unknown;
+    mode?: unknown;
+    planEnabled?: unknown;
+    orchestrationMode?: unknown;
+    modelExecution?: unknown;
+    highspeedMeta?: unknown;
+    automationId?: unknown;
+    offPeakTaskId?: unknown;
+    offPeakRunType?: unknown;
+    botDeliveryTarget?: unknown;
+    botGroupSource?: unknown;
+    conversationQuotes?: unknown[];
+    toolDisallowlist?: unknown[];
+  },
+  context: z.RefinementCtx,
+): void {
+  if (payload.executionRoute.kind !== "opencode-acp") return;
+  const reject = (field: string, message: string) =>
+    context.addIssue({ code: z.ZodIssueCode.custom, message, path: [field] });
+  const unsupported: Array<[keyof typeof payload, string]> = [
+    ["modelSelection", "OpenCode ACP route forbids modelSelection"],
+    ["mode", "OpenCode ACP route forbids ZCode mode"],
+    ["planEnabled", "OpenCode ACP route forbids ZCode plan mode"],
+    ["orchestrationMode", "OpenCode ACP route forbids ZCode swarm orchestration"],
+    ["modelExecution", "OpenCode ACP route forbids model execution metadata"],
+    ["highspeedMeta", "OpenCode ACP route forbids Highspeed metadata"],
+    ["browserAmbientContext", "OpenCode ACP route forbids browser context"],
+    ["source", "OpenCode ACP route forbids Composer/plugin context"],
+    ["automationId", "OpenCode ACP route forbids automation dispatch"],
+    ["offPeakTaskId", "OpenCode ACP route forbids Off-Peak dispatch"],
+    ["offPeakRunType", "OpenCode ACP route forbids Off-Peak dispatch"],
+    ["botDeliveryTarget", "OpenCode ACP route forbids bot dispatch"],
+    ["botGroupSource", "OpenCode ACP route forbids bot dispatch"],
+    ["toolDisallowlist", "OpenCode ACP route does not support ZCode tool policy"],
+  ];
+  for (const [field, message] of unsupported) {
+    if (payload[field] !== undefined) reject(field, message);
+  }
+  if (payload.attachments?.length) reject("attachments", "OpenCode ACP route is text-only");
+  if (payload.context_refs?.length)
+    reject("context_refs", "OpenCode ACP route forbids shared context");
+  if (payload.conversationQuotes?.length)
+    reject("conversationQuotes", "OpenCode ACP route forbids conversation context");
+  if (payload.heldQueueDisposition !== undefined)
+    reject("heldQueueDisposition", "OpenCode ACP route is idle-only");
+  if (payload.expectedHeldQueueItemIds?.length)
+    reject("expectedHeldQueueItemIds", "OpenCode ACP route is idle-only");
+  if (payload.requestedDelivery !== undefined && payload.requestedDelivery !== "startNow")
+    reject("requestedDelivery", "OpenCode ACP route requires immediate delivery");
+  if (!payload.text.trim()) reject("text", "OpenCode ACP route requires text");
+}
+
 // ── §6.4 命令 payload 全集 ──
 export const commandPayloadSchemas = {
   // firstInput 缺省 → phase=draft 空会话；携带 → 直接 turnHeader+userInput rows。
-  createSession: z.object({
-    // Host 预留归属使用稳定 ID；CLI 仍负责拒绝覆盖既有会话。
-    sessionId: z.string().min(1).optional(),
-    additionalDirectories: z.array(z.string().min(1)).max(256).optional(),
-    workspaceId: z.string(),
-    permissionScope: z.literal("session").optional(),
-    firstInput: z
-      .object({
-        text: z.string(),
-        attachments: z.array(attachmentRefSchema).optional(),
-        modelSelection: modelSelectionSchema.optional(),
-        mode: submissionModeSchema.optional(),
-        planEnabled: z.boolean().optional(),
-      })
-      .optional(),
-    config: createSessionRequestedConfigSchema.optional(),
-    // MCP 是 runtime 启动期配置，必须随 create 一次性进入 record，不能在首发后补写。
-    mcpServers: z.array(zcodeProtocolMcpServerSchema).optional(),
-    // Off-Peak 工具面 flag，与 legacy session/create 等价——V4 createSession 是桌面
-    // 新会话的实际创建路径，不透传则 OffPeakCreate/OffPeakList 永不注册。additive，
-    // 旧 CLI 的 z.object 会静默丢弃该键（fail-closed）。
-    offPeakToolEnabled: z.boolean().optional(),
-    // 动态工作流灰度 flag，与 offPeakToolEnabled 同一模式。
-    dynamicWorkflowEnabled: z.boolean().optional(),
-    // 灰度 mode 与布尔同行（launch.md「On demand: activation」）；旧 CLI 的 z.object 静默丢弃。
-    dynamicWorkflowMode: z.enum(DYNAMIC_WORKFLOW_MODES).optional(),
-  }),
+  createSession: z
+    .object({
+      // Host 预留归属使用稳定 ID；CLI 仍负责拒绝覆盖既有会话。
+      sessionId: z.string().min(1).optional(),
+      additionalDirectories: z.array(z.string().min(1)).max(256).optional(),
+      workspaceId: z.string(),
+      // Host-only routing hint: this is an empty OpenCode ACP draft, not a ZCode model session.
+      openCodeAcpDraft: z.literal(true).optional(),
+      permissionScope: z.literal("session").optional(),
+      firstInput: z
+        .object({
+          text: z.string(),
+          attachments: z.array(attachmentRefSchema).optional(),
+          modelSelection: modelSelectionSchema.optional(),
+          mode: submissionModeSchema.optional(),
+          planEnabled: z.boolean().optional(),
+        })
+        .optional(),
+      config: createSessionRequestedConfigSchema.optional(),
+      // MCP 是 runtime 启动期配置，必须随 create 一次性进入 record，不能在首发后补写。
+      mcpServers: z.array(zcodeProtocolMcpServerSchema).optional(),
+      // Off-Peak 工具面 flag，与 legacy session/create 等价——V4 createSession 是桌面
+      // 新会话的实际创建路径，不透传则 OffPeakCreate/OffPeakList 永不注册。additive，
+      // 旧 CLI 的 z.object 会静默丢弃该键（fail-closed）。
+      offPeakToolEnabled: z.boolean().optional(),
+      // 动态工作流灰度 flag，与 offPeakToolEnabled 同一模式。
+      dynamicWorkflowEnabled: z.boolean().optional(),
+      // 灰度 mode 与布尔同行（launch.md「On demand: activation」）；旧 CLI 的 z.object 静默丢弃。
+      dynamicWorkflowMode: z.enum(DYNAMIC_WORKFLOW_MODES).optional(),
+    })
+    .superRefine((payload, context) => {
+      if (!payload.openCodeAcpDraft) return;
+      if (payload.firstInput) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["firstInput"],
+          message: "OpenCode ACP draft must be empty",
+        });
+      }
+      if (payload.config?.modelSelection) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["config", "modelSelection"],
+          message: "OpenCode ACP draft cannot select a ZCode model",
+        });
+      }
+    }),
   // 父会话由 envelope.sessionId 指定；服务端从父 record 派生完整运行配置。
   // firstInput 存在时，child 创建完成后立即启动首条普通输入；缺省则保持空副屏。
   createSelectionSideSession: z.object({
@@ -95,6 +179,8 @@ export const commandPayloadSchemas = {
   sendText: z
     .object({
       text: z.string(),
+      // Missing route is the legacy ZCode route. ACP is an explicit separate execution choice.
+      executionRoute: sendTextExecutionRouteSchema,
       attachments: z.array(attachmentRefSchema).optional(),
       // Desktop Cmd/Ctrl+Enter 只覆盖本次 busy input，不改 session followupMode。
       // startNow 由 CLI 原子抢占当前 turn，不经过 queue admission。
@@ -114,6 +200,8 @@ export const commandPayloadSchemas = {
       modelSelection: modelSelectionSchema.optional(),
       mode: submissionModeSchema.optional(),
       planEnabled: z.boolean().optional(),
+      // Режим оркестрации относится только к этой принятой отправке и переживает очередь.
+      orchestrationMode: z.enum(["auto", "swarm"]).optional(),
       // 本次执行仍使用上面的标准 Selection；这里只携带不持久化语义、动态鉴权和 child 策略。
       // 仅 idle startNow 接受，防止 Secret/Ticket 进入普通 CommandInbox。
       modelExecution: modelExecutionSchema.optional(),
@@ -147,6 +235,7 @@ export const commandPayloadSchemas = {
           path: ["offPeakRunType"],
         });
       }
+      validateOpenCodeAgentRoute(payload, context);
       requireModelSelectionForExecution(payload, context);
     }),
   sendGoalCommand: z.object({
@@ -158,10 +247,44 @@ export const commandPayloadSchemas = {
     heldQueueDisposition: z.enum(["clearQueueAndSend", "keepQueueAndSend"]).optional(),
     expectedHeldQueueItemIds: z.array(z.string().min(1)).optional(),
   }),
-  stop: z.object({
-    // 来自 activeWorks；CLI 用它拒绝会误杀后续无关执行的迟到 Stop。
-    expectedForegroundExecutionId: z.string().min(1).optional(),
-  }),
+  stop: z
+    .object({
+      // 来自 activeWorks；CLI 用它拒绝会误杀后续无关执行的迟到 Stop。
+      expectedForegroundExecutionId: z.string().min(1).optional(),
+      // OpenCode ACP 是独立于 Core runtime 的前台执行，必须按命令与 run 双重身份取消。
+      expectedOpenCodeAgentRun: z
+        .object({
+          expectedCommandId: z.string().min(1),
+          expectedRunId: z.string().min(1),
+        })
+        .strict()
+        .optional(),
+    })
+    .superRefine((payload, context) => {
+      if (payload.expectedForegroundExecutionId && payload.expectedOpenCodeAgentRun) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "stop must target one foreground execution owner",
+        });
+      }
+    }),
+  respondToOpenCodePermission: z
+    .object({
+      commandId: z.string().min(1),
+      runId: z.string().min(1),
+      opencodeSessionId: z.string().min(1),
+      requestId: z.string().min(1),
+      optionId: z.string().min(1),
+    })
+    .superRefine((payload, context) => {
+      if (payload.commandId !== payload.runId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "OpenCode permission must target the accepted run identity",
+          path: ["runId"],
+        });
+      }
+    }),
   // compact 是输入型维护命令：idle 时立即执行，busy/held 时进入 FIFO。
   // 因为 admission 与当前 revision 无关，不走 CAS；sourceCommandId 提供幂等边界。
   compact: z.object({}),
@@ -170,17 +293,17 @@ export const commandPayloadSchemas = {
   applyFileRewind: z.object({ target: conversationRowTargetSchema }),
   editUserQuery: z
     .object({
-    target: conversationRowTargetSchema,
-    newText: z.string(),
+      target: conversationRowTargetSchema,
+      newText: z.string(),
       conversationQuotes: conversationQuotesSchema.optional(),
-    attachments: z.array(attachmentRefSchema).optional(),
+      attachments: z.array(attachmentRefSchema).optional(),
       // 编辑重发按新的主动发送处理：只接受本次重新 prepare 得到的卡与执行材料，
       // 不从被 rewind 的历史消息复用旧凭据。
       modelSelection: modelSelectionSchema.optional(),
       modelExecution: modelExecutionSchema.optional(),
       highspeedMeta: highspeedMessageMetaSchema.optional(),
-    // 缺省 preserve：仅切 conversation branch；rewind 会先安全恢复该轮文件。
-    workspaceMode: z.enum(["preserve", "rewind"]).optional(),
+      // 缺省 preserve：仅切 conversation branch；rewind 会先安全恢复该轮文件。
+      workspaceMode: z.enum(["preserve", "rewind"]).optional(),
     })
     .superRefine(requireModelSelectionForExecution),
   retryTurn: z.object({ target: conversationRowTargetSchema }),
@@ -271,7 +394,10 @@ export const commandPayloadSchemas = {
   // baseRevision：与 cancelBackgroundWork 同类（workflowRuns 面免 revision，假 CAS 失败
   // 只会误伤）。门在 CLI 侧（可恢复集 = cancelled ∪ failed+Interrupted），拒绝以
   // fault.command.workflowRunResumeRejected.<reason> 回 ACK。
-  resumeWorkflowRun: z.object({ workId: z.string(), name: z.string().optional() }),
+  resumeWorkflowRun: z.object({
+    workId: z.string(),
+    name: z.string().optional(),
+  }),
   // startSavedWorkflow：中枢「运行」不再合成
   // 对话文案，直接请 agent 在新会话里启动已保存工作流。与 cancelBackgroundWork / resumeWorkflowRun
   // 同类：不携 baseRevision（workflowRuns 面免 revision，假 CAS 失败只会误伤）。name 由 agent 从
@@ -295,8 +421,10 @@ export const commandPayloadSchemas = {
 export type CommandType = keyof typeof commandPayloadSchemas;
 export type CommandPayloadMap = {
   [T in CommandType]: T extends "sendText"
-    ? z.infer<(typeof commandPayloadSchemas)[T]> &
-        import("../zcode-task-types-core.js").ZCodeBackgroundTurnAttribution
+    ? Omit<z.infer<(typeof commandPayloadSchemas)[T]>, "executionRoute"> & {
+        // Producers may omit this for compatibility; command parsing normalizes it to zcode.
+        executionRoute?: z.input<typeof sendTextExecutionRouteSchema>;
+      } & import("../zcode-task-types-core.js").ZCodeBackgroundTurnAttribution
     : z.infer<(typeof commandPayloadSchemas)[T]>;
 };
 

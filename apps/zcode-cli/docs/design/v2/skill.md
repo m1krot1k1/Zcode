@@ -188,12 +188,13 @@ P2 增加：
 2. nearest project native
 3. nearest project compatible
 4. ancestor project native / compatible，按目录从近到远
-5. user native
-6. user compatible
-7. bundled/system
-8. admin/managed
+5. plugin-provided roots
+6. user native
+7. user compatible
+8. bundled/system
+9. admin/managed
 
-同名 skill 默认取高优先级项，重复项进入 diagnostics。后续如果引入 plugin namespace，可支持 `plugin:skill-name`。
+同名 skill 默认取高优先级项（项目技能压过用户技能）；被跨 scope 遮蔽的副本进入 diagnostics（`skill_duplicate_name`），同 scope 的多份同名技能都保留、不互相告警。后续如果引入 plugin namespace，可支持 `plugin:skill-name`。
 
 ## Context 注入
 

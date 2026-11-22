@@ -379,6 +379,9 @@ export type BrowserCommand =
 
 export type BrowserErrorCode =
   | "backend_unavailable"
+  // Браузер физически не установлен: отдельный код, чтобы агент получил точную
+  // инструкцию установки, а не общий execution_error.
+  | "browser_not_installed"
   | "capability_unsupported"
   | "duplicate_request_id"
   | "ref_not_found"
@@ -387,6 +390,66 @@ export type BrowserErrorCode =
   | "renderer_unreachable"
   | "cancelled"
   | "execution_error";
+
+/**
+ * Телеметрия одного действия браузера.
+ *
+ * Структурное зеркало `browserActionObservationSchema` из @zcode/shared (см. комментарий
+ * в шапке файла: contracts намеренно не импортирует shared из-за расхождения версий zod).
+ * Согласованность сторон обеспечивается round-trip тестом протокола.
+ */
+export interface BrowserObservationTruncationFlags {
+  console: boolean;
+  pageErrors: boolean;
+  failedRequests: boolean;
+  navigations: boolean;
+  ariaSnapshot: boolean;
+  dom: boolean;
+  screenshot: boolean;
+}
+
+export interface BrowserActionObservation {
+  url: string;
+  title: string;
+  ariaSnapshotCompact: string;
+  dom?: Array<{ tag: string; depth: number; role?: string; name?: string; text?: string }>;
+  consoleEntries: Array<{
+    level: "debug" | "info" | "warning" | "error";
+    text: string;
+    location?: string;
+    stack?: string;
+    ageMs: number;
+  }>;
+  pageErrors: Array<{ name: string; message: string; stack?: string; ageMs: number }>;
+  failedRequests: Array<{
+    kind: "request_failed" | "http_error";
+    method: string;
+    url: string;
+    statusOrError: string;
+    resourceType?: string;
+    durationMs?: number;
+    responseSnippet?: string;
+    ageMs: number;
+  }>;
+  navigations: Array<{
+    url: string;
+    kind: "frame_navigated" | "committed" | "load" | "domcontentloaded";
+    ageMs: number;
+  }>;
+  dialog?: {
+    type: "alert" | "confirm" | "prompt" | "beforeunload";
+    message: string;
+    disposition: "pending" | "auto_dismissed" | "accepted" | "dismissed";
+    defaultPrompt?: string;
+  } | null;
+  screenshotBase64?: string;
+  screenshotMimeType?: "image/jpeg" | "image/png";
+  screenshotBytes?: number;
+  truncation: BrowserObservationTruncationFlags;
+  collectionDurationMs: number;
+  capturedAt: number;
+  healthy: boolean;
+}
 
 export interface BrowserPageState {
   url: string;
@@ -512,6 +575,12 @@ export interface BrowserCommandResult {
   /** getDialog 返回：当前 JS 弹窗信息；无弹窗时为 null。 */
   dialog?: BrowserDialog | null;
   recording?: BrowserRecordingJob;
+  /**
+   * Телеметрия действия: консоль, pageerror, сетевые сбои, HTTP >= 400, ARIA/DOM, кадр.
+   * Заполняется адаптером; потребители (модель, авто-ремонт) читают её вместо догадок.
+   * Тип структурно совпадает с `browserActionObservationSchema` из @zcode/shared.
+   */
+  observation?: BrowserActionObservation;
   error?: { code: BrowserErrorCode; message: string; sideEffect?: "none" | "uncertain" };
   meta?: BrowserResponseMeta;
   elapsedMs: number;

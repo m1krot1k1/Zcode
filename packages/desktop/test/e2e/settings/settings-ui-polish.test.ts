@@ -414,6 +414,31 @@ describe("设置页 UI polish E2E", () => {
     await assertModelProviderPageScroll();
   });
 
+  it("MP-UI-10: OpenCode CLI 与 API 供应商使用互斥的设置详情", async function () {
+    this.timeout(60000);
+
+    await openModelProviderSettings();
+    await clickTestIdByDom(TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON);
+    await clickTestIdByDom(testId(TID_MODEL_PROVIDER_TEMPLATE_ITEM, "custom"));
+    await $(sel(TID_MODEL_PROVIDER_API_KEY_INPUT)).waitForDisplayed({ timeout: 15000 });
+
+    const apiProviderNavigationTestId = await browser.execute(
+      () =>
+        document.querySelector<HTMLElement>(
+          '[data-testid^="model-provider-nav-item-"][aria-selected="true"]',
+        )?.dataset.testid ?? null,
+    );
+    if (!apiProviderNavigationTestId) throw new Error("新 API provider 没有侧栏入口");
+
+    await clickTestIdByDom(testId(TID_MODEL_PROVIDER_NAV_ITEM, "agent-integration:opencode-cli"));
+    await $('[data-testid="opencode-agent-settings"]').waitForDisplayed({ timeout: 15000 });
+    expect(await $(sel(TID_MODEL_PROVIDER_API_KEY_INPUT)).isDisplayed()).toBe(false);
+
+    await clickTestIdByDom(apiProviderNavigationTestId);
+    await $(sel(TID_MODEL_PROVIDER_API_KEY_INPUT)).waitForDisplayed({ timeout: 15000 });
+    expect(await $('[data-testid="opencode-agent-settings"]').isDisplayed()).toBe(false);
+  });
+
   it("MP-UI-05: 模型配置页不显示远程配置同步入口", async function () {
     this.timeout(60000);
 

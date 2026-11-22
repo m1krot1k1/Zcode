@@ -4,6 +4,7 @@ import type {
   AutomationPort,
   BackgroundTaskCancelResult,
   BrowserControlPort,
+  CodeIntelligencePort,
   CollaborationMode,
   ContextSourcePort,
   DynamicWorkflowRunArtifact,
@@ -84,7 +85,6 @@ import type {
   StartSavedWorkflowRunResult,
   TurnAttachment,
   TurnResult,
-  WorkflowAgentRunner,
   WorkspaceCheckpointSummary,
   WorkspaceForkResult,
   WorkspaceGenerateTextInput,
@@ -187,6 +187,11 @@ export interface ZCodeAppOptions {
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
+  /**
+   * Порт интерактивных PTY-сессий. Присутствие включает инструмент `PtySession`.
+   * Обычный CLI создаёт менеджер сам; хост (Desktop/Remote) может инжектировать свой.
+   */
+  ptySessionPort?: import("@zcode/core").PtySessionPort;
   artifactStore?: ToolArtifactStorePort;
   contextSourcePort?: ContextSourcePort;
   /** 仅协议宿主注入；普通 CLI 不加载内置 visualize 技能。 */
@@ -209,6 +214,8 @@ export interface ZCodeAppOptions {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  /** Only Host-attached runtimes receive the workspace-scoped local code index query port. */
+  codeIntelligencePort?: CodeIntelligencePort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;
   /** Trusted embedder policy; workspace/project files cannot populate this field. */
@@ -361,7 +368,7 @@ export interface ZCodeApp {
   }): Promise<import("@zcode/shared").ZCodeSessionSubagentsResult>;
   readSubagentTranscript(
     childSessionId: string,
-  ): Promise<import("./subagent-observation.js").SubagentTranscriptSnapshot>;
+  ): Promise<import("./subagent-observation/index.js").SubagentTranscriptSnapshot>;
   readTodos(): Promise<TodoItem[]>;
   readTarget(): Promise<SessionGoal | null>;
   setCustomSessionTitle(input: { title: string; traceContext?: TraceContext }): Promise<void>;
@@ -413,6 +420,12 @@ export interface ZCodeApp {
   listModels(): ZCodeModelOption[];
   listThoughtLevels(): string[];
   listPlugins(): Promise<PluginLoadOutcome>;
+  /** Перечитать plugin data-plane (MCP/skills/agents) в текущем runtime. */
+  refreshPluginComponents(): Promise<{
+    connected: string[];
+    disconnected: string[];
+    failed: Array<{ name: string; error: string }>;
+  }>;
   setPluginEnabled(plugin: string, enabled: boolean): Promise<ZCodePluginSetResult>;
   uninstallPlugin(plugin: string): Promise<ZCodePluginUninstallResult>;
   /**
@@ -631,6 +644,7 @@ export interface ZCodeApp {
     text: string;
     selection: WorkspaceGenerateTextInput["selection"];
     finishReason: string;
+    requestId?: string;
     usage?: ModelUsage;
     toolCalls?: ModelToolCall[];
   }>;
@@ -856,4 +870,4 @@ export interface ListZCodeSessionsOptions {
   sessionStore?: SessionStorePort;
 }
 
-export type { WorkflowAgentRunner };
+

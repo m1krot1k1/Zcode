@@ -20,6 +20,25 @@ const ENV_MODEL_RETRY_BASE_DELAY_MS = "ZCODE_MODEL_RETRY_BASE_DELAY_MS";
 const ENV_MODEL_RETRY_BACKOFF_FACTOR = "ZCODE_MODEL_RETRY_BACKOFF_FACTOR";
 const ENV_MODEL_RETRY_MAX_DELAY_MS = "ZCODE_MODEL_RETRY_MAX_DELAY_MS";
 
+/**
+ * 本地可兑现的 Retry-After 等待上限。
+ *
+ * 超过它就说明 provider 的限流/配额窗口远长于一次请求值得等待的时间：继续按本地短退避
+ * 重试（2s→60s，最多 11 次）只会空转，用户仍会失败但先被挂在「Working」上。
+ * 分类器据此把 429 判成 quota exhausted（retryable=false），runner 的两条 attempt 循环
+ * 也在重试闸门直接终止。两侧共用同一个常量，避免「分类器判可重试、退避却兑现不了」。
+ */
+export const MAX_HONORED_RETRY_AFTER_MS = 5 * 60_000;
+
+/** provider 明确要求等待超过本地可兑现窗口：不重试，按配额/限流耗尽终止。 */
+export function isRetryAfterBeyondHonoredWait(retryAfterMs: number | undefined): boolean {
+  return (
+    retryAfterMs !== undefined &&
+    Number.isFinite(retryAfterMs) &&
+    retryAfterMs > MAX_HONORED_RETRY_AFTER_MS
+  );
+}
+
 const DEFAULT_RETRY_OPTIONS: ResolvedAiSdkModelRetryOptions = {
   backoffFactor: DEFAULT_RETRY_BACKOFF_FACTOR,
   baseDelayMs: DEFAULT_RETRY_BASE_DELAY_MS,

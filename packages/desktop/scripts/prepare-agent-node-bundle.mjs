@@ -23,6 +23,7 @@ import {
   stageSharpIntoBundledAgents,
 } from "./sharp-package-assets.mjs";
 import { stageKoffiIntoBundledAgents } from "./koffi-package-assets.mjs";
+import { stageNodePtyIntoBundledAgent } from "./node-pty-package-assets.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(scriptDir, "..");
@@ -267,19 +268,6 @@ const officialPluginPackages = [
   },
   // superpowers 已从内置插件下线，改走 UI 推荐区按需安装；这里不再 stage 它的资源。
 ];
-// 随 CLI 内置的技能包（不是插件）：bootstrap 的 resolveBundledSkillRoots 沿官方插件同款候选目录
-// 在 zcode.cjs 旁找 packages/bundled-skills 并原地读取。漏 stage 它，桌面包的 /workflow 会展开成
-// 「先加载 dynamic-workflows 技能」而技能不存在——这正是把它从可卸载的 zcode-guide 插件搬出来要修的事故形态。
-const bundledSkillPack = {
-  relativePath: "apps/zcode-cli/packages/bundled-skills",
-  requiredPaths: [
-    "skills/dynamic-workflows/SKILL.md",
-    "skills/dynamic-workflows/patterns.md",
-    "skills/dynamic-workflows/examples.md",
-  ],
-  stagedPath: "packages/bundled-skills",
-  topLevelPaths: ["README.md", "skills"],
-};
 const includedOfficialPluginTopLevelPaths = new Set([
   ".mcp.json",
   ".zcode-plugin",
@@ -383,6 +371,19 @@ function stageBundle() {
   stageAgentBundle({ repoRoot, platformKey });
 }
 
+function stageNodePtyForAgentBundle() {
+  // PtySession входит в CLI bundle, а рядом с zcode.cjs в resources/glm нет node_modules.
+  // Без этого require("node-pty") падает ещё до первого кадра storage startup.
+  const targetPackageRoot = stageNodePtyIntoBundledAgent({
+    desktopPackageRoot: desktopRoot,
+    glmDir,
+    targetPlatform: { os: platform, arch },
+  });
+  console.log(
+    `[prepare:agent-bundle] staged node-pty into ${targetPackageRoot} (${platformKey})`,
+  );
+}
+
 function stageOfficialPlugins() {
   for (const plugin of officialPluginPackages) {
     const sourceRoot = resolve(repoRoot, plugin.relativePath);
@@ -411,29 +412,6 @@ function stageOfficialPlugins() {
     }
     console.log(`[prepare:agent-bundle] staged official plugin ${plugin.stagedPath}`);
   }
-}
-
-function stageBundledSkillPack() {
-  const sourceRoot = resolve(repoRoot, bundledSkillPack.relativePath);
-  const targetRoot = resolve(glmDir, bundledSkillPack.stagedPath);
-  mkdirSync(targetRoot, { recursive: true });
-  for (const entryName of bundledSkillPack.topLevelPaths) {
-    const sourcePath = resolve(sourceRoot, entryName);
-    if (!existsSync(sourcePath)) continue;
-    cpSync(sourcePath, resolve(targetRoot, entryName), {
-      recursive: true,
-      filter: shouldCopyOfficialPluginAsset,
-    });
-  }
-  for (const relativePath of bundledSkillPack.requiredPaths) {
-    const stagedAssetPath = resolve(targetRoot, ...relativePath.split("/"));
-    if (!existsSync(stagedAssetPath)) {
-      throw new Error(
-        `[prepare:agent-bundle] missing staged bundled skill asset: ${stagedAssetPath}`,
-      );
-    }
-  }
-  console.log(`[prepare:agent-bundle] staged bundled skill pack ${bundledSkillPack.stagedPath}`);
 }
 
 function stageSharpForNodeReplPlugin() {
@@ -495,7 +473,7 @@ function stageKoffiForCuaPlugin() {
 buildCliBundle();
 buildOfficialPluginRuntimes();
 stageBundle();
+stageNodePtyForAgentBundle();
 stageOfficialPlugins();
-stageBundledSkillPack();
 stageKoffiForCuaPlugin();
 stageSharpForNodeReplPlugin();

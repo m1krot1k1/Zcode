@@ -1,9 +1,13 @@
-/* oxlint-disable eslint(max-lines) -- 平台事件和分享导入共用同一生命周期。 */
 import { getConversationShareErrorDetails } from "@/lib/conversationShareError.js";
 import { useEffect, useRef, useState } from "react";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import type { CreateTaskOptions } from "@/app-shell/types.js";
-import type { IPlatformService, ZCodeTaskClientMode } from "@zcode/shared";
+import {
+  HOST_PROCESS_EXITED_DOM_EVENT,
+  type HostProcessExitNotification,
+  type IPlatformService,
+  type ZCodeTaskClientMode,
+} from "@zcode/shared";
 import { readV4ComposerDraft, V4_DRAFT_SCOPE_ROOT } from "@/v4/composer/composerDraftStore.js";
 import { readComposerWorkspaceScope } from "@/v4/composer/composerDraftStore.js";
 import { useComposerClientNamespace } from "@/hooks/useServices.js";
@@ -105,6 +109,21 @@ export function useRootPlatformEffects({
   const importOperationRef = useRef<string | null>(null);
   const lastImportProgressToastRef = useRef<{ phase: string; at: number } | null>(null);
   const importToastIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // 窗口 Host 意外退出时，renderer 的 RPC pending 请求可能永远不返回；用 main 的退出通知
+    // 主动收口提示，覆盖“Host 已死但 UI 仍显示执行中”的悬挂状态。web 端不会收到该事件。
+    const handleHostProcessExit = (event: Event) => {
+      const detail = (event as CustomEvent<HostProcessExitNotification | undefined>).detail;
+      toast(
+        intl.formatMessage({
+          id: detail?.willRespawn ? "hostProcess.exited.restarting" : "hostProcess.exited.failed",
+        }),
+      );
+    };
+    window.addEventListener(HOST_PROCESS_EXITED_DOM_EVENT, handleHostProcessExit);
+    return () => window.removeEventListener(HOST_PROCESS_EXITED_DOM_EVENT, handleHostProcessExit);
+  }, [intl]);
 
   useEffect(() => {
     // 启动时必须先判断 OAuth 本地会话，再恢复历史/初始 workspace。

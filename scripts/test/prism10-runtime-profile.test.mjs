@@ -1,0 +1,74 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { buildPrismRuntimeProfile } from "../prism10-runtime-profile.mjs";
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+/** Компактный runtime-профиль: официальный `coding` занимает ~9,3 тыс. символов. */
+const COMPACT_PROMPT_CHAR_LIMIT = 10_000;
+
+test("PRISM runtime profile derives from the checksum-verified coding source", async () => {
+  const artifact = await buildPrismRuntimeProfile();
+  const official = await readFile(
+    path.join(repositoryRoot, "docs/vendor/prism10/generated/coding.md"),
+    "utf8",
+  );
+
+  assert.equal(artifact.checkedSourcePaths.length, 26);
+  assert.equal(artifact.compiledProfile, official);
+  assert.equal(createHash("sha256").update(artifact.prompt).digest("hex"), artifact.profileDigest);
+  // Причина: runtime использует компактный профиль. Полный `all` весил 15 080 символов и
+  // проигрывал по вниманию/токенам, поэтому размер зафиксирован порогом, а не только хешем.
+  assert.ok(artifact.prompt.length <= COMPACT_PROMPT_CHAR_LIMIT);
+  assert.ok(artifact.compactPrompt.length <= 2_500);
+  assert.doesNotMatch(artifact.compactPrompt, /## 5\. Контур проверки поколения/u);
+  assert.doesNotMatch(artifact.compactPrompt, /МОДУЛЬ EVIDENCE & EVALUATION/u);
+  assert.match(artifact.compactPrompt, /Never claim a command, test, commit/u);
+  assert.match(artifact.prompt, /## 5\. Контур проверки поколения/u);
+  assert.match(artifact.prompt, /МОДУЛЬ EVIDENCE & EVALUATION/u);
+  assert.match(artifact.prompt, /МОДУЛЬ RUNTIME & ENGINEERING/u);
+  assert.doesNotMatch(artifact.prompt, /EXPERIMENTAL RECURSIVE DISCOVERY MODULE \(v10\)/u);
+  assert.doesNotMatch(artifact.prompt, /МОДУЛЬ SWARM EXECUTION/u);
+  assert.doesNotMatch(artifact.prompt, /Proof-Carrying Upgrade/u);
+  assert.doesNotMatch(artifact.prompt, /python scripts\/experiment_gate\.py/u);
+  assert.doesNotMatch(artifact.prompt, /node scripts\/prism10-experiment-gate\.mjs/u);
+  assert.doesNotMatch(artifact.prompt, /PRISM ∞ 10\.0 активирован\./u);
+  assert.doesNotMatch(artifact.prompt, /\/Users\/ndppd\//u);
+});
+
+test("identity.ts is the current generated PRISM runtime artifact", async () => {
+  const artifact = await buildPrismRuntimeProfile();
+  const identity = await readFile(
+    path.join(repositoryRoot, "apps/zcode-cli/packages/core/src/context/sections/identity.ts"),
+    "utf8",
+  );
+
+  assert.equal(identity, artifact.identitySource);
+  assert.ok(identity.includes(`// PRISM_SOURCE_SHA256: ${artifact.sourceDigest}`));
+  assert.ok(identity.includes(`// PRISM_PROFILE_SHA256: ${artifact.profileDigest}`));
+  assert.ok(identity.includes(`// COMPACT_PROFILE_SHA256: ${artifact.compactDigest}`));
+  assert.match(identity, /ZCODE_SYSTEM_PROMPT_PROFILE/);
+  assert.match(identity, /COMPACT_CODING_CORE_SYSTEM_PROMPT/);
+});
+
+test("Git checks out the generated identity source with LF even when autocrlf is enabled", () => {
+  const eol = execFileSync(
+    "git",
+    [
+      "-c",
+      "core.autocrlf=true",
+      "check-attr",
+      "eol",
+      "--",
+      "apps/zcode-cli/packages/core/src/context/sections/identity.ts",
+    ],
+    { cwd: repositoryRoot, encoding: "utf8" },
+  ).trim();
+
+  assert.match(eol, /: eol: lf$/u);
+});

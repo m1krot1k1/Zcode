@@ -12,13 +12,13 @@ import {
 import { normalizeZCodeUiError, type ZCodeUiError } from "@/lib/zcodeUiError.js";
 import { logger } from "@/logger.js";
 
-export type ZCodeSessionRestoreService = Pick<
+type ZCodeSessionRestoreService = Pick<
   IZCodeSessionService,
   "readSession" | "resumeSession"
 >;
-export type ZCodeLegacyTaskSnapshotRestoreService = Pick<IZCodeTaskService, "getTaskSnapshot">;
+type ZCodeLegacyTaskSnapshotRestoreService = Pick<IZCodeTaskService, "getTaskSnapshot">;
 
-export interface DesktopContinuousSessionRestoreSnapshot {
+interface DesktopContinuousSessionRestoreSnapshot {
   snapshot: ZCodeTaskSnapshot;
   restoreWarning?: ZCodeUiError;
   resumedSessionSnapshot?: ZCodeSessionStateSnapshot;

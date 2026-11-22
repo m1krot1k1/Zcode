@@ -59,6 +59,7 @@ function buildCanonicalIntent(
       modelSelection: editTarget.intent.modelSelection,
       mode: editTarget.intent.mode,
       planEnabled: editTarget.intent.planEnabled,
+      orchestrationMode: editTarget.intent.orchestrationMode,
       attachmentRefs,
       provenance: editTarget.intent.provenance,
     },

@@ -3,69 +3,70 @@ version: 1
 # 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
 modules:
   - id: rpc
-    roots: [packages/rpc/src]
+    roots: [ packages/rpc/src ]
     managed: false
   - id: shared
-    roots: [packages/shared/src]
+    roots: [ packages/shared/src ]
     managed: false
   - id: provider
-    roots: [packages/provider/src]
+    roots: [ packages/provider/src ]
     managed: false
   - id: provider-node
-    roots: [packages/provider-node/src]
+    roots: [ packages/provider-node/src ]
     managed: false
   - id: services
-    roots: [packages/services/src]
+    roots: [ packages/services/src ]
     managed: false
   - id: session
-    roots: [packages/services/src/session]
+    roots: [ packages/services/src/session ]
     managed: false
-    requires: [shared]
+    requires: [ shared ]
     publicEntrypoints:
       - packages/services/src/session/contract.ts
       - packages/services/src/session/taskIndexRepo.ts
+      - packages/services/src/session/zcodeTaskListTypes.ts
       - packages/services/src/session/automationRepo.ts
       - packages/services/src/session/offPeakTaskRepo.ts
       - packages/services/src/session/tasksDatabase/migrations.ts
       - packages/services/src/session/tasksDatabase/prepared.ts
     owner: conversation
   - id: storage
-    roots: [packages/services/src/storage]
+    roots: [ packages/services/src/storage ]
     managed: true
-    requires: [shared, rpc, services]
-    publicEntrypoints: [packages/services/src/storage/contract.ts]
-    layers: {domain: domain, app: app, adapters: adapters}
-    layerOrder: [domain, app, adapters]
+    requires: [ shared, rpc, services ]
+    publicEntrypoints: [ packages/services/src/storage/contract.ts ]
+    layers: { domain: domain, app: app, adapters: adapters }
+    layerOrder: [ domain, app, adapters ]
     owner: desktop-settings
   - id: client
-    roots: [packages/client/src]
+    roots: [ packages/client/src ]
     managed: false
   - id: server
-    roots: [packages/server/src]
+    roots: [ packages/server/src ]
     managed: false
   - id: zcode-server-cli
-    roots: [packages/zcode-server-cli/src]
+    roots: [ packages/zcode-server-cli/src ]
     managed: false
   - id: ui
-    roots: [packages/ui/src]
+    roots: [ packages/ui/src ]
     managed: false
   - id: web
-    roots: [packages/web/src]
+    roots: [ packages/web/src ]
     managed: false
   - id: desktop
-    roots: [packages/desktop/src]
+    roots: [ packages/desktop/src ]
     managed: false
   - id: formal-proof
-    roots: [packages/formal-proof/src]
+    roots: [ packages/formal-proof/src ]
     managed: false
   - id: stream-animate
-    roots: [packages/stream-animate/src]
+    roots: [ packages/stream-animate/src ]
     managed: false
   - id: e2e-report
-    roots: [packages/e2e-report/src]
+    roots: [ packages/e2e-report/src ]
     managed: false
   - id: zcode-cli
-    roots: [apps/zcode-cli]
+    roots: [ apps/zcode-cli ]
     managed: false
   # sqlite-migrations：由 architecture:adopt 登记
   - id: sqlite-migrations
@@ -102,7 +103,7 @@ modules:
     roots:
       - packages/services/src/project
     managed: true
-    requires: [project-storage, services, shared]
+    requires: [ project-storage, services, shared ]
     publicEntrypoints:
       - packages/services/src/project/index.ts
       - packages/services/src/project/contract.ts
@@ -114,7 +115,7 @@ modules:
     roots:
       - packages/services/src/task-facts
     managed: true
-    requires: [shared]
+    requires: [ shared ]
     publicEntrypoints:
       - packages/services/src/task-facts/index.ts
       - packages/services/src/task-facts/contract.ts
@@ -134,6 +135,7 @@ modules:
       - conversation-workspace-target
       - web-remote-control-ui
       - remote-connection-flow
+      - ui-root
     publicEntrypoints:
       - packages/ui/src/project-sidebar/index.tsx
       - packages/ui/src/project-sidebar/contract.ts
@@ -144,6 +146,7 @@ modules:
       - packages/ui/src/project-sidebar/useRemoteProjectConnectionPresentation.ts
       - packages/ui/src/project-sidebar/OfflineRemoteProjectRows.tsx
       - packages/ui/src/project-sidebar/RemoteConversationDisconnected.tsx
+      - packages/ui/src/project-sidebar/RemoteProjectPicker.tsx
     layers:
       contract: contract.ts
       ui: .
@@ -153,7 +156,7 @@ modules:
     roots:
       - packages/services/src/remote-projects
     managed: true
-    requires: [services, shared, project-storage]
+    requires: [ services, shared, project-storage ]
     publicEntrypoints:
       - packages/services/src/remote-projects/index.ts
       - packages/services/src/remote-projects/contract.ts
@@ -178,7 +181,7 @@ modules:
     roots:
       - packages/ui/src/workspace-config-catalog
     managed: true
-    requires: [services, shared, ui]
+    requires: [ services, shared, ui ]
     publicEntrypoints:
       - packages/ui/src/workspace-config-catalog/index.ts
       - packages/ui/src/workspace-config-catalog/contract.ts
@@ -192,7 +195,7 @@ modules:
     roots:
       - packages/services/src/project-catalog
     managed: true
-    requires: [project, remote-projects]
+    requires: [ project, remote-projects ]
     publicEntrypoints:
       - packages/services/src/project-catalog/index.ts
       - packages/services/src/project-catalog/contract.ts
@@ -206,7 +209,7 @@ modules:
     roots:
       - packages/services/src/bot-project-runtime
     managed: true
-    requires: [services, shared, remote-projects]
+    requires: [ services, shared, remote-projects ]
     publicEntrypoints:
       - packages/services/src/bot-project-runtime/index.ts
       - packages/services/src/bot-project-runtime/contract.ts
@@ -219,7 +222,7 @@ modules:
     roots:
       - packages/services/src/project-workspace-navigation
     managed: true
-    requires: [project, project-catalog, remote-projects, shared]
+    requires: [ project, project-catalog, remote-projects, shared ]
     publicEntrypoints:
       - packages/services/src/project-workspace-navigation/index.ts
       - packages/services/src/project-workspace-navigation/contract.ts
@@ -232,7 +235,7 @@ modules:
     roots:
       - packages/ui/src/conversation-workspace-target
     managed: true
-    requires: [shared, ui]
+    requires: [ shared, ui ]
     publicEntrypoints:
       - packages/ui/src/conversation-workspace-target/index.ts
       - packages/ui/src/conversation-workspace-target/contract.ts
@@ -247,52 +250,52 @@ modules:
     owner: conversation
 
   - id: gen-ui-protocol
-    roots: [packages/shared/src/gen-ui]
+    roots: [ packages/shared/src/gen-ui ]
     managed: true
     requires: []
-    publicEntrypoints: [packages/shared/src/gen-ui/index.ts, packages/shared/src/gen-ui/contract.ts]
-    layers: {domain: "."}
+    publicEntrypoints: [ packages/shared/src/gen-ui/index.ts, packages/shared/src/gen-ui/contract.ts ]
+    layers: { domain: "." }
     owner: conversation
   - id: gen-ui-service
-    roots: [packages/services/src/gen-ui]
+    roots: [ packages/services/src/gen-ui ]
     managed: true
-    requires: [services, shared, rpc, gen-ui-protocol, mcp-apps-protocol]
-    publicEntrypoints: [packages/services/src/gen-ui/index.ts, packages/services/src/gen-ui/contract.ts, packages/services/src/gen-ui/node.ts]
-    layers: {domain: domain, app: app, adapters: adapters}
-    layerOrder: [domain, app, adapters]
+    requires: [ services, shared, rpc, gen-ui-protocol, mcp-apps-protocol ]
+    publicEntrypoints: [ packages/services/src/gen-ui/index.ts, packages/services/src/gen-ui/contract.ts, packages/services/src/gen-ui/node.ts ]
+    layers: { domain: domain, app: app, adapters: adapters }
+    layerOrder: [ domain, app, adapters ]
     owner: conversation
 
   - id: gen-ui
-    roots: [packages/ui/src/gen-ui]
+    roots: [ packages/ui/src/gen-ui ]
     managed: true
-    requires: [ui, services, gen-ui-service, gen-ui-protocol, mcp-apps-protocol, plugin-ui]
-    publicEntrypoints: [packages/ui/src/gen-ui/index.ts, packages/ui/src/gen-ui/contract.ts, packages/ui/src/gen-ui/host.ts]
-    layers: {domain: domain, app: app, adapters: adapters, ui: components}
-    layerOrder: [domain, app, adapters, ui]
+    requires: [ ui, services, gen-ui-service, gen-ui-protocol, mcp-apps-protocol, plugin-ui ]
+    publicEntrypoints: [ packages/ui/src/gen-ui/index.ts, packages/ui/src/gen-ui/contract.ts, packages/ui/src/gen-ui/host.ts ]
+    layers: { domain: domain, app: app, adapters: adapters, ui: components }
+    layerOrder: [ domain, app, adapters, ui ]
     owner: conversation
 
   # 插件 UI（MCP Apps 沙箱）：模块边界见各模块 CONTRACT.md。
   - id: mcp-apps-protocol
-    roots: [packages/shared/src/mcp-apps]
+    roots: [ packages/shared/src/mcp-apps ]
     managed: true
     requires: []
-    publicEntrypoints: [packages/shared/src/mcp-apps/index.ts, packages/shared/src/mcp-apps/contract.ts, packages/shared/src/mcp-apps/hostContract.ts]
+    publicEntrypoints: [ packages/shared/src/mcp-apps/index.ts, packages/shared/src/mcp-apps/contract.ts, packages/shared/src/mcp-apps/hostContract.ts ]
     layers:
       domain: "."
     owner: plugin
   - id: mcp-ui
-    roots: [apps/zcode-cli/packages/bootstrap/src/zcode-protocol/mcp-ui]
+    roots: [ apps/zcode-cli/packages/bootstrap/src/zcode-protocol/mcp-ui ]
     managed: true
-    requires: [zcode-cli, shared, mcp-apps-protocol]
-    publicEntrypoints: [apps/zcode-cli/packages/bootstrap/src/zcode-protocol/mcp-ui/index.ts, apps/zcode-cli/packages/bootstrap/src/zcode-protocol/mcp-ui/contract.ts]
+    requires: [ zcode-cli, shared, mcp-apps-protocol ]
+    publicEntrypoints: [ apps/zcode-cli/packages/bootstrap/src/zcode-protocol/mcp-ui/index.ts, apps/zcode-cli/packages/bootstrap/src/zcode-protocol/mcp-ui/contract.ts ]
     layers:
       app: "."
     owner: plugin
   - id: plugin-ui-bridge
-    roots: [packages/services/src/plugin-ui-bridge]
+    roots: [ packages/services/src/plugin-ui-bridge ]
     managed: true
-    requires: [services, shared, mcp-apps-protocol]
-    publicEntrypoints: [packages/services/src/plugin-ui-bridge/index.ts, packages/services/src/plugin-ui-bridge/contract.ts, packages/services/src/plugin-ui-bridge/appToolsContract.ts, packages/services/src/plugin-ui-bridge/samplingContract.ts]
+    requires: [ services, shared, mcp-apps-protocol ]
+    publicEntrypoints: [ packages/services/src/plugin-ui-bridge/index.ts, packages/services/src/plugin-ui-bridge/contract.ts, packages/services/src/plugin-ui-bridge/appToolsContract.ts, packages/services/src/plugin-ui-bridge/samplingContract.ts ]
     layers:
       app: "."
     owner: plugin
@@ -303,7 +306,7 @@ modules:
       - packages/desktop/src/preload/pluginSandbox
       - packages/desktop/src/renderer/src/plugin-sandbox
     managed: true
-    requires: [desktop, shared, mcp-apps-protocol, gen-ui-protocol]
+    requires: [ desktop, shared, mcp-apps-protocol, gen-ui-protocol ]
     publicEntrypoints:
       [
         packages/desktop/src/host/pluginSandbox/index.ts,
@@ -319,16 +322,16 @@ modules:
       adapters: "."
     owner: plugin
   - id: plugin-ui
-    roots: [packages/ui/src/plugin-ui]
+    roots: [ packages/ui/src/plugin-ui ]
     managed: true
-    requires: [ui, shared, services, mcp-apps-protocol, plugin-ui-bridge, plugin-sandbox]
-    publicEntrypoints: [packages/ui/src/plugin-ui/index.ts, packages/ui/src/plugin-ui/contract.ts, packages/ui/src/plugin-ui/hostPrimitives.ts]
+    requires: [ ui, shared, services, mcp-apps-protocol, plugin-ui-bridge, plugin-sandbox ]
+    publicEntrypoints: [ packages/ui/src/plugin-ui/index.ts, packages/ui/src/plugin-ui/contract.ts, packages/ui/src/plugin-ui/hostPrimitives.ts ]
     layers:
       domain: domain
       app: app
       adapters: adapters
       ui: components
-    layerOrder: [domain, app, adapters, ui]
+    layerOrder: [ domain, app, adapters, ui ]
     owner: plugin
   # remote-connection-flow：由 architecture:adopt 登记
   - id: remote-connection-flow
@@ -338,6 +341,7 @@ modules:
     requires:
       - shared
       - ui
+      - ui-root
     publicEntrypoints:
       - packages/ui/src/remote-connection-flow/index.ts
       - packages/ui/src/remote-connection-flow/contract.ts
@@ -345,7 +349,7 @@ modules:
     layers:
       app: .
       ui: ui
-    layerOrder: [app, ui]
+    layerOrder: [ app, ui ]
     owner: remote
   # project-workflow：由 architecture:adopt 登记
   - id: project-workflow
@@ -486,6 +490,7 @@ modules:
       - services
       - shared
       - ui
+      - ui-root
     publicEntrypoints:
       - packages/ui/src/web-remote-control/index.ts
       - packages/ui/src/web-remote-control/contract.ts
@@ -545,7 +550,7 @@ modules:
     publicEntrypoints:
       - apps/zcode-cli/packages/cli/src/arguments.ts
       - apps/zcode-cli/packages/cli/src/argument-parsing/contract.ts
-    layers: {adapters: .}
+    layers: { adapters: . }
     owner: agent
   - id: workflow-tool-entrypoints
     roots:
@@ -555,13 +560,13 @@ modules:
       - apps/zcode-cli/packages/core/src/tool/handlers/fill-workflow-hole.ts
       - apps/zcode-cli/packages/core/tests/workflow-entrypoints
     managed: true
-    requires: [zcode-cli]
+    requires: [ zcode-cli ]
     publicEntrypoints:
       - apps/zcode-cli/packages/core/src/tool/handlers/amend-workflow.ts
       - apps/zcode-cli/packages/core/src/tool/handlers/list-models.ts
       - apps/zcode-cli/packages/core/src/tool/handlers/fill-workflow-hole.ts
       - apps/zcode-cli/packages/core/src/tool/workflow-entrypoints/contract.ts
-    layers: {app: .}
+    layers: { app: . }
     owner: agent
 
   - id: tool-result-settlement
@@ -570,11 +575,11 @@ modules:
       - apps/zcode-cli/packages/core/src/runtime/methods/tool-result-settlement.ts
       - apps/zcode-cli/packages/core/tests/tool-result-settlement
     managed: true
-    requires: [zcode-cli]
+    requires: [ zcode-cli ]
     publicEntrypoints:
       - apps/zcode-cli/packages/core/src/runtime/methods/tool-result-settlement.ts
       - apps/zcode-cli/packages/core/src/runtime/tool-result-settlement/contract.ts
-    layers: {app: .}
+    layers: { app: . }
     owner: agent
   - id: channel-reply-tool
     roots:
@@ -582,11 +587,11 @@ modules:
       - apps/zcode-cli/packages/core/src/tool/handlers/reply-to-channel.ts
       - apps/zcode-cli/packages/core/tests/channel-reply
     managed: true
-    requires: [shared, zcode-cli]
+    requires: [ shared, zcode-cli ]
     publicEntrypoints:
       - apps/zcode-cli/packages/core/src/tool/handlers/reply-to-channel.ts
       - apps/zcode-cli/packages/core/src/tool/channel-reply/contract.ts
-    layers: {app: .}
+    layers: { app: . }
     owner: agent
 
   # composer-toolbar-layout：登记既有 DOM 布局入口，不改调用路径。
@@ -600,7 +605,7 @@ modules:
     publicEntrypoints:
       - packages/ui/src/prompt-editor/useComposerToolbarFit.ts
       - packages/ui/src/composer-toolbar-layout/contract.ts
-    layers: {ui: .}
+    layers: { ui: . }
     owner: conversation
 
   # task-groups：由 architecture:adopt 登记
@@ -732,6 +737,1795 @@ modules:
     layers:
       ui: .
     owner: conversation
+  # opencode-acp-runtime：由 architecture:adopt 登记
+  - id: opencode-acp-runtime
+    roots:
+      - packages/services/src/opencode-acp-runtime
+    managed: true
+    requires:
+      - services
+      - shared
+      - rpc
+    publicEntrypoints:
+      - packages/services/src/opencode-acp-runtime/index.ts
+      - packages/services/src/opencode-acp-runtime/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # opencode-agent-settings：由 architecture:adopt 登记
+  - id: opencode-agent-settings
+    roots:
+      - packages/ui/src/opencode-agent-settings
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/opencode-agent-settings/index.ts
+      - packages/ui/src/opencode-agent-settings/contract.ts
+    layers:
+      ui: .
+    owner: agent
+  # cli-subagent-observation：由 architecture:adopt 登记
+  - id: cli-subagent-observation
+    roots:
+      - apps/zcode-cli/packages/bootstrap/src/app/subagent-observation
+    managed: true
+    requires:
+      - shared
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/bootstrap/src/app/subagent-observation/index.ts
+      - apps/zcode-cli/packages/bootstrap/src/app/subagent-observation/contract.ts
+    layers:
+      app: .
+    owner: conversation
+
+  # subagents：单一服务拥有 profile 写入、恢复与运行时快照。
+  - id: subagents
+    roots:
+      - packages/services/src/subagents
+    managed: true
+    requires: [ services, shared ]
+    publicEntrypoints:
+      - packages/services/src/subagents/subagents.ts
+      - packages/services/src/subagents/contract.ts
+    layers: { adapters: . }
+    owner: conversation
+
+  # code-intelligence：由 architecture:adopt 登记
+  - id: code-intelligence
+    roots:
+      - packages/services/src/code-intelligence
+    managed: true
+    requires:
+      - services
+      - shared
+      - sqlite-migrations
+    publicEntrypoints:
+      - packages/services/src/code-intelligence/index.ts
+      - packages/services/src/code-intelligence/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # agent-workbench：由 architecture:adopt 登记
+  - id: agent-workbench
+    roots:
+      - packages/ui/src/agent-workbench
+    managed: true
+    requires:
+      - code-intelligence
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/agent-workbench/index.ts
+      - packages/ui/src/agent-workbench/contract.ts
+      - packages/ui/src/agent-workbench/CodeIndexPopover.tsx
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # zcode-server-cli-packaging：由 architecture:adopt 登记
+  - id: zcode-server-cli-packaging
+    roots:
+      - packages/zcode-server-cli/src/packaging
+    managed: true
+    requires:
+      - shared
+      - zcode-server-cli
+    publicEntrypoints:
+      - packages/zcode-server-cli/src/packaging/index.ts
+      - packages/zcode-server-cli/src/packaging/contract.ts
+    layers:
+      adapters: .
+  # ui-preview-pane：由 architecture:adopt 登记
+  - id: ui-preview-pane
+    roots:
+      - packages/ui/src/preview-pane
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/preview-pane/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-root：由 architecture:adopt 登记
+  - id: ui-root
+    roots:
+      - packages/ui/src/root
+    managed: true
+    requires:
+      - conversation-workspace-target
+      - plugin-ui
+      - project-sidebar
+      - provider
+      - remote-connection-flow
+      - services
+      - shared
+      - ui
+      - web-remote-control-ui
+    publicEntrypoints:
+      - packages/ui/src/root/index.ts
+      - packages/ui/src/root/contract.ts
+      - packages/ui/src/root/types.ts
+      - packages/ui/src/root/reconnectRemoteWorkspaceHistoryEntry.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # desktop-remote-sessions：由 architecture:adopt 登记
+  - id: desktop-remote-sessions
+    roots:
+      - packages/desktop/src/main/desktop-remote-sessions
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/desktop-remote-sessions/index.ts
+      - packages/desktop/src/main/desktop-remote-sessions/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-animated-side-pane-panel：由 architecture:adopt 登记
+  - id: ui-animated-side-pane-panel
+    roots:
+      - packages/ui/src/app-shell/animated-side-pane-panel
+    managed: true
+    requires:
+      - agent-workbench
+      - plugin-ui
+      - services
+      - shared
+      - side-pane-full-view
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/app-shell/animated-side-pane-panel/index.ts
+      - packages/ui/src/app-shell/animated-side-pane-panel/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-conversation-turn-group：由 architecture:adopt 登记
+  - id: ui-conversation-turn-group
+    roots:
+      - packages/ui/src/v4/conversation-turn-group
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/conversation-turn-group/index.ts
+      - packages/ui/src/v4/conversation-turn-group/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-external-agent-import-dialog：由 architecture:adopt 登记
+  - id: ui-external-agent-import-dialog
+    roots:
+      - packages/ui/src/settings/external-agent-import-dialog
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/external-agent-import-dialog/index.ts
+      - packages/ui/src/settings/external-agent-import-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-git-cli：由 architecture:adopt 登记
+  - id: services-git-cli
+    roots:
+      - packages/services/src/git/repo/git-cli
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/git/repo/git-cli/index.ts
+      - packages/services/src/git/repo/git-cli/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-plugins-section：由 architecture:adopt 登记
+  - id: ui-plugins-section
+    roots:
+      - packages/ui/src/settings/plugins-section
+    managed: true
+    requires:
+      - conversation-workspace-target
+      - services
+      - shared
+      - ui
+      - workspace-config-catalog
+    publicEntrypoints:
+      - packages/ui/src/settings/plugins-section/index.ts
+      - packages/ui/src/settings/plugins-section/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-bigmodel-usage-quota：由 architecture:adopt 登记
+  - id: services-bigmodel-usage-quota
+    roots:
+      - packages/services/src/usage-stats/providers/bigmodel
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/usage-stats/providers/bigmodel/index.ts
+      - packages/services/src/usage-stats/providers/bigmodel/contract.ts
+    layers:
+      adapters: .
+    owner: usage
+  # dev-docs-app：由 architecture:adopt 登记
+  - id: dev-docs-app
+    roots:
+      - apps/dev-docs/src/app
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/dev-docs/src/app/index.ts
+      - apps/dev-docs/src/app/contract.ts
+    layers:
+      adapters: .
+    owner: docs
+  # ui-app-panels：由 architecture:adopt 登记
+  - id: ui-app-panels
+    roots:
+      - packages/ui/src/hooks/app-panels
+    managed: true
+    requires:
+      - plugin-ui
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/hooks/app-panels/index.ts
+      - packages/ui/src/hooks/app-panels/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # cli-model-execution：由 architecture:adopt 登记
+  - id: cli-model-execution
+    roots:
+      - apps/zcode-cli/packages/adapters/src/model/model-execution
+    managed: true
+    requires:
+      - cli-model-cache-control
+      - provider
+      - shared
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/model/model-execution/index.ts
+      - apps/zcode-cli/packages/adapters/src/model/model-execution/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-agent-trace：由 architecture:adopt 登记
+  - id: cli-agent-trace
+    roots:
+      - apps/zcode-cli/packages/telemetry/src/agent-trace
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/telemetry/src/agent-trace/index.ts
+      - apps/zcode-cli/packages/telemetry/src/agent-trace/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # desktop-auto-updater：由 architecture:adopt 登记
+  - id: desktop-auto-updater
+    roots:
+      - packages/desktop/src/main/auto-updater
+    managed: true
+    requires:
+      - desktop
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/auto-updater/index.ts
+      - packages/desktop/src/main/auto-updater/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-lifecycle：由 architecture:adopt 登记
+  - id: desktop-lifecycle
+    roots:
+      - packages/desktop/src/main/lifecycle
+    managed: true
+    requires:
+      - desktop
+      - desktop-web-remote-relay
+      - embedded-browser-permission
+      - plugin-sandbox
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/lifecycle/index.ts
+      - packages/desktop/src/main/lifecycle/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-web-remote-control：由 architecture:adopt 登记
+  - id: desktop-web-remote-control
+    roots:
+      - packages/desktop/src/main/web-remote-control
+    managed: true
+    requires:
+      - client
+      - desktop
+      - desktop-web-remote-relay
+      - rpc
+      - shared
+      - web-remote-relay
+    publicEntrypoints:
+      - packages/desktop/src/main/web-remote-control/index.ts
+      - packages/desktop/src/main/web-remote-control/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-feishu：由 architecture:adopt 登记
+  - id: services-feishu
+    roots:
+      - packages/services/src/bots/providers/feishu
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/bots/providers/feishu/index.ts
+      - packages/services/src/bots/providers/feishu/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # services-conversation-share：由 architecture:adopt 登记
+  - id: services-conversation-share
+    roots:
+      - packages/services/src/conversation-share/service
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/conversation-share/service/index.ts
+      - packages/services/src/conversation-share/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # services-task-index：由 architecture:adopt 登记
+  - id: services-task-index
+    roots:
+      - packages/services/src/zcode-agent/task-index
+    managed: true
+    requires:
+      - rpc
+      - services
+      - session
+      - shared
+      - task-facts
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/task-index/index.ts
+      - packages/services/src/zcode-agent/task-index/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # web-bootstrap：由 architecture:adopt 登记
+  - id: web-bootstrap
+    roots:
+      - packages/web/src/bootstrap
+    managed: true
+    requires:
+      - client
+      - shared
+      - ui
+      - web
+      - web-remote-control
+    publicEntrypoints:
+      - packages/web/src/bootstrap/index.ts
+      - packages/web/src/bootstrap/contract.ts
+    layers:
+      adapters: .
+    owner: web
+  # ui-message-telemetry：由 architecture:adopt 登记
+  - id: ui-message-telemetry
+    roots:
+      - packages/ui/src/lib/message-telemetry
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lib/message-telemetry/index.ts
+      - packages/ui/src/lib/message-telemetry/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-settings-page-helpers：由 architecture:adopt 登记
+  - id: ui-settings-page-helpers
+    roots:
+      - packages/ui/src/settings-page-helpers
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings-page-helpers/index.ts
+      - packages/ui/src/settings-page-helpers/contract.ts
+    layers:
+      ui: .
+    owner: settings
+  # ui-lexical-chat-input：由 architecture:adopt 登记
+  - id: ui-lexical-chat-input
+    roots:
+      - packages/ui/src/lexical-chat-input
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lexical-chat-input/index.ts
+      - packages/ui/src/lexical-chat-input/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # desktop-source-server-connection：由 architecture:adopt 登记
+  - id: desktop-source-server-connection
+    roots:
+      - packages/desktop/src/host/source-server-connection
+    managed: true
+    requires:
+      - desktop
+      - rpc
+      - server
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/host/source-server-connection/index.ts
+      - packages/desktop/src/host/source-server-connection/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-task-index-repo：由 architecture:adopt 登记
+  - id: services-task-index-repo
+    roots:
+      - packages/services/src/session/task-index-repo
+    managed: true
+    requires:
+      - project-storage
+      - services
+      - session
+      - shared
+      - task-groups
+    publicEntrypoints:
+      - packages/services/src/session/task-index-repo/index.ts
+      - packages/services/src/session/task-index-repo/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-telemetry-parity-scenarios：由 architecture:adopt 登记
+  - id: ui-telemetry-parity-scenarios
+    roots:
+      - packages/ui/src/lib/telemetry-parity-scenarios
+    managed: true
+    requires:
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lib/telemetry-parity-scenarios/index.ts
+      - packages/ui/src/lib/telemetry-parity-scenarios/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # dev-docs-protocol-docs：由 architecture:adopt 登记
+  - id: dev-docs-protocol-docs
+    roots:
+      - apps/dev-docs/src/data/protocol-docs
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/dev-docs/src/data/protocol-docs/index.ts
+      - apps/dev-docs/src/data/protocol-docs/contract.ts
+    layers:
+      adapters: .
+    owner: docs
+  # services-automation-repo：由 architecture:adopt 登记
+  - id: services-automation-repo
+    roots:
+      - packages/services/src/session/automation-repo
+    managed: true
+    requires:
+      - services
+      - session
+      - shared
+    publicEntrypoints:
+      - packages/services/src/session/automation-repo/index.ts
+      - packages/services/src/session/automation-repo/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-share-readonly-timeline：由 architecture:adopt 登记
+  - id: ui-share-readonly-timeline
+    roots:
+      - packages/ui/src/v4/share-readonly-timeline
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/share-readonly-timeline/index.ts
+      - packages/ui/src/v4/share-readonly-timeline/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # desktop-source-server-directory：由 architecture:adopt 登记
+  - id: desktop-source-server-directory
+    roots:
+      - packages/desktop/src/host/source-server-directory
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/host/source-server-directory/index.ts
+      - packages/desktop/src/host/source-server-directory/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-bigmodel-subscription：由 architecture:adopt 登记
+  - id: services-bigmodel-subscription
+    roots:
+      - packages/services/src/coding-plan-subscription/bigmodel-subscription
+    managed: true
+    requires:
+      - provider
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/coding-plan-subscription/bigmodel-subscription/index.ts
+      - packages/services/src/coding-plan-subscription/bigmodel-subscription/contract.ts
+    layers:
+      adapters: .
+    owner: usage
+  # services-process-manager：由 architecture:adopt 登记
+  - id: services-process-manager
+    roots:
+      - packages/services/src/zcode-agent/process-manager
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/process-manager/index.ts
+      - packages/services/src/zcode-agent/process-manager/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-git-action-menu：由 architecture:adopt 登记
+  - id: ui-git-action-menu
+    roots:
+      - packages/ui/src/git-action-menu
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/git-action-menu/index.ts
+      - packages/ui/src/git-action-menu/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-app-root：由 architecture:adopt 登记
+  - id: ui-app-root
+    roots:
+      - packages/ui/src/app-root
+    managed: true
+    requires:
+      - services
+      - shared
+      - side-pane-full-view
+      - ui
+      - ui-root
+    publicEntrypoints:
+      - packages/ui/src/app-root/index.ts
+      - packages/ui/src/app-root/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-composer-toolbar：由 architecture:adopt 登记
+  - id: ui-composer-toolbar
+    roots:
+      - packages/ui/src/v4/composer/composer-toolbar
+    managed: true
+    requires:
+      - agent-workbench
+      - provider
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/composer-toolbar/index.ts
+      - packages/ui/src/v4/composer/composer-toolbar/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-oauth-service：由 architecture:adopt 登记
+  - id: services-oauth-service
+    roots:
+      - packages/services/src/oauth/service
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/oauth/service/index.ts
+      - packages/services/src/oauth/service/contract.ts
+    layers:
+      adapters: .
+    owner: auth
+  # ui-coding-plan-usage-panel：由 architecture:adopt 登记
+  - id: ui-coding-plan-usage-panel
+    roots:
+      - packages/ui/src/settings/usage-stats/coding-plan-usage-panel
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/usage-stats/coding-plan-usage-panel/index.ts
+      - packages/ui/src/settings/usage-stats/coding-plan-usage-panel/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # ui-remote-connection-fields：由 architecture:adopt 登记
+  - id: ui-remote-connection-fields
+    roots:
+      - packages/ui/src/remote-connection-fields
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/remote-connection-fields/index.ts
+      - packages/ui/src/remote-connection-fields/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-skills-service：由 architecture:adopt 登记
+  - id: services-skills-service
+    roots:
+      - packages/services/src/skills/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/skills/service/index.ts
+      - packages/services/src/skills/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # cli-session-events：由 architecture:adopt 登记
+  - id: cli-session-events
+    roots:
+      - apps/zcode-cli/packages/contracts/src/events/session
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/contracts/src/events/session/index.ts
+      - apps/zcode-cli/packages/contracts/src/events/session/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # ui-elicitation-dialog：由 architecture:adopt 登记
+  - id: ui-elicitation-dialog
+    roots:
+      - packages/ui/src/elicitation-dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/elicitation-dialog/index.ts
+      - packages/ui/src/elicitation-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-model-provider-container：由 architecture:adopt 登记
+  - id: ui-model-provider-container
+    roots:
+      - packages/ui/src/settings/model-provider-section/container
+    managed: true
+    requires:
+      - agent-workbench
+      - opencode-agent-settings
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/model-provider-section/container/index.ts
+      - packages/ui/src/settings/model-provider-section/container/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-plugin-sync-service：由 architecture:adopt 登记
+  - id: services-plugin-sync-service
+    roots:
+      - packages/services/src/plugin-sync/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/plugin-sync/service/index.ts
+      - packages/services/src/plugin-sync/service/contract.ts
+    layers:
+      adapters: .
+    owner: plugins
+  # ui-composer-attachments：由 architecture:adopt 登记
+  - id: ui-composer-attachments
+    roots:
+      - packages/ui/src/v4/composer/composer-attachments
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/composer-attachments/index.ts
+      - packages/ui/src/v4/composer/composer-attachments/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # desktop-locator-executor：由 architecture:adopt 登记
+  - id: desktop-locator-executor
+    roots:
+      - packages/desktop/src/main/browserView/locator-executor
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/browserView/locator-executor/index.ts
+      - packages/desktop/src/main/browserView/locator-executor/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-conversation-projection-store：由 architecture:adopt 登记
+  - id: ui-conversation-projection-store
+    roots:
+      - packages/ui/src/v4/conversation-projection-store
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/conversation-projection-store/index.ts
+      - packages/ui/src/v4/conversation-projection-store/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-model-provider-status-cards：由 architecture:adopt 登记
+  - id: ui-model-provider-status-cards
+    roots:
+      - packages/ui/src/settings/model-provider-section/status-cards
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/model-provider-section/status-cards/index.ts
+      - packages/ui/src/settings/model-provider-section/status-cards/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # ui-model-provider-detail：由 architecture:adopt 登记
+  - id: ui-model-provider-detail
+    roots:
+      - packages/ui/src/settings/model-provider-section/detail
+    managed: true
+    requires:
+      - shared
+      - ui
+      - ui-root
+    publicEntrypoints:
+      - packages/ui/src/settings/model-provider-section/detail/index.ts
+      - packages/ui/src/settings/model-provider-section/detail/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # ui-bots-dialog：由 architecture:adopt 登记
+  - id: ui-bots-dialog
+    roots:
+      - packages/ui/src/bots-dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/bots-dialog/index.ts
+      - packages/ui/src/bots-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # cli-core-subagent：由 architecture:adopt 登记
+  - id: cli-core-subagent
+    roots:
+      - apps/zcode-cli/packages/core/src/runtime/methods/subagent
+    managed: true
+    requires:
+      - cli-file-transaction
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/index.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # services-commands-service：由 architecture:adopt 登记
+  - id: services-commands-service
+    roots:
+      - packages/services/src/commands/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/commands/service/index.ts
+      - packages/services/src/commands/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-workspace-slice：由 architecture:adopt 登记
+  - id: ui-workspace-slice
+    roots:
+      - packages/ui/src/store/workspace-slice
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/store/workspace-slice/index.ts
+      - packages/ui/src/store/workspace-slice/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-plugin-store-page：由 architecture:adopt 登记
+  - id: ui-plugin-store-page
+    roots:
+      - packages/ui/src/settings/plugin-store-page
+    managed: true
+    requires:
+      - conversation-workspace-target
+      - plugin-ui
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/plugin-store-page/index.ts
+      - packages/ui/src/settings/plugin-store-page/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-bigmodel-monitor-mapper：由 architecture:adopt 登记
+  - id: services-bigmodel-monitor-mapper
+    roots:
+      - packages/services/src/usage-stats/providers/bigmodel-monitor-mapper
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - packages/services/src/usage-stats/providers/bigmodel-monitor-mapper/index.ts
+      - packages/services/src/usage-stats/providers/bigmodel-monitor-mapper/contract.ts
+    layers:
+      adapters: .
+    owner: usage
+  # services-zcode-agent：由 architecture:adopt 登记
+  - id: services-zcode-agent
+    roots:
+      - packages/services/src/zcode-agent/agent
+    managed: true
+    requires:
+      - mcp-apps-protocol
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/agent/index.ts
+      - packages/services/src/zcode-agent/agent/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-task-slice：由 architecture:adopt 登记
+  - id: ui-task-slice
+    roots:
+      - packages/ui/src/store/task-slice
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/store/task-slice/index.ts
+      - packages/ui/src/store/task-slice/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-off-peak-mock-gateway：由 architecture:adopt 登记
+  - id: services-off-peak-mock-gateway
+    roots:
+      - packages/services/src/session/off-peak-mock-gateway
+    managed: true
+    requires:
+      - services
+    publicEntrypoints:
+      - packages/services/src/session/off-peak-mock-gateway/index.ts
+      - packages/services/src/session/off-peak-mock-gateway/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # services-conversation-share-public-projection：由 architecture:adopt 登记
+  - id: services-conversation-share-public-projection
+    roots:
+      - packages/services/src/conversation-share/public-projection
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/conversation-share/public-projection/index.ts
+      - packages/services/src/conversation-share/public-projection/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-preload-bridge：由 architecture:adopt 登记
+  - id: desktop-preload-bridge
+    roots:
+      - packages/desktop/src/preload/bridge
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/preload/bridge/index.ts
+      - packages/desktop/src/preload/bridge/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-window-host-controller：由 architecture:adopt 登记
+  - id: desktop-window-host-controller
+    roots:
+      - packages/desktop/src/host/window-host-controller
+    managed: true
+    requires:
+      - desktop
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/host/window-host-controller/index.ts
+      - packages/desktop/src/host/window-host-controller/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # desktop-stability-telemetry：由 architecture:adopt 登记
+  - id: desktop-stability-telemetry
+    roots:
+      - packages/desktop/src/main/stability-telemetry
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/stability-telemetry/index.ts
+      - packages/desktop/src/main/stability-telemetry/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # services-zcode-agent-connection-scope：由 architecture:adopt 登记
+  - id: services-zcode-agent-connection-scope
+    roots:
+      - packages/services/src/zcode-agent/connection-scope
+    managed: true
+    requires:
+      - rpc
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/zcode-agent/connection-scope/index.ts
+      - packages/services/src/zcode-agent/connection-scope/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-task-realtime-bus：由 architecture:adopt 登记
+  - id: desktop-task-realtime-bus
+    roots:
+      - packages/desktop/src/main/task-realtime-bus
+    managed: true
+    requires:
+      - desktop
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/task-realtime-bus/index.ts
+      - packages/desktop/src/main/task-realtime-bus/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-remote-connection-connecting-step：由 architecture:adopt 登记
+  - id: ui-remote-connection-connecting-step
+    roots:
+      - packages/ui/src/remote-connection/connecting-step
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/remote-connection/connecting-step/index.ts
+      - packages/ui/src/remote-connection/connecting-step/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-permission-dialog：由 architecture:adopt 登记
+  - id: ui-permission-dialog
+    roots:
+      - packages/ui/src/permission-dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/permission-dialog/index.ts
+      - packages/ui/src/permission-dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # cli-core-executor：由 architecture:adopt 登记
+  - id: cli-core-executor
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/executor
+    managed: true
+    requires:
+      - cli-file-transaction
+      - cli-tool-self-repair
+      - mcp-apps-protocol
+      - shared
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/executor/index.ts
+      - apps/zcode-cli/packages/core/src/tool/executor/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # ui-task-list-item：由 architecture:adopt 登记
+  - id: ui-task-list-item
+    roots:
+      - packages/ui/src/task-list-item
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/task-list-item/index.ts
+      - packages/ui/src/task-list-item/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-mcp-sync-service：由 architecture:adopt 登记
+  - id: services-mcp-sync-service
+    roots:
+      - packages/services/src/mcp-sync/service
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/mcp-sync/service/index.ts
+      - packages/services/src/mcp-sync/service/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-export-logs：由 architecture:adopt 登记
+  - id: desktop-export-logs
+    roots:
+      - packages/desktop/src/main/export-logs
+    managed: true
+    requires:
+      - desktop
+      - services
+    publicEntrypoints:
+      - packages/desktop/src/main/export-logs/index.ts
+      - packages/desktop/src/main/export-logs/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-task-query-cache：由 architecture:adopt 登记
+  - id: ui-task-query-cache
+    roots:
+      - packages/ui/src/store/task-query-cache
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/store/task-query-cache/index.ts
+      - packages/ui/src/store/task-query-cache/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # cli-browser-client-facade：由 architecture:adopt 登记
+  - id: cli-browser-client-facade
+    roots:
+      - apps/zcode-cli/packages/core/src/browser-client/facade
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/browser-client/facade/index.ts
+      - apps/zcode-cli/packages/core/src/browser-client/facade/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # ui-share-confirmation-dock：由 architecture:adopt 登记
+  - id: ui-share-confirmation-dock
+    roots:
+      - packages/ui/src/v4/share-confirmation-dock
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/share-confirmation-dock/index.ts
+      - packages/ui/src/v4/share-confirmation-dock/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-skills-section：由 architecture:adopt 登记
+  - id: ui-skills-section
+    roots:
+      - packages/ui/src/settings/skills-section
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings/skills-section/index.ts
+      - packages/ui/src/settings/skills-section/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: settings
+  # services-feedback-http-client：由 architecture:adopt 登记
+  - id: services-feedback-http-client
+    roots:
+      - packages/services/src/feedback/http-client
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/feedback/http-client/index.ts
+      - packages/services/src/feedback/http-client/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # desktop-build-config：由 architecture:adopt 登记
+  - id: desktop-build-config
+    roots:
+      - packages/desktop/build-config
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/desktop/build-config/index.ts
+      - packages/desktop/build-config/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # ui-terminal-session：由 architecture:adopt 登记
+  - id: ui-terminal-session
+    roots:
+      - packages/ui/src/terminal/session
+    managed: true
+    requires:
+      - rpc
+      - services
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/terminal/session/index.ts
+      - packages/ui/src/terminal/session/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-unified-browser-view：由 architecture:adopt 登记
+  - id: ui-unified-browser-view
+    roots:
+      - packages/ui/src/browser-use/unified-browser-view
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/browser-use/unified-browser-view/index.ts
+      - packages/ui/src/browser-use/unified-browser-view/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-command-center-dialog：由 architecture:adopt 登记
+  - id: ui-command-center-dialog
+    roots:
+      - packages/ui/src/command-center/dialog
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/command-center/dialog/index.ts
+      - packages/ui/src/command-center/dialog/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # ui-context-usage：由 architecture:adopt 登记
+  - id: ui-context-usage
+    roots:
+      - packages/ui/src/chat-input-toolbar/context-usage
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/chat-input-toolbar/context-usage/index.ts
+      - packages/ui/src/chat-input-toolbar/context-usage/contract.ts
+    layers:
+      contract: contract.ts
+      ui: .
+    owner: conversation
+  # services-legacy-config-reader：由 architecture:adopt 登记
+  - id: services-legacy-config-reader
+    roots:
+      - packages/services/src/model-provider/legacy-config-reader
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/model-provider/legacy-config-reader/index.ts
+      - packages/services/src/model-provider/legacy-config-reader/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # cli-debug-app：由 architecture:adopt 登记
+  - id: cli-debug-app
+    roots:
+      - apps/zcode-cli/packages/debug/src/app
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/debug/src/app/index.ts
+      - apps/zcode-cli/packages/debug/src/app/contract.ts
+    layers:
+      adapters: .
+    owner: debug
+  # cli-debug-analyzer：由 architecture:adopt 登记
+  - id: cli-debug-analyzer
+    roots:
+      - apps/zcode-cli/packages/debug/server/analyzer
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/debug/server/analyzer/index.ts
+      - apps/zcode-cli/packages/debug/server/analyzer/contract.ts
+    layers:
+      adapters: .
+    owner: debug
+  # cli-tool-self-repair：由 architecture:adopt 登记
+  - id: cli-tool-self-repair
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/self-repair
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/self-repair/index.ts
+      - apps/zcode-cli/packages/core/src/tool/self-repair/contract.ts
+    layers:
+      app: .
+    owner: agent
+  # cli-model-cache-control：由 architecture:adopt 登记
+  - id: cli-model-cache-control
+    roots:
+      - apps/zcode-cli/packages/adapters/src/model/cache-control
+    managed: true
+    requires:
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/model/cache-control/index.ts
+      - apps/zcode-cli/packages/adapters/src/model/cache-control/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-file-transaction：由 architecture:adopt 登记
+  - id: cli-file-transaction
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/file-transaction
+    managed: true
+    requires:
+      - cli-diff-engine
+      - shared
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/file-transaction/index.ts
+      - apps/zcode-cli/packages/core/src/tool/file-transaction/contract.ts
+      - apps/zcode-cli/packages/core/src/tool/file-transaction/task-contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-diff-engine：由 architecture:adopt 登记
+  - id: cli-diff-engine
+    roots:
+      - apps/zcode-cli/packages/core/src/tool/diff-engine
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/tool/diff-engine/index.ts
+      - apps/zcode-cli/packages/core/src/tool/diff-engine/contract.ts
+    layers:
+      domain: .
+    owner: agent
+  # cli-exec-sandbox：由 architecture:adopt 登记
+  - id: cli-exec-sandbox
+    roots:
+      - apps/zcode-cli/packages/adapters/src/exec/sandbox
+      - apps/zcode-cli/packages/adapters/tests/exec-sandbox
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/exec/sandbox/index.ts
+      - apps/zcode-cli/packages/adapters/src/exec/sandbox/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cli-exec-pty：由 architecture:adopt 登记
+  - id: cli-exec-pty
+    roots:
+      - apps/zcode-cli/packages/adapters/src/exec/pty
+      - apps/zcode-cli/packages/adapters/tests/exec-pty
+    managed: true
+    requires:
+      - cli-exec-sandbox
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/exec/pty/index.ts
+      - apps/zcode-cli/packages/adapters/src/exec/pty/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+
+  # cli-browser-telemetry：stateful Playwright-телеметрия действия (console/pageerror/4xx-5xx/ARIA/DOM/кадр).
+  # Владелец подписок на живую Page; consumer — browser-контроллер адаптера.
+  - id: cli-browser-telemetry
+    roots:
+      - apps/zcode-cli/packages/adapters/src/browser/telemetry
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/browser/telemetry/index.ts
+      - apps/zcode-cli/packages/adapters/src/browser/telemetry/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+
+  # services-cua-linux-host：нативный Linux Computer Use (koffi FFI libX11/libXtst,
+  # XDG RemoteDesktop/Screenshot portal, каскад утилит захвата, DPI-нормализация).
+  # Владелец Display*/портал-сессии и кэша probe(); потребитель — cua-helpers/CUA broker.
+  - id: services-cua-linux-host
+    roots:
+      - packages/services/src/cua-linux-host
+      - packages/services/test/cua-linux-host
+    managed: true
+    requires:
+      # Единственная внешняя зависимость — общий сервисный логгер (createServiceLogger).
+      # Он живёт в unmanaged-корне services и не является рантайм-логикой CUA.
+      - services
+    publicEntrypoints:
+      - packages/services/src/cua-linux-host/index.ts
+      - packages/services/src/cua-linux-host/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+
+  # cli-auto-repair-loop：детерминированный замкнутый цикл Action → Telemetry → Invariant
+  # Gate → Diagnosis → Repair → Re-verify. Владелец лимитов/бюджета/истории сигнатур;
+  # порты (typecheck/lint/тесты/браузер/PTY/файлы) внедряются вызывающим.
+  - id: cli-auto-repair-loop
+    roots:
+      - apps/zcode-cli/packages/core/src/runtime/auto-repair-loop
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/runtime/auto-repair-loop/index.ts
+      - apps/zcode-cli/packages/core/src/runtime/auto-repair-loop/contract.ts
+    layers:
+      app: .
+    owner: agent
+  # shared-chat-autocomplete：由 architecture:adopt 登记
+  - id: shared-chat-autocomplete
+    roots:
+      - packages/shared/src/chat-autocomplete
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/chat-autocomplete/index.ts
+      - packages/shared/src/chat-autocomplete/contract.ts
+      - packages/shared/src/chat-autocomplete/postprocess.ts
+    layers:
+      contract: .
+    owner: conversation
+  # services-chat-autocomplete：由 architecture:adopt 登记
+  - id: services-chat-autocomplete
+    roots:
+      - packages/services/src/chat-autocomplete
+    managed: true
+    requires:
+      - code-intelligence
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/chat-autocomplete/index.ts
+      - packages/services/src/chat-autocomplete/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # ui-lexical-ghost-autocomplete：由 architecture:adopt 登记
+  - id: ui-lexical-ghost-autocomplete
+    roots:
+      - packages/ui/src/lexical-ghost-autocomplete
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/lexical-ghost-autocomplete/index.ts
+      - packages/ui/src/lexical-ghost-autocomplete/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # ui-prompt-enhancer：кнопка Enhance Prompt и действие для системных промптов.
+  - id: ui-prompt-enhancer
+    roots:
+      - packages/ui/src/prompt-enhancer-ui
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/prompt-enhancer-ui/index.ts
+      - packages/ui/src/prompt-enhancer-ui/contract.ts
+      - packages/ui/src/prompt-enhancer-ui/ComposerEnhancePrompt.tsx
+    layers:
+      ui: .
+    owner: conversation
+  # ui-settings-stage4：единая панель настроек подсистем Этапа 4 (4.1–4.6).
+  - id: ui-settings-stage4
+    roots:
+      - packages/ui/src/settings-stage4
+    managed: true
+    requires:
+      - services
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/settings-stage4/index.ts
+      - packages/ui/src/settings-stage4/contract.ts
+      - packages/ui/src/settings-stage4/SettingsStage4Section.tsx
+    layers:
+      ui: .
+    owner: conversation
+  # shared-stage4-settings：由 architecture:adopt 登记
+  - id: shared-stage4-settings
+    roots:
+      - packages/shared/src/stage4-settings
+    managed: true
+    requires:
+      - shared
+      - shared-chat-autocomplete
+      - shared-proactive-suggestion
+    publicEntrypoints:
+      - packages/shared/src/stage4-settings/index.ts
+      - packages/shared/src/stage4-settings/settings.ts
+      - packages/shared/src/stage4-settings/host-runtime.ts
+    layers:
+      contract: .
+    owner: conversation
+  # shared-prompt-enhancer：由 architecture:adopt 登记
+  - id: shared-prompt-enhancer
+    roots:
+      - packages/shared/src/prompt-enhancer
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/prompt-enhancer/index.ts
+      - packages/shared/src/prompt-enhancer/contract.ts
+    layers:
+      contract: .
+    owner: conversation
+  # prompt-enhancer：由 architecture:adopt 登记
+  - id: prompt-enhancer
+    roots:
+      - packages/services/src/prompt-enhancer
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/prompt-enhancer/index.ts
+      - packages/services/src/prompt-enhancer/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # shared-proactive-suggestion：由 architecture:adopt 登记
+  - id: shared-proactive-suggestion
+    roots:
+      - packages/shared/src/proactive-suggestion
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/proactive-suggestion/index.ts
+      - packages/shared/src/proactive-suggestion/contract.ts
+    layers:
+      domain: .
+  # services-proactive-suggestion：由 architecture:adopt 登记
+  - id: services-proactive-suggestion
+    roots:
+      - packages/services/src/proactive-suggestion
+    managed: true
+    requires:
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/proactive-suggestion/index.ts
+      - packages/services/src/proactive-suggestion/contract.ts
+    layers:
+      app: .
+  # ui-composer-proactive-suggestion：由 architecture:adopt 登记
+  - id: ui-composer-proactive-suggestion
+    roots:
+      - packages/ui/src/v4/composer/proactive-suggestion
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/proactive-suggestion/index.ts
+      - packages/ui/src/v4/composer/proactive-suggestion/contract.ts
+    layers:
+      ui: .
+  # ui-voice-dictation：由 architecture:adopt 登记
+  - id: ui-voice-dictation
+    roots:
+      - packages/ui/src/v4/composer/voice
+    managed: true
+    requires:
+      - shared
+      - ui
+      - ui-lexical-chat-input
+    publicEntrypoints:
+      - packages/ui/src/v4/composer/voice/index.ts
+      - packages/ui/src/v4/composer/voice/contract.ts
+    layers:
+      ui: .
+    owner: conversation
+  # desktop-voice-dictation：由 architecture:adopt 登记
+  - id: desktop-voice-dictation
+    roots:
+      - packages/desktop/src/main/voice
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - packages/desktop/src/main/voice/index.ts
+      - packages/desktop/src/main/voice/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+  # shared-voice-dictation：由 architecture:adopt 登记
+  - id: shared-voice-dictation
+    roots:
+      - packages/shared/src/voice-dictation
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/shared/src/voice-dictation/index.ts
+      - packages/shared/src/voice-dictation/contract.ts
+    layers:
+      contract: .
+    owner: conversation
+
+  # shared-subagent-catalog：由 architecture:adopt 登记
+  - id: shared-subagent-catalog
+    roots:
+      - packages/shared/src/subagent-catalog
+    managed: true
+    requires:
+      - shared
+    publicEntrypoints:
+      - packages/shared/src/subagent-catalog/index.ts
+      - packages/shared/src/subagent-catalog/contract.ts
+    layers:
+      domain: .
+
+exceptions:
+  # Two focused helpers added with the root-auto and crash-resume specs. Keep the
+  # exception path-exact; do not widen it to the whole zcode-cli tree.
+  - rule: unmanaged-new-file
+    paths:
+      # Этап 6.1b: версия приложения для не-упакованного Electron.
+      # electron-updater читает app.getVersion() при импорте main-бандла и падает на "0.0";
+      # bootstrap обязан выполниться ДО остальных import'ов, поэтому живёт одним файлом
+      # в unmanaged-корне packages/desktop/src/main рядом с другими desktopEarly*.
+      # Исключение path-exact: модуль из двух файлов вокруг двух строк был бы накладным.
+      - packages/desktop/src/main/desktopAppVersionBootstrap.ts
+      - packages/desktop/src/main/desktopEarlyAppVersionBootstrap.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/auto-resume.ts
+      - apps/zcode-cli/packages/core/src/subagent/definitions.ts
+      # Skill→agent provisioning: the runtime listing and the shared profile
+      # contract/parser live in legacy unmanaged package roots. Keep these three
+      # paths exact instead of registering a module around single contract files.
+      - apps/zcode-cli/packages/core/src/subagent/listing.ts
+      - packages/shared/src/subagent-profile.ts
+      - packages/shared/src/subagent-profile-parser.ts
+      - apps/zcode-cli/packages/core/src/runtime/helpers/root-auto-effort.ts
+      # Child effort resolver for the relative effort class; path-exact for the
+      # same unmanaged zcode-cli module.
+      - apps/zcode-cli/packages/core/src/runtime/helpers/subagent-effort.ts
+      # Tool presentation projection added with the UI usage/telemetry work;
+      # the ui module is unmanaged, so keep the exception path-exact.
+      - packages/ui/src/ToolCallBlocks/ToolPresentation.tsx
+      # Initial-import runtime file; the legacy zcode-cli module is unmanaged, and a
+      # path-exact exception is the existing convention for these two helpers.
+      - apps/zcode-cli/packages/core/src/runtime/off-peak/runtime.ts
+      # Capability installer feature: four focused files, not a new module. Keep the
+      # exception path-exact; do not widen it to the whole zcode-cli tree.
+      - apps/zcode-cli/packages/bootstrap/src/app/capability-install-port.ts
+      - apps/zcode-cli/packages/bootstrap/src/app/plugin-runtime-catalog.ts
+      - apps/zcode-cli/packages/contracts/src/interfaces/capability-install.port.ts
+      - apps/zcode-cli/packages/contracts/src/tools/capability-install.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/capability-install.ts
+      # Increment 4.2: MultiEdit tool contract/handler and the shared transaction
+      # event hook live inside the unmanaged zcode-cli module by design (they are
+      # tool components, not a separate module). Keep path-exact.
+      - apps/zcode-cli/packages/contracts/src/tools/multi-edit.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/multi-edit.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/transaction-hooks.ts
+      # Increment 4.2: file-transaction event schema extends the shared protocol
+      # surface; the shared module is managed at package level only.
+      - packages/shared/src/zcode-protocol/schema-file-transaction.ts
+      # Increment 4.2: one projection file next to session events; the ui module
+      # is unmanaged, so keep the exception path-exact.
+      - packages/ui/src/lib/zcodeSessionProjection/fileTransactions.ts
+      # Этап 6.1c: проводка реактивных диффов в таймлайн. Модуль `ui` unmanaged на уровне
+      # пакета, поэтому держим path-exact на шесть файлов одной фичи: модель проекции
+      # события, изоляция по workspaceKey, store, подписка, панель и обёртка tool-блока.
+      # Регистрировать отдельный managed-модуль из шести файлов было бы накладным и
+      # разорвало бы соседство с остальными v4-компонентами.
+      - packages/ui/src/lib/fileTransactionProjection.ts
+      - packages/ui/src/lib/fileTransactionWorkspaceScope.ts
+      - packages/ui/src/store/fileTransactionStore.ts
+      - packages/ui/src/hooks/useFileTransactionStream.ts
+      - packages/ui/src/v4/FileTransactionSummaryPanel.tsx
+      - packages/ui/src/v4/ToolFileTransactionSummary.tsx
+      # Increment 4.5a: instrument PtySession — это tool-компонент внутри
+      # unmanaged zcode-cli, как MultiEdit/Bash. Держим исключение path-exact;
+      # сама песочница и PTY-менеджер живут в managed-модулях adapters.
+      - apps/zcode-cli/packages/contracts/src/tools/pty-session.ts
+      - apps/zcode-cli/packages/core/src/tool/handlers/pty-session.ts
+      # Increment 4.5b: схема BrowserActionObservation — общий контракт телеметрии для
+      # адаптера и потребителей. Модуль shared unmanaged на уровне пакета; исключение path-exact.
+      - packages/shared/src/browser-use/observation.ts
+      # Increment 4.6: проводка существующих Host-сервисов к PromptEnhancerService.
+      # Это не модуль, а один файл рядом с остальными `src/node/*` сервисными проводами
+      # в unmanaged-корне services; логика улучшения живёт в managed `prompt-enhancer`.
+      - packages/services/src/node/prompt-enhancer-ports.ts
+      # Increment 4.4: профили глубины промпта — один enum, который читают настройки,
+      # рантайм промпта и UI композера. Модуль shared unmanaged на уровне пакета,
+      # отдельный модуль из одного файла был бы накладным; исключение path-exact.
+      - packages/shared/src/prompt-depth.ts
+      # Increment 4.6: React-хук доступа к PromptEnhancerService. Хук — это слой доступа
+      # ui к сервису, а не самостоятельный модуль; ui unmanaged на уровне пакета.
+      - packages/ui/src/hooks/usePromptEnhancer.ts
+      # Initial-import файл рекомендованных промптов; менялся только для удаления
+      # захардкоженных CDN-иконок. ui unmanaged на уровне пакета, поэтому path-exact.
+      - packages/ui/src/v4/featureSuggestedPrompts.ts
+      # Increment 4.3: воспроизводимый бенчмарк кодового индекса. Это dev-скрипт
+      # (запускается вручную, не попадает в сборку пакета), поэтому регистрировать его
+      # как модуль не имеет смысла; держим исключение path-exact на один файл,
+      # не расширяя его на весь packages/services/bench.
+      - packages/services/bench/code-intelligence-bench.mjs
+      # Increment 4.4/4.6: команда `/enhance` и её формат результата. Это tool-компоненты
+      # внутри unmanaged zcode-cli, как MultiEdit/Bash/PtySession — модуля не образуют.
+      - apps/zcode-cli/packages/cli/src/enhance-command.ts
+      - apps/zcode-cli/packages/cli/src/command-center/handlers/enhance.ts
+      # Increment 4.4: когнитивные протоколы — секция системного контекста внутри
+      # unmanaged zcode-cli core; живёт рядом с остальными `context/sections/*`.
+      - apps/zcode-cli/packages/core/src/context/cognitive-protocols.ts
+      # Increment 4.6: жизненный цикл protocol-канала Host'а для enhance-запросов;
+      # один файл рядом с остальной проводкой CLI в unmanaged zcode-cli.
+      - apps/zcode-cli/packages/cli/src/protocol-lifecycle.ts
+      # Этап 5: разбиение `agent-runtime.ts` (858 → 508 значимых строк) под лимит
+      # `max-lines`. Публичная поверхность вынесена в отдельный файл declaration merging;
+      # это не модуль, а часть того же unmanaged zcode-cli core.
+      - apps/zcode-cli/packages/core/src/runtime/agent-runtime-surface.ts
+      # Этап 5: разбиение `turn-model-step.ts` (830 → под 800) под лимит `max-lines`.
+      # Диагностика шага и ветка output-token-limit вынесены в соседние helpers
+      # того же unmanaged zcode-cli core; поведение и порядок событий не менялись.
+      - apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step-diagnostics.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step-output-limit.ts
+      # Этап 5: разбиение `context/index.ts` (831 → 795 значимых строк) под лимит
+      # `max-lines`. Кеш и секция workspace facts вынесены в отдельные файлы того же
+      # unmanaged zcode-cli; публичные экспорты, ключи и порядок источников не менялись.
+      - apps/zcode-cli/packages/adapters/src/context/workspace-facts.ts
+      - apps/zcode-cli/packages/adapters/src/context/workspace-facts-cache.ts
+      - apps/zcode-cli/packages/adapters/src/context/workspace-facts-wiring.ts
+      - apps/zcode-cli/packages/core/src/context/sections/workspace-facts.ts
 
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
@@ -745,144 +2539,3 @@ global:
   forbidDeepImports: true
   managedOnly: true
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
-
-exceptions:
-  - id: side-pane-full-view-shortcut-command-edit
-    rule: unmanaged-new-file
-    paths: [packages/shared/src/shortcutCommands.ts]
-    reason: 已准入的快捷键命令表只追加一条 toggleSidePaneFullView 命令（Side Pane 完整视图，docs/ui/side-pane-full-view.md）；命令表仍是唯一数据源，签名与模块边界不变，接管整个 shared 包不在本次范围内。
-  - id: opensource-cua-test-project-config
-    rule: unmanaged-new-file
-    paths: [packages/zcode-cua/vitest.config.ts]
-    reason: 该文件只装配测试项目，开源占位版本用于保持根单测入口可运行；不包含 producer 运行逻辑，不为同目录实现文件开放例外。
-  - id: opensource-tool-search-comment-cleanup
-    rule: unmanaged-new-file
-    paths:
-      - apps/zcode-cli/packages/contracts/src/tools/tool-search.ts
-      - apps/zcode-cli/packages/core/src/tool/handlers/tool-search.ts
-    reason: 已有上游文件仅去掉两行产品对标注释；去除注释后的 TypeScript 输出与 staging 完全一致。契约、实现和模块边界不变，整目录接管不在本次开源整理范围内；后续逻辑修改须重新核对模块治理。
-  - id: project-location-cache-recovery-existing-edit
-    rule: unmanaged-new-file
-    paths:
-      - packages/shared/src/project-access-token-client.ts
-      - packages/services/src/model-provider/accountProjectTokenClient.ts
-      - packages/services/src/credential/credentialService.ts
-    reason: 已有项目 Token 与凭据存储增加派生缓存的局部恢复端口；保持原有 owner 和共享文件锁，不接管全目录。
-  - id: test-ids-subpath-import-unmanaged-edit
-    rule: unmanaged-new-file
-    paths:
-      - packages/ui/src/browser-use/EmbeddedBrowserPermissionPrompts.tsx
-      - packages/ui/src/hooks/useStartPlanRecommendation.ts
-      - packages/ui/src/settings/DynamicWorkflowModeSetting.tsx
-    reason: 已准入的存量文件只把 TID 导入从 @zcode/shared 根入口改为 @zcode/shared/test-ids 子路径（根入口不再导出 test-ids，以收窄受影响单测范围）；行为与模块边界不变，接管 ui 目录不在本次范围内。
-  - id: connection-log-secret-token-unmanaged-edit
-    rule: unmanaged-new-file
-    paths: [packages/shared/src/source-server/connectionLog.ts]
-    reason: 已存在的连接日志过滤函数只把已知秘密从子串替换改为完整 token 匹配，修复短密码反推泄露；签名与模块边界不变，接管整个 shared 包不在本次修复范围内。
-  - id: connection-errors-econnreset-unmanaged-edit
-    rule: unmanaged-new-file
-    paths: [packages/shared/src/source-server/connectionErrors.ts]
-    reason: 已存在的连接错误归一化码表补一项 ECONNRESET → remote-host-unreachable，修复在线断连恢复失败被误报为预检失败；签名与模块边界不变，接管整个 shared 包不在本次修复范围内。
-  - id: client-config-public-field-unmanaged-edit
-    rule: unmanaged-new-file
-    paths: [packages/shared/src/clientConfig.ts]
-    reason: Existing upstream public config parser gains one validated recommendation field; ownership and module boundaries remain unchanged, and adopting the shared package is outside this change.
-  - id: highspeed-fallback-snapshot-unmanaged-edit
-    rule: unmanaged-new-file
-    paths: [apps/zcode-cli/packages/core/src/runtime/methods/turn-execution-fallback.ts]
-    reason: 合并已存在于 staging 的加速卡回退模块，仅将可变 Session 读取替换为本轮固定候选；保持现有 Core 模块边界，不在同步分支时机械拆分整个 runtime。
-  - id: shortcut-settings-existing-ui-edit
-    rule: unmanaged-new-file
-    paths:
-      - packages/ui/src/components/ui/kbd.tsx
-      - packages/ui/src/settings/ShortcutSearchBar.tsx
-      - packages/ui/src/settings/ShortcutSettingsSection.tsx
-    reason: Existing upstream shortcut components and keycap primitive edited for shared controls, responsive layout and save admission; adopting the entire settings directory requires a separate boundary refactor.
-  - id: sidebar-workflow-tooltip-existing-ui-edit
-    rule: unmanaged-new-file
-    paths: [packages/ui/src/components/workflow-run-line/WorkflowRunRail.tsx]
-    reason: Existing upstream workflow rail edited only to adapt native titles within the sidebar tooltip scope; workflow ownership and imports remain unchanged except for the shared UI tooltip adapter.
-  - id: onboarding-existing-module-edit
-    rule: unmanaged-new-file
-    paths:
-      - packages/services/src/onboarding/
-      - packages/ui/src/onboarding/
-    reason: onboarding 目录（记录持久化服务与触发 hook）是已合入 staging 的存量功能模块，本轮修复在其既有边界内收紧老用户判定与兜底；模块 adopt 登记需单独的边界梳理，不在本缺陷修复内展开。
-  - id: remote-connection-flow-existing-size
-    rule: max-file-lines
-    paths: [packages/ui/src/remote-connection-flow/index.ts]
-    reason: Preserve the existing single hook owner and closure; module adoption must not mechanically split state to satisfy line counts.
-  - id: gen-ui-tweak-runtime-size
-    rule: max-file-lines
-    paths: [packages/desktop/src/renderer/src/plugin-sandbox/genUiTweakRuntime.js]
-    reason: Keep parameter binding and registration lifecycle together; runtime-manifest.json and tests verify file integrity.
-  - id: gen-ui-tweak-runtime-lint
-    rule: disable-count
-    paths: [packages/desktop/src/renderer/src/plugin-sandbox/genUiTweakRuntime.js]
-    reason: Allow the control-character validation regex and the single-file parameter-control runtime.
-  - id: settings-machine-unmanaged-edit
-    rule: unmanaged-new-file
-    paths: [packages/ui/src/settings/SettingsMachine.tsx]
-    reason: Admitted upstream file edited only to remove settings notices; adopting packages/ui/src/settings needs a separate module boundary refactor.
-  - id: workflow-amend-provider-boundary-unmanaged-edit
-    rule: unmanaged-new-file
-    paths:
-      - apps/zcode-cli/packages/contracts/src/tools/amend-workflow.ts
-      - apps/zcode-cli/packages/core/src/tool/handlers/amend-workflow-resolve.ts
-    reason: Admitted upstream files edited only to make an own-run AmendWorkflow that brings in a new provider ask the user; adopting the zcode-cli contracts and core handlers needs a separate module boundary refactor.
-  - id: workflow-share-unmanaged-new-files
-    rule: unmanaged-new-file
-    paths:
-      - packages/services/src/conversation-share/conversationShareInlineImages.ts
-      - packages/services/src/conversation-share/conversationShareWorkflowSnapshot.ts
-      - packages/shared/src/conversation-share-content.ts
-      - packages/shared/src/conversation-share-tool-presentation.ts
-      - packages/ui/src/v4/ConversationShareContent.tsx
-      - packages/ui/src/v4/ConversationShareWorkflow.tsx
-      - packages/ui/src/v4/conversationShareItems.ts
-      - packages/ui/src/ToolCallBlocks/ToolPresentation.tsx
-      - packages/ui/src/ToolCallBlocks/presentationCapabilities.tsx
-      - packages/ui/src/ToolCallBlocks/renderers/list-models.tsx
-      - packages/ui/src/ToolCallBlocks/renderers/list-saved-workflows-presentation.tsx
-      - packages/ui/src/ToolCallBlocks/renderers/web-fetch.tsx
-      - packages/ui/src/hooks/useToolPresentationHostCapabilities.ts
-      - packages/ui/src/chat-input-toolbar/thoughtLevelLabels.ts
-      - packages/ui/src/components/workflow-timeline/subagent-model-label.ts
-      - packages/desktop/src/main/fileApplications.ts
-    reason: Feature-branch files admitted path-exact; adopting conversation-share, tool presentation or renderer directories needs a separate module boundary refactor (same pattern as settings-machine-unmanaged-edit).
-  - id: workflow-notifications-unmanaged-files
-    rule: unmanaged-new-file
-    paths:
-      - apps/zcode-cli/packages/core/src/runtime-task/workflow-blocked-reminder.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/dynamic-workflow-blocked-reminder.ts
-      - apps/zcode-cli/packages/core/src/runtime-task/workflow-notification-copy.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/dynamic-workflow-run-hole-notification.ts
-      - apps/zcode-cli/packages/core/src/tool/handlers/model-reference.ts
-      - packages/shared/src/test-ids-workflow.ts
-    reason: Workflow reminder, notification and model reference files reached staging without the MR architecture gate running; adopting the zcode-cli core and shared test ids needs a separate module boundary refactor.
-  - id: composer-toolbar-unmanaged-files
-    rule: unmanaged-new-file
-    paths:
-      - packages/ui/src/ControlShortcutBadge.tsx
-      - packages/ui/src/chat-input-toolbar/ComposerEffortHeading.tsx
-      - packages/ui/src/chat-input-toolbar/ComposerModelMenu.tsx
-      - packages/ui/src/chat-input-toolbar/ComposerProviderMenu.tsx
-      - packages/ui/src/chat-input-toolbar/ComposerTriggerTransition.tsx
-      - packages/ui/src/hooks/useComposerConnectionSwitch.ts
-      - packages/ui/src/lib/composerPlanGroups.ts
-      - packages/ui/src/lib/providerFamilyConnectionTransition.ts
-      - packages/ui/src/prompt-editor/useComposerToolbarFit.ts
-    reason: Composer model, provider and toolbar files reached staging without the MR architecture gate running; adopting the packages/ui composer toolbar needs a separate module boundary refactor.
-  - id: provider-endpoint-routing-unmanaged-edit
-    rule: unmanaged-new-file
-    paths:
-      - apps/zcode-cli/packages/adapters/src/model/endpoint-routing-edition/index.ts
-      - apps/zcode-cli/packages/adapters/src/model/provider-endpoint-routing-options.ts
-    reason: Existing upstream routing assembly files gain the endpoint origin and injected JWT reader; adopting the full CLI model adapter directory needs a separate module boundary refactor.
-  - id: workflow-mode-user-choice-unmanaged-edit
-    rule: unmanaged-new-file
-    paths:
-      - packages/shared/src/dynamic-workflow-feature.ts
-      - packages/ui/src/settings/DynamicWorkflowModeSetting.tsx
-      - packages/ui/src/store/dynamicWorkflowAvailabilityStore.ts
-    reason: Admitted upstream files edited only to let the user's dynamic workflow mode choice always win and keep the settings row visible; adopting packages/shared/src and packages/ui/src needs a separate module boundary refactor.

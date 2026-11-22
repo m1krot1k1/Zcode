@@ -1,0 +1,54 @@
+# Установка локального OpenCode CLI из IDE
+
+## Продуктовый контракт
+
+- ZCode запускает установленный OpenCode CLI на том Host, которому принадлежит workspace; Renderer не запускает системные команды.
+- До установки Host повторно обнаруживает CLI. Существующая рабочая установка не обновляется и не заменяется.
+- Установка начинается только после подтверждения в UI. Она не запускает модель, не переносит credentials и не меняет настройки OpenCode.
+- Кнопка установки загружает закреплённый официальный OpenCode CLI v1.19.3 из GitHub Release `anomalyco/opencode`, проверяет SHA-256 архива до распаковки и копирует только ожидаемый бинарник с exclusive-create в пользовательский `~/.opencode/bin` (macOS/Linux) или `%USERPROFILE%\.opencode\bin` (Windows). Это не требует `bash`, `curl`, WinGet, системного `npm` или прав администратора; shell-профили не меняются.
+- Разрешены только поддерживаемые официальные asset/platform pairs из неизменяемого source manifest: macOS arm64 и x64 baseline; Windows arm64, x64 baseline; Linux arm64 и x64 baseline отдельно для glibc и musl. Неизвестные ОС/архитектуры и неподдерживаемые ABI отклоняются до загрузки. Каждый asset имеет закреплённый HTTPS URL, ожидаемый размер не более 64 MiB и официальный SHA-256; пользовательская среда, CLI credentials и GitHub token в запрос не передаются.
+- Архив загружается Node HTTPS fetch с ограничением времени/размера и allowlist для redirect-хостов GitHub Releases. После проверки digest архив раскрывается только во временный каталог; установщик не запускает содержимое архива. `opencode --version` выполняется в allowlisted environment до exclusive-create в штатный пользовательский каталог. Успешная установка не заменяет существующий CLI и не обновляет его.
+- Версия остаётся зафиксированной до повторной проверки официальных assets, хэшей и ACP smoke; автоматическое скачивание `latest` запрещено. Релизная процедура обновляет source manifest и эту спецификацию вместе.
+- После установки Host заново разрешает путь и проверяет `opencode --version`. Реальный ACP handshake проверяется при явном старте сессии; installation probe не создаёт сессию и не обращается к модели.
+- Если платформа/архитектура отсутствует в проверенном manifest, UI показывает понятную ручную инструкцию вместо кнопки, которая заведомо завершится ошибкой.
+- Ошибки установки передаются UI только через закрытый набор безопасных диагностик: ошибка загрузки, некорректный/неполный архив, локальная ошибка записи, timeout, конфликт уже занятого destination, ошибка post-install verification и неподдерживаемая платформа. Raw stderr, команды, абсолютные пути, переменные окружения и credentials не пересекают Host/RPC границу и не показываются в UI.
+- Доступность Install зависит только от наличия проверенной комбинации Host OS/architecture/ABI в manifest и возможности записать пользовательский install path. Это не снимает лимиты провайдера OpenCode: установщик не аутентифицирует пользователя, не копирует credentials и не запускает модель.
+
+```text
+UI: явное подтверждение
+  → window-scoped Local Host: повторное обнаружение CLI
+  → официальный pinned binary (HTTPS + asset allowlist + SHA-256)
+  → version probe во временном каталоге
+  → exclusive-create в пользовательский bin (без замены существующего файла)
+  → повторное обнаружение + --version
+  → пользователь явно запускает сессию
+  → `opencode acp` initialize / newSession
+  → модельный запрос только после явного prompt
+```
+
+## Критерии приёмки
+
+| ID    | Сценарий                                                                    | Приёмка                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OI-01 | macOS arm64/x64, Windows arm64/x64, Linux arm64/x64 (glibc/musl) без CLI    | UI предлагает установку без внешнего package manager; asset и SHA-256 совпадают с manifest; после установки бинарник найден и версия проверена. На macOS Desktop E2E проверяет путь missing → Install → verified → Composer provider/model без авторизации и prompt. Windows/Linux остаются контрактно подтверждёнными до живого платформенного smoke.                                                     |
+| OI-02 | Платформа, архитектура или ABI отсутствует в manifest                       | Установка отклоняется до сети с `install-platform-unsupported`; ручная инструкция не обещает поддержку.                                                                                                                                                                                                                                                                                                    |
+| OI-03 | CLI уже доступен или выбран явный путь                                      | Installer не запускается и не заменяет файл; статус возвращает найденную версию.                                                                                                                                                                                                                                                                                                                           |
+| OI-04 | Сеть, digest, archive, version probe или запись завершаются ошибкой/timeout | Загрузка прерывается; частичные данные удаляются; UI получает точную локализованную диагностику из закрытого allowlist (`install-download-failed`, `install-archive-invalid`, `install-integrity-failed`, `install-timeout`, `install-destination-conflict`, `install-verification-failed`, `install-write-failed`); raw stderr, пути, команды и секреты не раскрываются, успешный статус не выставляется. |
+| OI-05 | После установки пользователь запускает OpenCode                             | ACP handshake и список моделей получаются от установленного CLI на workspace Host; API-key provider остаётся отдельным режимом.                                                                                                                                                                                                                                                                            |
+| OI-06 | Проверка установки                                                          | Никакой session/prompt/model request не выполняется, provider rate limit не обходится и credentials не читаются/копируются кодом ZCode.                                                                                                                                                                                                                                                                    |
+| OI-07 | `bundle:desktop` создаёт packaged app                                       | Финальный `app.asar` содержит достижимые Host chunks OpenCode resolver/installer и renderer chunks OpenCode settings panel. Bundle gate проверяет реальные маркеры pinned installer и безопасных диагностик вместе с UI-маркерами; нельзя требовать URL стороннего installer/package manager, который текущий продукт не использует. Gate останавливает выпуск при отсутствии runtime или UI.              |
+| OI-08 | Сборка не имеет доступного `bash`, `curl` или WinGet                        | Установка остаётся доступной на поддерживаемом Host, так как эти инструменты не используются.                                                                                                                                                                                                                                                                                                              |
+
+Missing-CLI Desktop E2E supplies an absolute executable path under its isolated HOME. Only when
+`ZCODE_ENV=test` and that E2E-specific path is absent does discovery report `missing` instead of
+searching the developer's system paths, so the normal Install action can be exercised safely. Once
+installed, the same path must pass ordinary executable/version discovery. The scenario isolates
+OpenCode XDG config/data/cache/state directories, checks the normal Composer catalog, and does not
+run an auth command or submit a model prompt.
+
+## Независимые доказательства
+
+- Unit-тесты подтверждают точный manifest и SHA-256, allowlist redirects, размер/timeout, недоверенный/повреждённый archive, безопасную передачу среды, exclusive-create, повторное обнаружение и отказы на каждой платформе.
+- На macOS выполняется безмодельный smoke настоящего установленного бинарника: version, ACP initialize и config options; prompt не отправляется. Windows и Linux требуют такого же платформенного smoke перед заявлением о живой установке; контрактные тесты его не заменяют.
+- Bundle gate анализирует финальный `app.asar` после electron-builder: проходит JavaScript import graph от Host entry и renderer HTML entry и требует маркеры официального installer, CLI diagnostics и settings panel. Регрессионный тест проверяет полный bundle и отсутствие runtime/UI chunks.
+- Windows и Linux остаются подтверждёнными контрактными тестами, пока нет соответствующих физических/виртуальных платформенных runner-ов; это не эквивалентно живому системному установщику.

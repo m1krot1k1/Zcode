@@ -1,6 +1,6 @@
 import type { IServiceAccessor } from "@zcode/services";
 
-export const REMOTE_WORKSPACE_RPC_CONTRACT_VERSION = 1 as const;
+const REMOTE_WORKSPACE_RPC_CONTRACT_VERSION = 1 as const;
 
 export const REMOTE_WORKSPACE_RPC_CHANNELS = [
   "fileService",
@@ -40,13 +40,14 @@ export const REMOTE_WORKSPACE_RPC_CHANNELS = [
   "outputStyleService",
   "settingsSyncService",
   "promptAttachmentTransferService",
+  "proactiveSuggestionService",
 ] as const satisfies readonly (keyof IServiceAccessor)[];
 
 /**
  * 合同内的 channel 一律按“远端必须提供”收口：IServiceAccessor 上可选的 mediaPreviewService
  * 经 assertRemoteWorkspaceRpcContract 校验后也是必有的，类型上同步去掉可选性。
  */
-export type RemoteWorkspaceRpcContract = {
+type RemoteWorkspaceRpcContract = {
   readonly [K in (typeof REMOTE_WORKSPACE_RPC_CHANNELS)[number]]: NonNullable<IServiceAccessor[K]>;
 };
 

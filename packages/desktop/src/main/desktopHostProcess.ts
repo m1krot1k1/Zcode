@@ -1,6 +1,5 @@
 import { ingestToolExecResource } from "./desktopResourceTelemetry.js";
 import { ingestMcpResourceSamples } from "./processResourceMcpTelemetrySource.js";
-/* eslint-disable max-lines -- host process 统一处理 main↔host 生命周期、日志、ZCode Agent，拆分前先保持跨进程消息收口。 */
 import {
   type HostAgentProcessErrorResponse,
   type HostAgentProcessExceptionResponse,
@@ -11,7 +10,6 @@ import {
   type HostMcpTelemetryResponse,
   type HostSessionCreateTelemetryResponse,
   type HostPluginTelemetryResponse,
-  type RemoteTarget,
   type TaskRealtimeHostDeliveryKind,
   type WorkspacePurpose,
   formatZCodeHostProcessName,
@@ -39,6 +37,10 @@ import {
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { BroadcastHub } from "./broadcastHub.js";
+import {
+  notifyHostProcessExit,
+  resolveHostProcessExitDecision,
+} from "./desktopHostProcessLifecycle.js";
 import { bindDatabaseStartupRelay } from "./databaseStartupRelay.js";
 import { getMainLaunchPartialMarks } from "./desktopLaunchMarks.js";
 import { ingestHostNetworkObservations } from "./desktopNetworkTelemetry.js";
@@ -94,7 +96,7 @@ export interface HostInitMessage {
   runtimeProcessEnvPatch?: Record<string, string>;
 }
 
-export interface SpawnHostProcessOptions {
+interface SpawnHostProcessOptions {
   internalChannel?: typeof InternalChannels.ServicePort | typeof InternalChannels.ScopedServicePort;
   internalPayload?: unknown;
   registerBroadcast?: boolean;
@@ -106,6 +108,11 @@ export interface SpawnHostProcessOptions {
   onPortReady?: (port: MessagePortMain) => void;
   /** 共享 SSH/WSL Host 初始化时不创建特殊的首个 workspace RPC port。 */
   attachInitialServicePort?: boolean;
+  /**
+   * 窗口 Host 意外退出时是否允许一次有界 respawn 并通知 renderer。
+   * 仅本地窗口 Host 开启；测试/一次性 Host 保持旧语义（只清理不重启）。
+   */
+  respawnOnExit?: boolean;
 }
 
 const exitedHostProcesses = new WeakSet<ElectronUtilityProcess>();
@@ -241,8 +248,11 @@ export function spawnHostProcess(
     ) => PluginSandboxHandle | Promise<PluginSandboxHandle>;
   },
   options?: SpawnHostProcessOptions,
+  /** Main 内部使用：同一 Host 重启链的已用额度，外部调用方不要传。 */
+  internal?: { respawnAttempt?: number },
 ): ElectronUtilityProcess {
   const hostId = randomUUID();
+  const respawnAttempt = internal?.respawnAttempt ?? 0;
   const glmBinaryPath = resolveBundledGlmBinaryPath();
   const execArgv = [
     ...(RUNTIME_ZCODE_DEBUG ? [`--inspect-brk=${RUNTIME_ZCODE_DEBUG}`] : []),
@@ -661,6 +671,49 @@ export function spawnHostProcess(
         break;
       }
     }
+
+    // 旧行为：意外退出只清理、不通知、不重启，renderer 会永远停在“加载中”。
+    // 只有显式开启的本地窗口 Host 才执行“通知 + 一次有界重启”；测试/一次性 Host 保持旧语义。
+    if (!options?.respawnOnExit) {
+      return;
+    }
+    const decision = resolveHostProcessExitDecision({
+      intentional: disposingHostProcesses.has(child),
+      windowDestroyed: win.isDestroyed(),
+      webContentsDestroyed: win.webContents.isDestroyed(),
+      respawnAttempt,
+    });
+    if (!decision.notify) {
+      return;
+    }
+
+    let respawned = false;
+    if (decision.respawn) {
+      try {
+        const nextChild = spawnHostProcess(win, label, initMessage, dependencies, options, {
+          respawnAttempt: respawnAttempt + 1,
+        });
+        dependencies.windowHostProcessMap.set(windowId, nextChild);
+        respawned = true;
+        dependencies.logger.info(
+          `[spawnHostProcess] respawned host process (${label}) after unexpected exit, attempt=${respawnAttempt + 1}`,
+        );
+      } catch (error) {
+        // 重启失败也属于终态：通知仍会带上 willRespawn=false，UI 不会继续等一个不存在的 Host。
+        dependencies.logger.warn(
+          `[spawnHostProcess] failed to respawn host process (${label}):`,
+          error,
+        );
+      }
+    }
+
+    notifyHostProcessExit(win, {
+      label,
+      code: typeof code === "number" ? code : null,
+      willRespawn: respawned,
+      respawnAttempt,
+      at: Date.now(),
+    });
   });
 
   return child;

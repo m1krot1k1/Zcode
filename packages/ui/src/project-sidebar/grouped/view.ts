@@ -1,21 +1,7 @@
 import type { ProjectTask as ZCodeTaskMeta } from "@/project-sidebar/contract.js";
-import type {
-  ZCodeGroupedTaskView,
-  ZCodeGroupedTaskViewNode,
-  GroupedDraftTaskPlacement,
-} from "@/project-sidebar/grouped/types.js";
+import type { ZCodeGroupedTaskView, ZCodeGroupedTaskViewNode } from "@/project-sidebar/grouped/types.js";
 
-import { taskKey } from "@/project-sidebar/grouped/ids.js";
-
-function cloneView(view: ZCodeGroupedTaskView): ZCodeGroupedTaskView {
-  return {
-    nodes: view.nodes.map((node) =>
-      node.type === "task" ? { ...node } : { ...node, tasks: [...node.tasks] },
-    ),
-  };
-}
-
-function cloneNodes(view: ZCodeGroupedTaskView): ZCodeGroupedTaskViewNode[] {
+import { taskKey } from "@/project-sidebar/grouped/ids.js";function cloneNodes(view: ZCodeGroupedTaskView): ZCodeGroupedTaskViewNode[] {
   return [...view.nodes];
 }
 
@@ -75,66 +61,7 @@ function insertTaskIntoGroup(
   nextGroupNode.tasks.splice(insertIndex < 0 ? nextGroupNode.tasks.length : insertIndex, 0, task);
   nodes[groupIndex] = nextGroupNode;
   return { nodes };
-}
-
-function removeTaskFromGroupedView(
-  view: ZCodeGroupedTaskView,
-  targetTaskKey: string,
-): ZCodeGroupedTaskView {
-  const nextView = cloneView(view);
-  for (const node of nextView.nodes) {
-    if (node.type !== "group") {
-      continue;
-    }
-    const taskIndex = node.tasks.findIndex((task) => taskKey(task) === targetTaskKey);
-    if (taskIndex >= 0) {
-      node.tasks.splice(taskIndex, 1);
-      return nextView;
-    }
-  }
-
-  const nodeIndex = nextView.nodes.findIndex(
-    (node) => node.type === "task" && taskKey(node.task) === targetTaskKey,
-  );
-  if (nodeIndex >= 0) {
-    nextView.nodes.splice(nodeIndex, 1);
-  }
-  return nextView;
-}
-
-function filterGroupedViewByTaskKeys(
-  view: ZCodeGroupedTaskView,
-  hiddenTaskKeys: ReadonlySet<string>,
-): ZCodeGroupedTaskView {
-  if (hiddenTaskKeys.size === 0) {
-    return view;
-  }
-
-  let changed = false;
-  const nodes: ZCodeGroupedTaskView["nodes"] = [];
-  for (const node of view.nodes) {
-    if (node.type === "task") {
-      if (!hiddenTaskKeys.has(taskKey(node.task))) {
-        nodes.push(node);
-      } else {
-        changed = true;
-      }
-      continue;
-    }
-
-    const tasks = node.tasks.filter((task) => !hiddenTaskKeys.has(taskKey(task)));
-    if (tasks.length === node.tasks.length) {
-      nodes.push(node);
-      continue;
-    }
-    changed = true;
-    nodes.push({ ...node, tasks });
-  }
-
-  return changed ? { nodes } : view;
-}
-
-function findTaskInGroupedView(
+}function findTaskInGroupedView(
   view: ZCodeGroupedTaskView,
   targetTaskKey: string,
 ): ZCodeTaskMeta | null {
@@ -150,46 +77,7 @@ function findTaskInGroupedView(
     }
   }
   return null;
-}
-
-function replaceTaskInGroupedView(
-  view: ZCodeGroupedTaskView,
-  nextTask: ZCodeTaskMeta,
-): ZCodeGroupedTaskView {
-  const targetTaskKey = taskKey(nextTask);
-  return {
-    nodes: view.nodes.map((node) => {
-      if (node.type === "task") {
-        return taskKey(node.task) === targetTaskKey ? { ...node, task: nextTask } : node;
-      }
-      return {
-        ...node,
-        tasks: node.tasks.map((task) => (taskKey(task) === targetTaskKey ? nextTask : task)),
-      };
-    }),
-  };
-}
-
-function getGroupedTaskGroupIds(view: ZCodeGroupedTaskView): string[] {
-  return view.nodes.flatMap((node) => (node.type === "group" ? [node.group.id] : []));
-}
-
-function areAllGroupedTaskGroupsExpanded(
-  groupIds: readonly string[],
-  collapsedGroupIds: ReadonlySet<string>,
-): boolean {
-  return groupIds.length > 0 && groupIds.every((groupId) => !collapsedGroupIds.has(groupId));
-}
-
-function pruneCollapsedGroupedTaskGroupIds(
-  collapsedGroupIds: ReadonlySet<string>,
-  groupIds: readonly string[],
-): Set<string> {
-  const knownGroupIds = new Set(groupIds);
-  return new Set([...collapsedGroupIds].filter((groupId) => knownGroupIds.has(groupId)));
-}
-
-function getTaskGroupIdInView(view: ZCodeGroupedTaskView, targetTaskKey: string): string | null {
+}function getTaskGroupIdInView(view: ZCodeGroupedTaskView, targetTaskKey: string): string | null {
   for (const node of view.nodes) {
     if (node.type !== "group") {
       continue;
@@ -269,22 +157,7 @@ function findTaskLocation(
     }
   }
   return null;
-}
-
-function resolveGroupedDraftTaskPlacementForTask(
-  view: ZCodeGroupedTaskView,
-  targetTaskKey: string | null | undefined,
-): GroupedDraftTaskPlacement {
-  if (!targetTaskKey) {
-    return { type: "top" };
-  }
-  const location = findTaskLocation(view, targetTaskKey);
-  return location?.parent === "group"
-    ? { type: "group", groupId: location.groupId }
-    : { type: "top" };
-}
-
-function insertTaskNearTask(
+}function insertTaskNearTask(
   view: ZCodeGroupedTaskView,
   task: ZCodeTaskMeta,
   overTaskKey: string,
@@ -564,21 +437,12 @@ function moveTaskToTopByMenu(
 }
 
 export {
-  areAllGroupedTaskGroupsExpanded,
-  cloneView,
-  filterGroupedViewByTaskKeys,
   findTaskInGroupedView,
-  getGroupedTaskGroupIds,
   moveTaskByMenu,
   moveGroupAroundTopLevelNode,
   moveTaskToTopByMenu,
   moveTaskToGroupEnd,
   moveTaskToGroupStart,
   moveTaskToRootAroundGroup,
-  moveTaskOverTask,
-  pruneCollapsedGroupedTaskGroupIds,
-  removeTaskFromGroupedView,
-  replaceTaskInGroupedView,
-  resolveGroupedDraftTaskPlacementForTask,
-};
-export type { GroupedTaskInsertPosition };
+  moveTaskOverTask};
+

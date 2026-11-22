@@ -51,7 +51,7 @@ export function abortMcpUiToolCallsForSession(sessionId: string): number {
   return count;
 }
 
-export interface CreateMcpUiHandlersOptions {
+interface CreateMcpUiHandlersOptions {
   logger?: Logger;
 }
 

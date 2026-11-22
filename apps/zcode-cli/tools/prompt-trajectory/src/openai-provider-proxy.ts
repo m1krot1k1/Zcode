@@ -6,7 +6,7 @@ import { assembleNonStreamingAssistantMessage, assembleStreamingAssistantMessage
 import type { MessageLedger } from "./message-ledger.js";
 import type { JsonObject } from "./types.js";
 
-export interface OpenAiProviderProxy {
+interface OpenAiProviderProxy {
   baseURL: string;
   close(): Promise<void>;
 }

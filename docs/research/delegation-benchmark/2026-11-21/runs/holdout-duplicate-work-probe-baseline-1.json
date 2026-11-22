@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-duplicate-work-probe",
+  "family": "duplicate-work-probe",
+  "arm": "baseline",
+  "repeat": 1,
+  "startedAt": "2026-11-21T08:17:14.692Z",
+  "durationMs": 23690,
+  "tokens": 158972,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "duplicate probe acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Both functions are implemented in `src/shared.mjs` and the acceptance cases pass.\n\n```js\nexport function formatName(name) {\n  return String(name)\n    .trim()\n    .split(/\\s+/)\n    .filter(Boolean)\n    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())\n    .join(' ');\n}\nexport function formatDate(value) {\n  return new Date(value).toISOString().slice(0, 10);\n}\n```\n\n**What changed:** the two stubs (`name.trim()` and `String(value)`) were replaced in place, so the file still contains exactly one `formatName` and one `formatDate` definition — no duplicate declarations were introduced. `formatName` trims, collapses whitespace runs, and title-cases each word. `formatDate` accepts a `Date` or any parseable value and returns the UTC calendar day as `YYYY-MM-DD`.\n\n**Verified** by running Node assertions against the module directly (no test framework exists in this fixture — `package.json` is `{\"name\":\"bench-duplicate\",\"version\":\"1.0.0\",\"type\":\"module\"}` with no scripts):\n",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

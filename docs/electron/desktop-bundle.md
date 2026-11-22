@@ -119,4 +119,10 @@ ZCODE_SKIP_PREPARE=1 ZCODE_SKIP_BUILD=1 pnpm bundle:desktop
   的子集。原因是校验只判断模块在不在 app.asar 里，真正把依赖闭包补进产物的是 afterPack 注入；
   只加校验不加注入时，没有任何环节负责补齐该模块的子依赖，只能等打包末尾失败。
   注入名单按 `package.json` 依赖闭包递归展开，已在产物里的模块会被跳过，重复登记不会改变产物。
+- `yaml` 外置于 main/host bundle，因此必须同时列在 `REQUIRED_ASAR_RUNTIME_MODULES` 和
+  `requiredRuntimeModules` 中。仅在 `packages/desktop/package.json` 声明依赖不能保证
+  electron-builder 会将其放进 `app.asar`；`afterPack` 会连同依赖闭包一起复制，`bundle.mjs`
+  则会在最终归档缺少该包时终止构建。
+- `afterPack` 注入和最终 bundle gate 还会扫描 main/host/scheduler 的 JavaScript 外部导入，
+  自动补齐 pnpm hoist 布局下 electron-builder 漏掉的包闭包，避免新增外置导入依赖只在用户启动后才暴露。
 - 开发态仍保留 tsup sourcemap，方便本地调试 main/host/preload；生产态不生成也不暴露 sourcemap。

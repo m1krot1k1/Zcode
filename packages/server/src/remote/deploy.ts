@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 远端部署入口集中编排 server/node/agent/tool 资源，拆分需单独整理边界。 */
 import { join } from "node:path";
 import {
   ZCODE_VERSION,

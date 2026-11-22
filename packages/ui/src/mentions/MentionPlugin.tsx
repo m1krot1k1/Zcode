@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ZCodeProvider } from "@zcode/shared";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
@@ -66,7 +65,7 @@ interface MentionPluginProps {
   onWhiteboardMentionSelected?: (boardId: string) => void | Promise<void>;
 }
 
-export function getWrappedMentionIndex(
+function getWrappedMentionIndex(
   currentIndex: number,
   delta: number,
   itemCount: number,

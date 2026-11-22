@@ -24,3 +24,23 @@ it("bounds failures without starting a migration or claiming success", async () 
   expect(send).toHaveBeenCalledTimes(3);
   expect(acknowledged).toHaveBeenCalledWith(["failed-id"], "unconfirmed");
 });
+
+it("drops every ARMS batch while telemetry is opted out", async () => {
+  const send = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+  const acknowledged = vi.fn();
+  let enabled = false;
+  const request = wrapStartupReporterRequest(send, {
+    acknowledged,
+    delay: async () => {},
+    isEnabled: () => enabled,
+  });
+
+  await request({}, { events: [{ properties: { startup_event_id: "opted-out" } }] });
+  expect(send).not.toHaveBeenCalled();
+  expect(acknowledged).not.toHaveBeenCalled();
+
+  enabled = true;
+  await request({}, { events: [{ properties: { startup_event_id: "enabled" } }] });
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(acknowledged).toHaveBeenCalledWith(["enabled"], "http_received");
+});

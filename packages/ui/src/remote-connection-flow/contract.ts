@@ -48,18 +48,7 @@ export interface RemoteConnectionFlowOptions {
   preferredTarget?: RemoteTarget;
   /** 用户改选线路或新建连接后，释放 Root 对原项目的恢复互斥。 */
   onProjectIntentCleared?: () => void;
-}
-
-export interface RemoteConnectionCompletionIntent {
-  preferredDirectoryPath?: string;
-  options?: {
-    directToDirectory?: boolean;
-    localWorkspacePath?: string;
-    announceReusedConnection?: boolean;
-  };
-}
-
-export function normalizeRemoteConnectionOptions({
+}export function normalizeRemoteConnectionOptions({
   openIntentId,
   completion,
   onDeviceConnected,
@@ -111,10 +100,7 @@ export function normalizeRemoteConnectionOptions({
     onProjectIntentCleared,
     initialFailure,
   };
-}
-export type RemoteConnectionOptions = ReturnType<typeof normalizeRemoteConnectionOptions>;
-
-/** 同一 Root flow 的只读 UI 投影；不含凭据，不保存连接事实。 */
+}/** 同一 Root flow 的只读 UI 投影；不含凭据，不保存连接事实。 */
 export interface RemoteConnectionProgress {
   operationId: string;
   view: import("@/RemoteConnectionWizardChrome.js").RemoteWizardStep;

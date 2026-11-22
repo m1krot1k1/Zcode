@@ -1,15 +1,12 @@
 import type { ISourceServerManagementService } from "@zcode/services";
 import { logger } from "@/logger.js";
 
-export interface SourceServerDisplayNameRegistry {
+interface SourceServerDisplayNameRegistry {
   subscribe(listener: () => void): () => void;
   getSnapshot(): ReadonlyMap<string, string>;
 }
 
-const registries = new WeakMap<
-  ISourceServerManagementService,
-  SourceServerDisplayNameRegistry
->();
+const registries = new WeakMap<ISourceServerManagementService, SourceServerDisplayNameRegistry>();
 
 export function getSourceServerDisplayNameRegistry(
   management: ISourceServerManagementService,
@@ -29,10 +26,7 @@ export function getSourceServerDisplayNameRegistry(
       .getSnapshot()
       .then((snapshot) => {
         names = new Map(
-          snapshot.servers.map((server) => [
-            server.sourceServerId,
-            server.displayName,
-          ]),
+          snapshot.servers.map((server) => [server.sourceServerId, server.displayName]),
         );
         for (const listener of listeners) listener();
       })

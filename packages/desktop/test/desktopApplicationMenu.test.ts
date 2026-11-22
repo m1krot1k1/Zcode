@@ -185,6 +185,15 @@ describe("desktopApplicationMenu endpoint submenu", () => {
     expect(resolveSystemApplicationLocale()).toBe("zh-CN");
   });
 
+  it("Russian system language resolves to the Russian UI locale", async () => {
+    envMock.locale = "en-US";
+    envMock.preferredSystemLanguages = ["ru-RU", "en-US"];
+    const { resolveSystemApplicationLocale } =
+      await import("../src/main/desktopApplicationMenu.js");
+
+    expect(resolveSystemApplicationLocale()).toBe("ru-RU");
+  });
+
   it("test 环境显示 endpoint 子菜单并标记当前 test 选项", async () => {
     envMock.value = "test";
     const { HELP_ZCODE_ENDPOINT_TEST_MENU_ID, rebuildApplicationMenu } =

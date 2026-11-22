@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- Composer 附件的收集、恢复和序列化必须共享同一套 MIME/大小边界。 */
 import { nanoid } from "nanoid";
 import {
   VIDEO_INPUT_MAX_BYTES,
@@ -35,7 +34,7 @@ export {
 } from "@/lib/chatAttachmentMetadata.js";
 
 export const MAX_CHAT_ATTACHMENTS = 8;
-export const LONG_PASTE_TEXT_ATTACHMENT_CHAR_THRESHOLD = 15 * 1024;
+const LONG_PASTE_TEXT_ATTACHMENT_CHAR_THRESHOLD = 15 * 1024;
 const INLINE_IMAGE_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 const INLINE_VIDEO_ATTACHMENT_MAX_BYTES = Math.min(
   VIDEO_INPUT_MAX_BYTES,
@@ -448,16 +447,7 @@ async function readAttachmentBase64(attachment: ChatComposerAttachment): Promise
     throw new Error("附件数据格式不正确");
   }
   return dataUrl.slice(base64MarkerIndex + 1);
-}
-
-export function getChatAttachmentPreviewUrl(attachment: ZCodePromptAttachment): string | null {
-  if (!attachment.dataBase64) {
-    return null;
-  }
-  return `data:${attachment.mimeType};base64,${attachment.dataBase64}`;
-}
-
-export function isImageChatComposerAttachment(attachment: ChatComposerAttachment): boolean {
+}export function isImageChatComposerAttachment(attachment: ChatComposerAttachment): boolean {
   return attachment.mimeType.startsWith("image/");
 }
 

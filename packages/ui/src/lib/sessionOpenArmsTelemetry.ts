@@ -15,9 +15,9 @@ export type SessionOpenTrigger =
   | "selection"
   | "split"
   | "pane";
-export type SessionOpenStatus = "success" | "failed" | "timeout";
-export type SessionOpenProcessState = "spawned" | "reused";
-export type SessionOpenRuntimeState = "cold" | "warm";
+type SessionOpenStatus = "success" | "failed" | "timeout";
+type SessionOpenProcessState = "spawned" | "reused";
+type SessionOpenRuntimeState = "cold" | "warm";
 
 export interface SessionOpenArmsReporter {
   reportArmsCustomEvent(payload: ArmsCustomEventPayload): Promise<unknown>;
@@ -31,7 +31,7 @@ export interface SessionOpenIdentity {
   clientMode: "desktop-continuous";
 }
 
-export interface SessionOpenTimingFields {
+interface SessionOpenTimingFields {
   rendererPrepareMs?: number;
   hostPrepareMs?: number;
   providerRegistrySyncMs?: number;
@@ -46,7 +46,7 @@ export interface SessionOpenTimingFields {
   paintToInteractiveMs?: number;
 }
 
-export interface SessionOpenResultFields extends SessionOpenTimingFields {
+interface SessionOpenResultFields extends SessionOpenTimingFields {
   status: SessionOpenStatus;
   totalMs: number;
   errorPhase?: string;

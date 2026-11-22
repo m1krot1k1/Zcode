@@ -28,7 +28,7 @@ export interface TopicResourceMessage {
   attachments: BotInboundAttachment[];
 }
 
-export interface TopicResourceDependencies {
+interface TopicResourceDependencies {
   readState(): Promise<BotsStateFile>;
   readConfig(): Promise<BotsConfigFile>;
   readMessage(

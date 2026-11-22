@@ -14,7 +14,7 @@ import { createComponentArchive, hashPaths, runPackagingCommand } from "./stageA
 
 export { collectBareModuleSpecifiers, isNodePtyRuntimePath, resolveProductionPackageClosure };
 
-export interface StageOptions {
+interface StageOptions {
   target: ServerTarget;
   appVersion: string;
   /** tsup 产物目录（server-cli.js / server-core.js） */
@@ -43,7 +43,7 @@ export interface StageOptions {
   componentArchives?: boolean;
 }
 
-export interface StagedRelease {
+interface StagedRelease {
   releaseDir: string;
   archivePath: string | null;
   componentArchivePaths: string[];
@@ -268,6 +268,12 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
   for (const source of bundleSources) {
     for (const name of collectBareModuleSpecifiers(source)) referencedPackages.add(name);
   }
+  // Динамическая загрузка для индекса кода: parserPool резолвит wasm-грамматики
+  // через createRequire по пути, а не как bare-спецификатор, поэтому сканер bundle
+  // их не видит. Без tree-sitter-wasms серверный индекс молча уходит в text fallback
+  // и отдаёт 0 refs/edges.
+  referencedPackages.add("web-tree-sitter");
+  referencedPackages.add("tree-sitter-wasms");
   const rawClosure = await resolveProductionPackageClosure(
     [...referencedPackages],
     options.workspaceNodeModulesDir,

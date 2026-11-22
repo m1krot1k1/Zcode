@@ -25,7 +25,13 @@ function makeTempHome(): string {
 
 async function createSkillsServiceInEnv(
   home: string,
-  options?: { isDesktopRuntime?: boolean },
+  options?: {
+    isDesktopRuntime?: boolean;
+    onSkillsListed?: (input: {
+      workspacePath: string;
+      skills: readonly { name: string; path: string }[];
+    }) => Promise<void> | void;
+  },
 ): Promise<ISkillsService> {
   process.env.HOME = home;
   vi.resetModules();
@@ -154,6 +160,34 @@ afterEach(() => {
 });
 
 describe("skillsService", () => {
+  it("reconciles installed marketplace skills once per workspace", async () => {
+    const home = makeTempHome();
+    const workspacePath = join(home, "workspace");
+    writeSkill(
+      join(workspacePath, ".agents", "skills"),
+      "yandex-direct",
+      `---
+name: yandex-direct
+description: Manage Yandex Direct campaigns
+---
+body`,
+    );
+    const onSkillsListed = vi.fn();
+    const service = await createSkillsServiceInEnv(home, {
+      isDesktopRuntime: true,
+      onSkillsListed,
+    });
+
+    await service.list({ workspacePath, provider: "glm" });
+    await service.list({ workspacePath, provider: "glm" });
+
+    expect(onSkillsListed).toHaveBeenCalledTimes(1);
+    expect(onSkillsListed.mock.calls[0]?.[0]).toMatchObject({
+      workspacePath,
+      skills: [expect.objectContaining({ name: "yandex-direct" })],
+    });
+  });
+
   it("workspace 同层合并读取 .zcode 与 .agents，并忽略废弃和 Claude 技能目录", async () => {
     const home = makeTempHome();
     const workspacePath = join(home, "workspace");

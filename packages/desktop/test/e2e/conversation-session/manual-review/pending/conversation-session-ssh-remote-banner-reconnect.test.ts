@@ -186,8 +186,10 @@ describe(`${CASE_MARKER}: 在线断连耗尽恢复预算后的错误归类与横
       .saveScreenshot(resolve(artifactDir, "budget-exhausted.png"))
       .catch(() => undefined);
     // 问题 1：ECONNRESET 是传输失败，横幅原因行必须是“无法连接到主机”的处理说明，
-    // 不能冒充安装预检失败（“设备环境不满足安装要求”）。
-    expect(banner.text).toContain("检查设备地址和端口");
+    // 不能冒充安装预检失败（“设备环境不满足安装要求”）。三种语言的网络排查文案都包含
+    // “VPN”，用它锁定“仍在展示网络指引”，且不绑定某一种语言的具体句子。
+    expect(banner.text).toContain("VPN");
+    expect(banner.text).not.toMatch(/确认设备已启动|make sure it is running/iu);
     expect(banner.text).not.toContain("不满足安装要求");
     expect(banner.text).not.toContain("环境检查失败");
     expect((await readRemoteTabSnapshot(task.identity)).remoteSessionId).toBeNull();

@@ -13,7 +13,7 @@ import type { WorkflowAskSettingsContent } from "@/components/workflow-timeline/
 import { getPermissionOptionDisplayKind } from "@/lib/permissionRequest.js";
 
 /** 设置块的定位属性：Shift+Tab 从第一个选项回到这里。 */
-export const WORKFLOW_PERMISSION_SETTINGS_SELECTOR = '[data-testid="workflow-permission-settings"]';
+const WORKFLOW_PERMISSION_SETTINGS_SELECTOR = '[data-testid="workflow-permission-settings"]';
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';

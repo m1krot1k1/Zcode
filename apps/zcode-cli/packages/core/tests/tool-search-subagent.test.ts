@@ -35,7 +35,7 @@ it.each([
                 input: {
                   description: "Search scoped tools",
                   prompt: "Discover WebFetch",
-                  subagent_type: explore ? "Explore" : "researcher",
+                  subagent_type: explore ? "Explore" : "tool-search-researcher",
                 },
               },
             ],
@@ -79,7 +79,7 @@ it.each([
           : {
               profiles: [
                 {
-                  name: "researcher",
+                  name: "tool-search-researcher",
                   description: "Research",
                   source: "user",
                   systemPrompt: "Search tools",

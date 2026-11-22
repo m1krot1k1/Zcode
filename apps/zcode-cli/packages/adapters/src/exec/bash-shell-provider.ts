@@ -28,7 +28,7 @@ export interface BashShellProvider {
   shell: boolean | string;
 }
 
-export interface EffectiveBashShellResolution {
+interface EffectiveBashShellResolution {
   selection: ExecutionShellSelection;
   provider?: BashShellProvider;
 }
@@ -46,7 +46,7 @@ export function resolveEffectiveBashShellSelection(
     : resolveEffectivePosixBashShellSelection(options);
 }
 
-export function resolvePosixBashShell(
+function resolvePosixBashShell(
   env: NodeJS.ProcessEnv,
   exists?: ExecutableCheck,
 ): string | undefined {
@@ -72,19 +72,6 @@ export function resolvePosixBashShell(
   }
 
   return undefined;
-}
-
-export function resolveWindowsBashShellProvider(options: {
-  env: NodeJS.ProcessEnv;
-  exists?: ExecutableCheck;
-  override?: ExecutionShellSelection;
-}): BashShellProvider | undefined {
-  return resolveEffectiveWindowsBashShellSelection({
-    env: options.env,
-    exists: options.exists,
-    override: options.override,
-    platform: "win32",
-  }).provider;
 }
 
 export function resolveWindowsGitBashShell(
@@ -327,7 +314,7 @@ function posixShellKind(path: string): PosixShellKind | undefined {
   return undefined;
 }
 
-export function isExecutableCandidate(path: string, exists?: ExecutableCheck): boolean {
+function isExecutableCandidate(path: string, exists?: ExecutableCheck): boolean {
   if (exists) {
     return exists(path);
   }

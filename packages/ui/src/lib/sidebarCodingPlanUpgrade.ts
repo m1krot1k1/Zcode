@@ -6,7 +6,7 @@ import {
 import type { CodingPlanUsageAvailableProvider } from "@/CodingPlanUsageRemainingPanel.js";
 import type { SidebarUsageCodingPlanProviderId } from "@/lib/sidebarUsageCodingPlanProviderPreference.js";
 
-export interface SidebarCodingPlanUpgradeEntitlement {
+interface SidebarCodingPlanUpgradeEntitlement {
   providerId: SidebarUsageCodingPlanProviderId;
   snapshot: UsageEntitlementSnapshot | null;
   loading: boolean;

@@ -1,12 +1,8 @@
 import type { ReactNode } from "react";
-import { type BuiltinModelProviderId, type OAuthProviderId } from "@zcode/shared";
-import { PackageIcon } from "lucide-react";
+import { type BuiltinModelProviderId } from "@zcode/shared";
+import { BotIcon, DatabaseIcon, PackageIcon } from "lucide-react";
 import { ProviderLogo } from "./ProviderLogo.js";
-import {
-  CODING_PLAN_PROVIDER_SPECS,
-  PRESET_PROVIDER_SPEC_BY_ID,
-  type ModelProviderNavItem,
-} from "./constants.js";
+import { type ModelProviderNavItem } from "./constants.js";
 
 export function createPresetProviderNodeKey(id: BuiltinModelProviderId): string {
   return `preset:${id}`;
@@ -20,16 +16,6 @@ export function createCustomProviderNodeKey(id: string): string {
   return `custom:${id}`;
 }
 
-export function resolveOAuthProviderIdByPreset(
-  presetId: BuiltinModelProviderId,
-): OAuthProviderId | null {
-  return (
-    PRESET_PROVIDER_SPEC_BY_ID.get(presetId)?.oauthProviderId ??
-    CODING_PLAN_PROVIDER_SPECS.find((spec) => spec.id === presetId)?.oauthProviderId ??
-    null
-  );
-}
-
 export function resolveModelProviderNavLogo(item: ModelProviderNavItem) {
   // 品牌主入口沿用 Start 导航 ID，但不能因此显示体验套餐图标。
   if (item.type === "preset") return item.logo;
@@ -37,6 +23,8 @@ export function resolveModelProviderNavLogo(item: ModelProviderNavItem) {
 }
 
 export function renderModelProviderNavIcon(item: ModelProviderNavItem): ReactNode {
+  if (item.type === "agentIntegration") return <BotIcon className="size-4 shrink-0" />;
+  if (item.type === "codeIntelligence") return <DatabaseIcon className="size-4 shrink-0" />;
   if ("provider" in item && item.provider) {
     return <ProviderLogo logo={resolveModelProviderNavLogo(item)} className="size-4" />;
   }

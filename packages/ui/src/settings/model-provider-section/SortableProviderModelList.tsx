@@ -50,7 +50,7 @@ export function isInteractiveModelDragTarget(target: EventTarget | null): boolea
   );
 }
 
-export function resolveSortableProviderModelRowClassName({
+function resolveSortableProviderModelRowClassName({
   isDragging,
   isLast,
 }: {

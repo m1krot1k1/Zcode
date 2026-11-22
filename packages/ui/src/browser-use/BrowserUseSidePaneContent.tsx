@@ -5,7 +5,7 @@ import { cn } from "@/components/lib/utils.js";
 import { TabsContent } from "@/components/ui/tabs.js";
 import type { BrowserSidePaneMetadata, BrowserUseSidePaneTab } from "@/lib/workspaceSidePane.js";
 
-export interface BrowserUseSidePaneContentProps {
+interface BrowserUseSidePaneContentProps {
   tab: BrowserUseSidePaneTab;
   onOpenPermissionSettings?: (origin: string) => void;
   isPanelVisible: boolean;

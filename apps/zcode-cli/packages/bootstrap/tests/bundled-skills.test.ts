@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Logger } from "@zcode/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,6 +23,17 @@ const {
   SEA_BUNDLED_SKILL_ASSET_PREFIX,
   resolveBundledSkillRoots,
 } = await import("../src/app/bundled-skills.js");
+// @ts-expect-error JS staging helper is exercised directly to cover Dev packaging behavior.
+const {
+  BUNDLED_SKILL_PACK_REQUIRED_PATHS: DESKTOP_BUNDLED_SKILL_PACK_REQUIRED_PATHS,
+  stageBundledSkillPack,
+  stageAgentBundle,
+} = await import("../../../../../packages/desktop/scripts/stage-agent-bundle.mjs");
+const {
+  bundledSkillPackRequiredPaths: SEA_BUNDLED_SKILL_PACK_REQUIRED_PATHS,
+  collectSeaBundledSkillAssets,
+} = await import("../../cli/scripts/sea-bundled-skill-assets.mjs");
+const { inspectZCodeSkill, listZCodeSkills } = await import("../src/skills.js");
 
 type SeaModuleLike = { getAsset: unknown; getRawAsset: unknown; isSea(): boolean };
 
@@ -127,6 +139,91 @@ describe("resolveBundledSkillRoots", () => {
     expect(existsSync(join(tempRoot, "cli", "bundled-skills"))).toBe(false);
   });
 
+  it("ships the curated harness skills in the source, Desktop, and SEA manifests", async () => {
+    const curatedSkillNames = [
+      "anti-loop",
+      "self-improvement",
+      "code-craft",
+      "reference-first",
+      "task-planning",
+      "execution-patterns",
+      "reviewer",
+      "completion-gate",
+    ];
+    const expectedPaths = curatedSkillNames.map((name) => `skills/${name}/SKILL.md`);
+    const expectedRulePaths = [
+      "rules/00-evidence.mdc",
+      "rules/01-delegation.mdc",
+      "rules/02-verification.mdc",
+      "rules/03-context.mdc",
+      "rules/04-model-identity.mdc",
+      "rules/05-code-and-ui-craft.mdc",
+      "rules/06-progress.mdc",
+    ];
+
+    for (const paths of [
+      BUNDLED_SKILL_PACK_REQUIRED_PATHS,
+      DESKTOP_BUNDLED_SKILL_PACK_REQUIRED_PATHS,
+      SEA_BUNDLED_SKILL_PACK_REQUIRED_PATHS,
+    ]) {
+      expect(paths).toEqual(expect.arrayContaining(expectedPaths));
+      expect(paths).toEqual(expect.arrayContaining(expectedRulePaths));
+      expect(new Set(paths).size).toBe(paths.length);
+    }
+
+    const [root] = resolveBundledSkillRoots({ cliStorageRoot: join(tempRoot, "cli") });
+    expect(root).toBeDefined();
+    for (const name of curatedSkillNames) {
+      const skill = await readFile(join(root!.path, name, "SKILL.md"), "utf8");
+      expect(skill).toContain(`name: ${name}`);
+      expect(skill).toContain("description:");
+    }
+    const rulesRoot = join(root!.path, "..", "rules");
+    for (const path of expectedRulePaths) {
+      const asset = await readFile(join(rulesRoot, path.split("/").at(-1)!), "utf8");
+      expect(asset).toContain("alwaysApply: true");
+      expect(asset).toContain("---");
+    }
+    const delegationRule = await readFile(join(rulesRoot, "01-delegation.mdc"), "utf8");
+    expect(delegationRule).toContain("call the exact named `start` profile through `Task`");
+    expect(delegationRule).toContain("Answer-only questions, greetings, and trivial requests");
+    expect(delegationRule).toContain("never substitute an unlisted role");
+  });
+
+  it("copies the same harness rules into Desktop staging and the SEA content manifest", async () => {
+    const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
+    const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+    const desktopRoot = join(tempRoot, "desktop", "glm");
+    const seaStaging = join(tempRoot, "sea-assets");
+
+    stageBundledSkillPack({ repoRoot, glmDir: desktopRoot, log: () => {} });
+    const desktopRules = join(desktopRoot, "packages", "bundled-skills", "rules");
+    for (const path of BUNDLED_SKILL_PACK_REQUIRED_PATHS.filter((value) =>
+      value.startsWith("rules/"),
+    )) {
+      expect(existsSync(join(desktopRoot, "packages", "bundled-skills", ...path.split("/")))).toBe(
+        true,
+      );
+    }
+
+    const sea = await collectSeaBundledSkillAssets({ root: cliRoot, stagingDirectory: seaStaging });
+    expect(sea.manifest.files.map((file: { path: string }) => file.path)).toEqual(
+      expect.arrayContaining(
+        BUNDLED_SKILL_PACK_REQUIRED_PATHS.filter((path) => path.startsWith("rules/")),
+      ),
+    );
+    for (const path of BUNDLED_SKILL_PACK_REQUIRED_PATHS.filter((value) =>
+      value.startsWith("rules/"),
+    )) {
+      expect(await readFile(join(desktopRules, path.split("/").at(-1)!), "utf8")).toBe(
+        await readFile(
+          join(repoRoot, "apps/zcode-cli/packages/bundled-skills", ...path.split("/")),
+          "utf8",
+        ),
+      );
+    }
+  });
+
   it("refuses a staged pack that lost a required file, and warns", async () => {
     const stagedRoot = join(tempRoot, "entry");
     await mkdir(
@@ -172,6 +269,52 @@ describe("resolveBundledSkillRoots", () => {
         source: "bundled",
       },
     ]);
+  });
+
+  it("restages and discovers skills after Dev bundle cleanup without the checkout or workspace", async () => {
+    const repoRoot = join(tempRoot, "synthetic-repo");
+    const cliBundle = join(repoRoot, "apps/zcode-cli/packages/cli/dist/zcode.cjs");
+    const skillSourceRoot = join(repoRoot, "apps/zcode-cli/packages/bundled-skills");
+    await mkdir(join(cliBundle, ".."), { recursive: true });
+    await mkdir(skillSourceRoot, { recursive: true });
+    await writeFile(cliBundle, "// synthetic agent bundle");
+    await writeFile(join(skillSourceRoot, "README.md"), "synthetic bundled skills");
+    for (const path of BUNDLED_SKILL_PACK_REQUIRED_PATHS) {
+      const filePath = join(skillSourceRoot, ...path.split("/"));
+      await mkdir(join(filePath, ".."), { recursive: true });
+      const skill = path === "skills/zcode-swarm/SKILL.md";
+      await writeFile(
+        filePath,
+        skill
+          ? "---\nname: zcode-swarm\ndescription: ZCode swarm staging regression.\n---\n# ZCode swarm coordination\nLoaded only from the staged runtime.\n"
+          : `# ${path}\n`,
+      );
+    }
+
+    const platformKey = "test-platform-test-arch";
+    const stagedRoot = join(repoRoot, "packages/desktop/bundled-agents", platformKey, "glm");
+    await mkdir(join(stagedRoot, "old-stale-asset"), { recursive: true });
+    const staged = stageAgentBundle({ repoRoot, platformKey, log: () => {} });
+    fakeBaseDirs.dirs = [stagedRoot];
+
+    expect(existsSync(staged.stagedBundlePath)).toBe(true);
+    expect(existsSync(join(stagedRoot, "old-stale-asset"))).toBe(false);
+    expect(resolveBundledSkillRoots({ cliStorageRoot: join(tempRoot, "cli") })).toHaveLength(1);
+
+    const workspace = join(tempRoot, "isolated-workspace");
+    await mkdir(workspace, { recursive: true });
+    const options = {
+      env: { HOME: tempRoot },
+      skipUserConfig: true,
+      workingDirectory: workspace,
+    };
+    const listed = await listZCodeSkills(options);
+    expect(listed.skills.find((skill) => skill.name === "zcode-swarm")).toMatchObject({
+      scope: "system",
+      source: "bundled",
+    });
+    const inspected = await inspectZCodeSkill({ ...options, name: "zcode-swarm" });
+    expect(inspected.skill.content).toContain("Loaded only from the staged runtime.");
   });
 
   describe("SEA", () => {

@@ -5,7 +5,7 @@ import {
   findMarkdownCodeRanges,
   findUnclosedAssistantDirectiveStart,
 } from "../../lib/assistantDirectiveParser.js";
-export type GenUiPart =
+type GenUiPart =
   | { kind: "text"; text: string }
   | { kind: "ui"; reference: GenUiReference; offset: number }
   | { kind: "pending" | "invalid" };

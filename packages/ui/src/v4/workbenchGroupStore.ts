@@ -1,4 +1,3 @@
-/* oxlint-disable eslint(max-lines) -- session workbench group 先把纯模型、localStorage sanitize 和 Zustand 装配收口在一处，避免新功能初版跨文件追状态；后续扩展测试稳定后再拆分。 */
 // v4 session workbench groups。
 // 这里是 renderer-local 壳子状态：只管 session 到 pane/group 的归属与本地持久化，
 // 不下沉到协议、agent、main process 或 web-remote replayable 状态。
@@ -51,7 +50,7 @@ export interface WorkbenchGroupSnapshot {
   readonly sessionIndex: Readonly<Record<string, string>>;
 }
 
-export interface WorkbenchGroupStore extends WorkbenchGroupSnapshot {
+interface WorkbenchGroupStore extends WorkbenchGroupSnapshot {
   configureClientMode: (clientMode: ZCodeTaskClientMode) => void;
   openSessionFromSidebar: (binding: WorkbenchSessionBinding) => void;
   splitSessionIntoGroup: (
@@ -115,9 +114,7 @@ function workbenchBinding(binding: PaneBinding): WorkbenchSessionBinding | null 
         workspaceScope: binding.workspaceScope,
         sessionId: binding.sessionId,
         ...(binding.readOnly ? { readOnly: true } : {}),
-        ...(binding.restoredUnvalidated
-          ? { restoredUnvalidated: true }
-          : {}),
+        ...(binding.restoredUnvalidated ? { restoredUnvalidated: true } : {}),
       }
     : null;
 }
@@ -308,8 +305,7 @@ export function confirmRestoredWorkbenchGroupPane(
     if (!group.primaryBinding.restoredUnvalidated) {
       return group;
     }
-    const { restoredUnvalidated: _restored, ...primaryBinding } =
-      group.primaryBinding;
+    const { restoredUnvalidated: _restored, ...primaryBinding } = group.primaryBinding;
     return { ...group, primaryBinding };
   }
   const binding = group.panes[paneId];
@@ -642,10 +638,7 @@ export function persistWorkbenchGroups(snapshot: WorkbenchGroupSnapshot): void {
   try {
     const groups = Object.fromEntries(
       Object.entries(snapshot.groups).map(([groupId, group]) => {
-        const {
-          restoredUnvalidated: _primaryRestored,
-          ...primaryBinding
-        } = group.primaryBinding;
+        const { restoredUnvalidated: _primaryRestored, ...primaryBinding } = group.primaryBinding;
         const panes = Object.fromEntries(
           Object.entries(group.panes).map(([paneId, binding]) => {
             const { restoredUnvalidated: _restored, ...persisted } = binding;

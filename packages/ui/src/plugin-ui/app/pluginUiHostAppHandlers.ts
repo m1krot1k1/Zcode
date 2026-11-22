@@ -10,7 +10,7 @@ import type { PluginUiHostBridge } from "./pluginUiHostBridge.js";
  * `ui/notifications/size-changed`、`ui/notifications/request-teardown`、`notifications/message`。
  * 会话交互（ui/message 等）在 pluginUiInteractionPorts，资源请求在 pluginUiResourceSubscriptions。
  */
-export interface PluginUiHostAppHandlerDeps {
+interface PluginUiHostAppHandlerDeps {
   currentContext(): McpUiHostContext;
   /** 宿主裁决后的模式写回 hostContext 并（已握手时）推 host-context-changed。 */
   applyDisplayMode(mode: McpUiDisplayMode): void;

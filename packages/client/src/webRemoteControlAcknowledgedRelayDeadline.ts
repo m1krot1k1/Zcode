@@ -5,7 +5,7 @@ interface PendingDeadlineEntry {
   messageSeq: number;
 }
 
-export interface AcknowledgedRelayDeadlineState {
+interface AcknowledgedRelayDeadlineState {
   oldestData: PendingDeadlineEntry | null;
   pendingAck: PendingDeadlineEntry | null;
 }
@@ -39,10 +39,13 @@ export class AcknowledgedRelayDeadline {
     this.clear();
     const selected = this.select();
     if (!selected) return;
-    this.timer = setTimeout(() => {
-      this.timer = undefined;
-      if (!this.check()) this.refresh();
-    }, Math.max(0, selected.deadline - this.now()));
+    this.timer = setTimeout(
+      () => {
+        this.timer = undefined;
+        if (!this.check()) this.refresh();
+      },
+      Math.max(0, selected.deadline - this.now()),
+    );
   }
 
   dispose(): void {

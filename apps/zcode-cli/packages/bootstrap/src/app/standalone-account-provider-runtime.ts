@@ -21,7 +21,7 @@ import {
 } from "@zcode/provider-node";
 import type { ProviderFamilyDomain } from "@zcode/shared";
 
-export interface StandaloneCodingPlanProvider {
+interface StandaloneCodingPlanProvider {
   readonly family: ProviderFamilyDomain;
   readonly modelId: string;
   readonly providerId: string;

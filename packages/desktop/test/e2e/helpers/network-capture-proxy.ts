@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- E2E 抓包代理需要集中维护 MITM、脱敏、chunk timeline、SSE event 解析和 artifact 序列化，拆开会让录制协议更难追踪。 */
 import { createPrivateKey, createPublicKey, X509Certificate } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";

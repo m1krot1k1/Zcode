@@ -30,7 +30,7 @@ R3 主规格（身份 / 连接 / 迁移）
 | 平铺项目、原地重连、目录权限、恢复原项目与会话           | [项目导航](project-first-remote-navigation-spec.md)；远程无项目聊天 UI 已停用，数据保留                                                                                                                         |
 | Provider 自动下发与本地模型设置                          | [Provisioning](provider-provisioning.md)；[应用配置归属](../ssh-remote-app-global-state-authority.md)                                                                                                           |
 | 手机已有 Host attachment 与 replayable 恢复              | [远控架构](../web-remote-control/web-remote-control-architecture.md)、[任务实时同步](../web-remote-control/task-realtime-sync.md)、[手机工作区重连](../web-remote-control/mobile-remote-workspace-reconnect.md) |
-| WSL                                                      | [实时边界](wsl-remote-realtime-boundary.md)、[Provider headers](wsl-provider-runtime-headers.md)、[WSL 设计](../wsl-remote-workspace-design.md)                                                                 |
+| WSL                                                      | [实时边界](wsl-remote-realtime-boundary.md)、`wsl-provider-runtime-headers.md`（已删除）、[WSL 设计](../wsl-remote-workspace-design.md)                                                                         |
 | Windows 资产缓存                                         | [缓存 rename](windows-remote-asset-cache-rename-hardening.md)                                                                                                                                                   |
 | Desktop descriptor/archive 网络策略                      | [远端资产网络策略](zcode-agent-remote-deployment.md)                                                                                                                                                            |
 | dev-only Server 直连                                     | [Server workspace](server-remote-workspace-connection.md)；旧进程描述以主规格为准                                                                                                                               |
@@ -46,7 +46,7 @@ R3 主规格（身份 / 连接 / 迁移）
 - [UX 子任务索引](../issues/remote-connection-ux/01-remote-connection-ux-optimization.md)：已完成实施与未决 ssh-agent 评估。
 - [测试方案](../testing/r3-remote-automation-plan.md)、[R3A 矩阵](../testing/r3-remote-automation-case-matrix.md)：完整验收目标及覆盖差距。
 - [case 目录](../conversation-session-case-catalog.md)、[覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md)：稳定 ID、测试文件、pending/formal 状态和证据。
-- [SSH P0](../testing/ssh-remote-p0-e2e-plan.md)：专项断言与项目入口；[harness](../../harness/remote/README.md)：执行命令及环境隔离。
+- [SSH P0](../testing/ssh-remote-p0-e2e-plan.md)：专项断言与项目入口；`../../harness/remote/README.md`（已删除）：执行命令及环境隔离。
 - [2026-10 桌面 SSH 指南回归](../testing/desktop-ssh-guide-regression.md)：100 个调度场景原批次及后续定向修复，不能据此声称手机/WSL/Docker 全绿。
 - [2026-09-10 历史重跑](../testing/r3-remote-full-rerun-2026-09-10.md)：原基线结果；[历史归档索引](../archive/remote-r3/README.md)可定位更早证据。
 

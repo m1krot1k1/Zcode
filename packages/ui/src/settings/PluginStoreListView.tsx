@@ -1,6 +1,5 @@
 import { useUiPluginRecommendations } from "@/plugin-ui/index.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
-/* eslint-disable max-lines -- 商店列表页把搜索/公开-社区-个人分段/Featured/分类折叠聚合成一个连贯浏览面，拆散反而难以维持 1:1 布局。 */
 import { useMemo, useState } from "react";
 import type { PluginStoreOrder, ZCodePluginMarketplaceSummary } from "@zcode/shared";
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID } from "@zcode/shared";
@@ -23,6 +22,8 @@ import {
   type StorePluginItem,
 } from "@/settings/pluginStoreListing.js";
 import { resolveMarketplaceDisplayName } from "@/settings/pluginSourceLabel.js";
+import { SkillsMarketplacePanel } from "@/settings/SkillsMarketplacePanel.js";
+import { PluginCatalogView } from "@/settings/PluginCatalogView.js";
 
 // 分类/市场分组手动收起后的展示数量；默认完整展示，避免较少的插件又被自动隐藏。
 const CATEGORY_VISIBLE_LIMIT = 6;
@@ -30,6 +31,9 @@ const RETIRED_STORE_PLUGIN_ID = `restore-legacy-sessions@${ZCODE_OFFICIAL_PLUGIN
 
 export type { PluginStoreSegment } from "@/settings/pluginStoreListing.js";
 import type { PluginStoreSegment } from "@/settings/pluginStoreListing.js";
+
+/** 商店页签：插件来源分段 + skills.sh 技能市场 + 统一插件目录。 */
+export type PluginStoreTab = PluginStoreSegment | "skills" | "catalog";
 
 export function PluginStoreListView({
   items: allItems,
@@ -42,6 +46,8 @@ export function PluginStoreListView({
   onSearchSubmit,
   segment,
   onSegmentChange,
+  workspacePath,
+  workspaceIdentity,
 }: {
   items: StorePluginItem[];
   order?: PluginStoreOrder | null;
@@ -51,8 +57,10 @@ export function PluginStoreListView({
   query: string;
   onSearchSubmit?: () => void;
   onQueryChange: (query: string) => void;
-  segment: PluginStoreSegment;
-  onSegmentChange: (segment: PluginStoreSegment) => void;
+  segment: PluginStoreTab;
+  onSegmentChange: (segment: PluginStoreTab) => void;
+  workspacePath?: string | null;
+  workspaceIdentity?: string;
 }) {
   const { intl, locale } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
@@ -67,7 +75,10 @@ export function PluginStoreListView({
   );
 
   const segmentItems = useMemo(
-    () => items.filter((item) => resolvePluginStoreSegment(item) === segment),
+    () =>
+      segment === "skills" || segment === "catalog"
+        ? []
+        : items.filter((item) => resolvePluginStoreSegment(item) === segment),
     [items, segment],
   );
   const { recommendations } = useUiPluginRecommendations(true);
@@ -173,20 +184,34 @@ export function PluginStoreListView({
             })}
             onClick={() => onSegmentChange("personal")}
           />
+          <SegmentPill
+            active={segment === "skills"}
+            testId="plugin-store-segment-skills"
+            label={intl.formatMessage({ id: "settings.plugins.store.segment.skills" })}
+            onClick={() => onSegmentChange("skills")}
+          />
+          <SegmentPill
+            active={segment === "catalog"}
+            testId="plugin-store-segment-catalog"
+            label={intl.formatMessage({ id: "settings.plugins.store.segment.catalog" })}
+            onClick={() => onSegmentChange("catalog")}
+          />
         </div>
-        <SettingsSearchInput
-          data-testid="plugin-store-search"
-          containerClassName="ml-auto min-w-0 flex-[1_1_14rem] sm:max-w-xs"
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.nativeEvent.isComposing) onSearchSubmit?.();
-          }}
-          placeholder={intl.formatMessage({ id: "settings.plugins.store.searchPlaceholder" })}
-        />
+        {segment !== "skills" && segment !== "catalog" ? (
+          <SettingsSearchInput
+            data-testid="plugin-store-search"
+            containerClassName="ml-auto min-w-0 flex-[1_1_14rem] sm:max-w-xs"
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) onSearchSubmit?.();
+            }}
+            placeholder={intl.formatMessage({ id: "settings.plugins.store.searchPlaceholder" })}
+          />
+        ) : null}
       </div>
 
-      {!keyword && uiItems.length > 0 ? (
+      {!keyword && segment !== "skills" && segment !== "catalog" && uiItems.length > 0 ? (
         <section data-testid="plugin-store-ui-section">
           <div className="pb-2">
             <h2 className="text-ui-lg font-semibold">
@@ -208,7 +233,19 @@ export function PluginStoreListView({
         </section>
       ) : null}
 
-      {keyword ? (
+      {segment === "catalog" ? (
+        <PluginCatalogView
+          items={items}
+          actions={actions}
+          query={query}
+          onQueryChange={onQueryChange}
+        />
+      ) : segment === "skills" ? (
+        <SkillsMarketplacePanel
+          workspacePath={workspacePath}
+          workspaceIdentity={workspaceIdentity}
+        />
+      ) : keyword ? (
         <StoreSection
           key="search"
           title={intl.formatMessage(

@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createFsFaultInjector, setFsFaultInjectorForTests } from "../src/fs/fsFaultInjection.js";
 
 import {
   parseSubagentMarkdown,
@@ -11,7 +12,10 @@ import {
   resolveSubagentStateFile,
   resolveUserSubagentRoot,
 } from "../src/subagents/subagentStorage.js";
-import { createSubagentsService } from "../src/subagents/subagentsService.js";
+import {
+  createSubagentsService,
+  provisionSkillAgentProfile,
+} from "../src/subagents/subagentsService.js";
 
 const tempRoots: string[] = [];
 
@@ -63,6 +67,7 @@ async function writeOfficialPluginFixture(
 }
 
 afterEach(async () => {
+  setFsFaultInjectorForTests(null);
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
     if (root) {
@@ -352,6 +357,7 @@ describe("subagent markdown helpers", () => {
       tools: ["Read", "Grep", "Bash(git diff *)"],
       disallowedTools: ["Write"],
       skills: ["code-review"],
+      includeInSwarm: true,
       permissionMode: "acceptEdits",
       maxTurns: 7,
       background: true,
@@ -370,6 +376,7 @@ describe("subagent markdown helpers", () => {
     expect(markdown).toContain("maxTurns: 7");
     expect(markdown).toContain("background: true");
     expect(markdown).toContain("injectAgentsMd: false");
+    expect(markdown).toContain("includeInSwarm: true");
     expect(markdown).toContain("你是严格的代码审查员。");
   });
 
@@ -387,6 +394,7 @@ disallowedTools:
   - Write
 skills:
   - code-review
+includeInSwarm: true
 permissionMode: acceptEdits
 maxTurns: 7
 background: true
@@ -411,6 +419,7 @@ color: cyan
       tools: ["Read", "Bash(git diff *)"],
       disallowedTools: ["Write"],
       skills: ["code-review"],
+      includeInSwarm: true,
       permissionMode: "acceptEdits",
       maxTurns: 7,
       background: true,
@@ -601,10 +610,13 @@ describe("createSubagentsService", () => {
     await mkdir(join(home, ".zcode", "v2"), { recursive: true });
     const original = '{"builtInModelOverrides":';
     await writeFile(path, original);
-    await expect(
-      createSubagentsService({ homeDir: home }).prepareRuntimeState(),
-    ).resolves.toBeUndefined();
-    expect(await readFile(path, "utf8")).toBe(original);
+    const service = createSubagentsService({ homeDir: home });
+    try {
+      await expect(service.prepareRuntimeState()).resolves.toBeUndefined();
+      expect(await readFile(path, "utf8")).toBe(original);
+    } finally {
+      service.disposeAll();
+    }
   });
 
   it("启动准备将旧内置选择落盘，让独立 Agent loader 不必等待用户编辑", async () => {
@@ -689,7 +701,7 @@ describe("createSubagentsService", () => {
     ).toBeUndefined();
   });
 
-  it("persists model overrides for built-in subagents without making them editable", async () => {
+  it("retains legacy model overrides without exposing the removed general-purpose role", async () => {
     const home = await makeTempHome();
     const workspacePath = join(home, "workspace");
     const service = createSubagentsService({
@@ -713,6 +725,21 @@ describe("createSubagentsService", () => {
         options: { reasoningLevel: "max" },
       },
     });
+    await service.setBuiltInModelOverride({
+      agentName: "start",
+      modelSelection: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+      },
+    });
+    await service.setBuiltInModelOverride({
+      agentName: "orchestrator",
+      modelSelection: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
+      },
+    });
 
     const result = await service.list({
       workspacePath,
@@ -726,19 +753,7 @@ describe("createSubagentsService", () => {
       disabledAgentIds: string[];
     };
 
-    expect(result.agents.find((agent) => agent.name === "general-purpose")).toMatchObject({
-      modelSelection: {
-        providerId: "custom-openai",
-        modelId: "gpt-5.4",
-        options: { reasoningLevel: "high" },
-      },
-      modelSelectionOverride: {
-        providerId: "custom-openai",
-        modelId: "gpt-5.4",
-        options: { reasoningLevel: "high" },
-      },
-      readOnly: true,
-    });
+    expect(result.agents.find((agent) => agent.name === "general-purpose")).toBeUndefined();
     expect(result.agents.find((agent) => agent.name === "Explore")).toMatchObject({
       modelSelection: {
         providerId: "custom-openai",
@@ -752,6 +767,26 @@ describe("createSubagentsService", () => {
       },
       readOnly: true,
     });
+    // Regression: the Settings roster must expose the router roles, and the formal reader
+    // must preserve their overrides instead of dropping them after a Host restart.
+    expect(result.agents.find((agent) => agent.name === "start")).toMatchObject({
+      modelSelection: { providerId: "custom-openai", modelId: "glm-5.2" },
+      modelSelectionOverride: { providerId: "custom-openai", modelId: "glm-5.2" },
+      readOnly: true,
+    });
+    expect(result.agents.find((agent) => agent.name === "orchestrator")).toMatchObject({
+      modelSelection: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
+      },
+      modelSelectionOverride: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
+      },
+      readOnly: true,
+    });
     expect(state.builtInModelSelectionOverrides).toEqual({
       Explore: {
         providerId: "custom-openai",
@@ -762,6 +797,15 @@ describe("createSubagentsService", () => {
         providerId: "custom-openai",
         modelId: "gpt-5.4",
         options: { reasoningLevel: "high" },
+      },
+      start: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+      },
+      orchestrator: {
+        providerId: "custom-openai",
+        modelId: "glm-5.2",
+        options: { reasoningLevel: "low" },
       },
     });
   });
@@ -840,12 +884,36 @@ describe("createSubagentsService", () => {
       mode: "settingsUserOnly",
     });
 
-    expect(result.agents.map((agent) => agent.name)).toEqual([
-      "general-purpose",
+    expect(
+      result.agents.filter((agent) => agent.scope === "built-in").map((agent) => agent.name),
+    ).toEqual([
       "Explore",
-      "code-reviewer",
+      "start",
+      "orchestrator",
+      "researcher",
+      "debugger",
+      "implementer",
+      "coder",
+      "frontend-coder",
+      "backend-coder",
+      "infra-coder",
+      "reviewer",
+      "security-reviewer",
+      "test-engineer",
+      "evaluator",
+      "self-improver",
+      "knowledge-curator",
+      "subagent-factory",
     ]);
+    expect(
+      result.agents.filter((agent) => agent.scope === "user").map((agent) => agent.name),
+    ).toEqual(["code-reviewer"]);
     expect(result.agents.every((agent) => agent.scope !== "workspace")).toBe(true);
+    expect(result.agents.find((agent) => agent.name === "coder")).toMatchObject({
+      tools: expect.arrayContaining(["Read", "Edit", "Bash"]),
+      skills: expect.arrayContaining(["*", "code-craft", "zcode-test-driven-development"]),
+      readOnly: true,
+    });
 
     // Bugfix 回归：workspace profile 曾被 parser 标为 readOnly，于是在设置页既不可编辑
     // 也不可删除，还被归入“内置”分组。只有内置 agent 才是真正只读的。
@@ -858,7 +926,7 @@ describe("createSubagentsService", () => {
       source: "user",
       readOnly: false,
     });
-    expect(result.agents.find((agent) => agent.name === "general-purpose")?.readOnly).toBe(true);
+    expect(result.agents.find((agent) => agent.name === "general-purpose")).toBeUndefined();
     expect(result.agents.find((agent) => agent.name === "code-reviewer")?.readOnly).toBe(false);
   });
 
@@ -1189,5 +1257,258 @@ tools:
     });
     expect(state.disabledAgentIds).toContain(renamed.agent.id);
     expect(state.disabledAgentIds).not.toContain(created.agent.id);
+  });
+
+  it("keeps the previous valid profile when atomic update fails before rename", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({
+      homeDir: home,
+      isDesktopRuntime: true,
+    });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: {
+        name: "safe-reviewer",
+        description: "Original description",
+        systemPrompt: "Original prompt",
+      },
+    });
+    setFsFaultInjectorForTests(
+      createFsFaultInjector([
+        {
+          id: "subagent-update-rename-failure",
+          code: "EACCES",
+          operations: ["rename"],
+          pathEndsWith: "/safe-reviewer.md",
+        },
+      ]),
+    );
+
+    await expect(
+      service.updateAgent({
+        agentId: created.agent.id,
+        oldFilePath: created.agent.path,
+        provider: "glm",
+        config: {
+          name: "safe-reviewer",
+          description: "Updated description",
+          systemPrompt: "Updated prompt",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "EACCES", zcodeFsFaultId: "subagent-update-rename-failure" });
+
+    const markdown = await readFile(created.agent.path, "utf8");
+    expect(markdown).toContain("Original prompt");
+    expect(markdown).not.toContain("Updated prompt");
+    await expect(
+      service.list({
+        workspacePath: join(home, "workspace"),
+        provider: "glm",
+        mode: "settingsUserOnly",
+      }),
+    ).resolves.toMatchObject({
+      agents: expect.arrayContaining([
+        expect.objectContaining({ name: "safe-reviewer", systemPrompt: "Original prompt" }),
+      ]),
+    });
+  });
+
+  it("reconciles an interrupted rename on the next service instance without changing enabled state", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: { name: "rename-recovery", description: "before", systemPrompt: "Keep this prompt." },
+    });
+    await service.setEnabled({ agentId: created.agent.id, enabled: false });
+    setFsFaultInjectorForTests(
+      createFsFaultInjector([
+        {
+          id: "profile-rename-publish-interrupted",
+          code: "EIO",
+          operations: ["rename"],
+          pathEndsWith: "/rename-recovery-v2.md",
+        },
+      ]),
+    );
+
+    await expect(
+      service.updateAgent({
+        agentId: created.agent.id,
+        oldFilePath: created.agent.path,
+        provider: "glm",
+        config: {
+          name: "rename-recovery-v2",
+          description: "after",
+          systemPrompt: "Keep this prompt.",
+        },
+      }),
+    ).rejects.toMatchObject({ zcodeFsFaultId: "profile-rename-publish-interrupted" });
+
+    setFsFaultInjectorForTests(null);
+    const restartedService = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const listed = await restartedService.list({
+      workspacePath: join(home, "workspace"),
+      provider: "glm",
+      mode: "settingsUserOnly",
+    });
+    const renamed = listed.agents.filter((agent) => agent.name.startsWith("rename-recovery"));
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]).toMatchObject({ name: "rename-recovery-v2", enabled: false });
+    await expect(readFile(created.agent.path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(renamed[0]!.path, "utf8")).toContain("Keep this prompt.");
+    const rootEntries = await readdir(await resolveUserSubagentRoot({ homeDir: home }));
+    expect(
+      rootEntries.some(
+        (entry) => entry.startsWith(".zcode-profile-rename-") || entry.endsWith(".pending"),
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves a source edited after an interrupted rename and disables the preserved copy", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: { name: "edited-source", description: "before", systemPrompt: "Original prompt." },
+    });
+    setFsFaultInjectorForTests(
+      createFsFaultInjector([
+        {
+          id: "profile-rename-publish-interrupted-edited-source",
+          code: "EIO",
+          operations: ["rename"],
+          pathEndsWith: "/edited-source-v2.md",
+        },
+      ]),
+    );
+    await expect(
+      service.updateAgent({
+        agentId: created.agent.id,
+        oldFilePath: created.agent.path,
+        provider: "glm",
+        config: {
+          name: "edited-source-v2",
+          description: "renamed",
+          systemPrompt: "Renamed prompt.",
+        },
+      }),
+    ).rejects.toMatchObject({ zcodeFsFaultId: "profile-rename-publish-interrupted-edited-source" });
+
+    setFsFaultInjectorForTests(null);
+    const source = await readFile(created.agent.path, "utf8");
+    await writeFile(
+      created.agent.path,
+      source.replace("Original prompt.", "User's concurrent edit."),
+      "utf8",
+    );
+    const restartedService = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const listed = await restartedService.list({
+      workspacePath: join(home, "workspace"),
+      provider: "glm",
+      mode: "settingsUserOnly",
+    });
+
+    expect(listed.agents.find((agent) => agent.id === created.agent.id)).toMatchObject({
+      enabled: false,
+    });
+    expect(listed.agents.find((agent) => agent.name === "edited-source-v2")).toMatchObject({
+      enabled: true,
+    });
+    expect(await readFile(created.agent.path, "utf8")).toContain("User's concurrent edit.");
+    const rootEntries = await readdir(await resolveUserSubagentRoot({ homeDir: home }));
+    expect(
+      rootEntries.some(
+        (entry) => entry.startsWith(".zcode-profile-rename-") || entry.endsWith(".pending"),
+      ),
+    ).toBe(false);
+  });
+
+  it("finishes an interrupted source cleanup without publishing a second profile", async () => {
+    const home = await makeTempHome();
+    const service = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const created = await service.createAgent({
+      provider: "glm",
+      config: {
+        name: "cleanup-recovery",
+        description: "profile",
+        systemPrompt: "One active copy.",
+      },
+    });
+    setFsFaultInjectorForTests(
+      createFsFaultInjector([
+        {
+          id: "profile-rename-source-cleanup-interrupted",
+          code: "EIO",
+          operations: ["rm"],
+          pathEndsWith: "/cleanup-recovery.md",
+        },
+      ]),
+    );
+
+    await expect(
+      service.updateAgent({
+        agentId: created.agent.id,
+        oldFilePath: created.agent.path,
+        provider: "glm",
+        config: {
+          name: "cleanup-recovery-v2",
+          description: "profile",
+          systemPrompt: "One active copy.",
+        },
+      }),
+    ).rejects.toMatchObject({ zcodeFsFaultId: "profile-rename-source-cleanup-interrupted" });
+
+    setFsFaultInjectorForTests(null);
+    const restartedService = createSubagentsService({ homeDir: home, isDesktopRuntime: true });
+    const listed = await restartedService.list({
+      workspacePath: join(home, "workspace"),
+      provider: "glm",
+      mode: "settingsUserOnly",
+    });
+    expect(listed.agents.filter((agent) => agent.name.startsWith("cleanup-recovery"))).toHaveLength(
+      1,
+    );
+    expect(listed.agents.find((agent) => agent.name === "cleanup-recovery-v2")?.enabled).toBe(true);
+    await expect(readFile(created.agent.path, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("provisions a user agent for an installed skill and never overwrites it", async () => {
+    const home = await makeTempHome();
+    const workspacePath = join(home, "workspace");
+    const first = await provisionSkillAgentProfile({
+      homeDir: home,
+      skillName: "frontend-design",
+      description: "Designs distinctive interfaces.",
+    });
+    expect(first.created).toBe(true);
+    expect(first.agentName).toBe("frontend-design");
+    const content = await readFile(first.path, "utf8");
+    expect(content).toContain('name: "frontend-design"');
+    expect(content).toContain("frontend-design");
+
+    const second = await provisionSkillAgentProfile({
+      homeDir: home,
+      skillName: "frontend-design",
+      description: "Changed description",
+    });
+    expect(second.created).toBe(false);
+    expect(second.reason).toBe("exists");
+    expect(await readFile(first.path, "utf8")).toBe(content);
+
+    const listed = await createSubagentsService({
+      homeDir: home,
+      isDesktopRuntime: true,
+    }).list({
+      workspacePath,
+      provider: "glm",
+      mode: "settingsUserOnly",
+    });
+    expect(listed.agents.find((agent) => agent.name === "frontend-design")).toMatchObject({
+      source: "user",
+      scope: "user",
+      skills: ["frontend-design"],
+      readOnly: false,
+    });
   });
 });

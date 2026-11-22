@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Composer 草稿 owner 同时收口选择、正文与提交生命周期，保持单一状态边界。 */
 // 当前编辑由 Composer 持有；进入已有 Session 从当前快照恢复权限/Plan，在线只响应新变化。
 // 菜单点击立即保存 Renderer 意图，Prewarm 与 Submission 只消费它，不反向覆盖。
 //
@@ -75,7 +74,7 @@ export function shouldHydrateWorkspaceCatalog(params: {
   return params.slashCommands.length === 0 || !hasModePresentation;
 }
 
-export interface DraftConfigControl {
+interface DraftConfigControl {
   modelSelectionRead: ModelSelectionRead;
   /** Renderer 下一次提交的配置；恢复采用当前权限，在线授权只同步对应字段。 */
   draftConfig: Partial<SessionConfigState>;
@@ -98,6 +97,7 @@ export interface DraftConfigControl {
   handleDraftSelectModel: (modelProvider: string, model: string, reasoningLevel?: string) => void;
   handleDraftSelectThought: (thought: string) => void;
   handleDraftSwitchMode: (mode: string) => void;
+  setComposerOrchestrationMode: (enabled: boolean) => void;
 }
 
 interface ComposerState {
@@ -420,6 +420,9 @@ export function useDraftConfigControl(params: {
     (content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) => {
       updateComposerDraft((current) => ({
         ...current,
+        ...(content.text !== undefined && !content.text.trim()
+          ? { orchestrationMode: undefined }
+          : {}),
         editorStateJson: undefined,
         mention: undefined,
         ...content,
@@ -430,6 +433,15 @@ export function useDraftConfigControl(params: {
   const replaceComposerDraft = useCallback(
     (replacement: Omit<V4ComposerDraft, "updatedAt">) => {
       updateComposerDraft(() => ({ ...replacement, updatedAt: Date.now() }));
+    },
+    [updateComposerDraft],
+  );
+  const setComposerOrchestrationMode = useCallback(
+    (enabled: boolean) => {
+      updateComposerDraft((current) => ({
+        ...current,
+        ...(enabled ? { orchestrationMode: "swarm" as const } : { orchestrationMode: undefined }),
+      }));
     },
     [updateComposerDraft],
   );
@@ -565,12 +577,15 @@ export function useDraftConfigControl(params: {
         workspacePath,
         workspaceIdentity: workspaceIdentity ?? null,
       });
-      updateDraftConfig((current) => applyDraftModelSelection(current, modelSelection));
+      updateComposerDraft((current) => ({
+        ...current,
+        modelSelection,
+      }));
     },
     [
       modelSelectionView,
       modelSelectionRead.state,
-      updateDraftConfig,
+      updateComposerDraft,
       workspaceIdentity,
       workspacePath,
     ],
@@ -638,6 +653,7 @@ export function useDraftConfigControl(params: {
     handleDraftSelectModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
+    setComposerOrchestrationMode,
   };
 }
 

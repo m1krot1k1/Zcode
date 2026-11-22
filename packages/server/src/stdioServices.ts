@@ -7,14 +7,14 @@ import {
   ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY_ENV_KEY,
 } from "@zcode/shared";
 
-export interface CreateStdioServicesOptions {
+interface CreateStdioServicesOptions {
   topicResourceRelayChannel?: () => IChannel;
   env?: Record<string, string | undefined>;
   zcodeBuiltinProviderConfigFilePath: string;
   zcodeAgentCommandResolver?: ZCodeAgentCommandResolver;
 }
 
-export interface RemoteAgentNetworkOptions {
+interface RemoteAgentNetworkOptions {
   httpProxy?: string;
   noProxy?: string;
 }

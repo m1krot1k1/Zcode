@@ -218,6 +218,7 @@ describe("session facade model selection", () => {
       ],
     };
     const saveSessionEntry = vi.fn(async () => {});
+    const isSessionPersisted = vi.fn(() => true);
     const validateSelection = vi.fn((selection: ModelSelection) =>
       selection.options?.reasoningLevel === "invalid"
         ? {
@@ -257,6 +258,7 @@ describe("session facade model selection", () => {
       resolveUiLocale: () => "en-US",
       runtime: {
         getSessionModelSelection: () => modelSelection,
+        isSessionPersisted,
         setSessionModelSelection: (selection: typeof modelSelection) => {
           modelSelection = selection;
         },
@@ -308,6 +310,15 @@ describe("session facade model selection", () => {
       facade.setModel({ ...submitted, options: { reasoningLevel: "invalid" } }),
     ).rejects.toThrow("not supported");
     expect(modelSelection.options?.reasoningLevel).toBe("high");
+    expect(saveSessionEntry).not.toHaveBeenCalled();
+
+    // Draft-session ещё не имеет строки `session`: прямой write дал бы FK-ошибку,
+    // поэтому bootstrap обязан отложить запись до core persistSession.
+    saveSessionEntry.mockClear();
+    isSessionPersisted.mockReturnValueOnce(false);
+    await expect(facade.setThoughtLevel("low")).resolves.toMatchObject({
+      thoughtLevel: "low",
+    });
     expect(saveSessionEntry).not.toHaveBeenCalled();
   });
 });

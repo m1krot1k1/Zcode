@@ -1,7 +1,7 @@
 import type { ConversationShareFailureIssue } from "@zcode/services";
 import { conversationShareRejectionSchema, type ConversationShareRejection } from "@zcode/shared";
 
-export interface ConversationShareErrorDetails {
+interface ConversationShareErrorDetails {
   name: string;
   kind: string;
   reasonCode?: string;

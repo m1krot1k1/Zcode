@@ -1,5 +1,7 @@
-import type { ToolSearchExecutionContext, ModelCallWrapper } from "@zcode/contracts";
+import type { ToolSearchExecutionContext, ModelCallWrapper, PersistedToolFailureDiagnostics, PersistedToolRepairAttemptRecord } from "@zcode/contracts";
 import type { McpToolUiDescriptor } from "@zcode/shared/mcp-apps";
+import type { IFileTransactionTaskRegistry } from "./file-transaction/task-contract.js";
+import type { IFileLockRegistry } from "./file-transaction/contract.js";
 // ============================================================
 // Tool Types - Core tool types for registry and executor
 // ============================================================
@@ -8,6 +10,7 @@ import type {
   CollaborationMode,
   AutomationPort,
   BrowserControlPort,
+  CodeIntelligencePort,
   CoordinatorResponsePort,
   DynamicWorkflowRunPort,
   DynamicWorkflowSnippetPort,
@@ -38,6 +41,7 @@ import type {
   SessionModePort,
   SessionStorePort,
   SkillPort,
+  CapabilityInstallPort,
   SkillTelemetryMetadata,
   SubagentPort,
   SubagentRunOptions,
@@ -56,8 +60,14 @@ import type {
   WorkflowEscalatePort,
   WorkflowPort,
   WorkflowSubmitPort,
+  WorkspaceBoundaryMode,
 } from "@zcode/contracts";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
+import type {
+  WorkspaceBoundaryApprovalPort,
+  WorkspaceBoundaryAuditEvent,
+  WorkspaceBoundaryPathRequest,
+} from "./path-policy.js";
 import type {
   PersistedReadFileStateMetadata,
   PersistedReadFileStateTool,
@@ -138,6 +148,10 @@ export interface BackgroundTaskControlPort {
 }
 
 export interface ToolExecutionContext {
+  /** Роли, которые текущий caller может запускать (тот же фильтр, что у каталога). */
+  availableAgentTypes?: readonly string[];
+  /** Каноническая роль вызывающего runtime; root/main — undefined. */
+  callerAgentType?: string;
   toolSearch?: ToolSearchExecutionContext;
   toolCallId: string;
   /**
@@ -153,6 +167,8 @@ export interface ToolExecutionContext {
   spanId?: string;
   parentSpanId?: string;
   abortSignal: AbortSignal;
+  /** Number of Agent/Task calls in the same parallel group. */
+  parallelAgentBatchSize?: number;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   emitEvent?: (event: SessionEvent) => Promise<void>;
   executionPort?: ExecutionPort;
@@ -161,6 +177,14 @@ export interface ToolExecutionContext {
   /** 官方 browser-use plugin docs 资产目录；只在 browser-use 启用时用于 agent.browsers.documentation()。 */
   browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
+  /** Единый межсубагентный реестр канонических RW-блокировок файлов (F-02). */
+  fileLockRegistry?: IFileLockRegistry;
+  /**
+   * Реестр жизненных циклов фоновых файловых транзакций (Инкремент 4.2).
+   * Владелец статуса `queued/running/completed/failed/cancelled`; инструменты
+   * только регистрируют задачу и передают её id в транзакцию.
+   */
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
@@ -168,6 +192,7 @@ export interface ToolExecutionContext {
   /** Core Server 对前台 child 的 Selection override。 */
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   subagentPort?: SubagentPort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果并等待引擎裁决的端口；仅在 workflow actor 会话注入。 */
@@ -178,6 +203,7 @@ export interface ToolExecutionContext {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  codeIntelligencePort?: CodeIntelligencePort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
   workflowPort?: WorkflowPort;
@@ -188,15 +214,41 @@ export interface ToolExecutionContext {
   /** 模型目录端口；缺席则 ListModels 报能力缺席，CreateWorkflow 的 subagent_model 被拒。 */
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
+  /** Настроенный runtime-каталог артефактов; сессия и имя файла вычисляются из проверенных метаданных задачи. */
+  runtimeTaskOutputRootDir?: string;
   readFileState?: ReadFileStateMap;
   recordReadFileStateMetadata?: (metadata: PersistedReadFileStateMetadata) => void;
   /** 记录 Skill resolved metadata；仅用于 telemetry，不改变模型可见结果。 */
   recordSkillTelemetryMetadata?: (metadata: SkillTelemetryMetadata) => void;
   bashShellSelection?: ExecutionShellSelection;
+  /** Порт интерактивных PTY-сессий; отсутствие снимает инструмент с регистрации. */
+  ptySessionPort?: import("./handlers/pty-session.js").PtySessionPort;
+  /**
+   * Host sandbox mode for Bash/PTY. `off` disables OS isolation; undefined keeps
+   * the legacy workspace-write default.
+   */
+  bashSandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  /**
+   * Политика сети для Bash-песочницы. `deny` включает `--unshare-net` в bwrap;
+   * отсутствие поля означает `allow`. Runtime выставляет его из конфигурации
+   * workspace, а не модель через аргументы инструмента.
+   */
+  bashSandboxNetwork?: "allow" | "deny";
   embeddedSearch?: ToolEmbeddedSearchContext;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   workingDirectory: string;
   workspaceRoot: string;
+  /** Явно объявленный write-scope (`write_paths`); undefined — без ограничения. */
+  writeScope?: readonly string[];
+  /** Workspace 边界模式；缺省为兼容默认 `allow`（docs/specs/2026-11-11-workspace-boundary.md）。 */
+  workspaceBoundary?: WorkspaceBoundaryMode;
+  /**
+   * ask 模式的同步审批端口。executor 在权限流里已经取得用户决定后才注入；
+   * 缺席时越界以 `permission_escalation` fail closed，工具不会静默放行。
+   */
+  workspaceBoundaryApproval?: WorkspaceBoundaryApprovalPort;
+  /** 越界访问审计（allow / approve / deny）；由 runtime logger 落结构化日志。 */
+  auditWorkspaceBoundary?: (event: WorkspaceBoundaryAuditEvent) => void;
   workspaceIdentity?: string;
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
@@ -326,6 +378,17 @@ export interface ToolEntry extends ToolContractDeclaration {
   permissionCapabilityGroup?: PermissionCapabilityGroup;
   executionMode?: ToolExecutionMode;
   providerNative?: ProviderNativeToolSpec;
+  /**
+   * ask 模式的预审批声明：本工具本次调用会解析哪些模型路径。
+   *
+   * 只描述路径，不做判定——边界判定仍只有 path-policy 一处。executor 在权限流里据此
+   * 取得真实的用户决定，再把已批准路径作为同步审批端口交给 handler。
+   * 未声明（或声明遗漏）的路径在 ask 模式下由端口拒绝，保持 fail closed。
+   */
+  resolveWorkspaceBoundaryPaths?: (
+    input: unknown,
+    context: ToolInputResolutionContext,
+  ) => readonly WorkspaceBoundaryPathRequest[] | undefined;
   handler: ToolHandler;
   /** 当前 turn 模型能力对 provider descriptor 与 executor schema 的同源投影。 */
   resolveModelContract?: (context: ToolExecutionModelContext) => {
@@ -378,6 +441,17 @@ export interface ToolEntry extends ToolContractDeclaration {
     input: unknown,
     context?: ToolRuntimePermissionCapabilityContext,
   ) => ToolRuntimePermissionCapability | undefined;
+  /**
+   * Per-call scheduling override. Tools with side effects stay serialized by
+   * metadata; this hook lets read-only command tools opt individual calls into a
+   * parallel group without weakening the default for mutating calls.
+   */
+  resolveConcurrencyCapability?: (
+    input: unknown,
+    context?: ToolRuntimePermissionCapabilityContext,
+  ) =>
+    | Pick<ToolMetadata, "readOnly" | "concurrentSafe" | "sideEffectScope">
+    | undefined;
   resolvePermissionRulePolicy?: (
     input: unknown,
     context?: ToolRuntimePermissionCapabilityContext,
@@ -460,6 +534,10 @@ export interface ToolExecutionResult {
   serialization?: ToolResultSerialization;
   /** Executor 汇总后的内部性能事实；不进入模型可见 Tool Output。 */
   performance?: ToolExecutionTelemetry;
+  /** Журнал попыток самовосстановления JSON/Zod (F-01, F-06). */
+  repairAttempts?: PersistedToolRepairAttemptRecord[];
+  /** Структурированная диагностика сбоя/усечения вызова инструмента (F-06). */
+  failureDiagnostics?: PersistedToolFailureDiagnostics;
   error?: {
     code?: string;
     detail?: string;

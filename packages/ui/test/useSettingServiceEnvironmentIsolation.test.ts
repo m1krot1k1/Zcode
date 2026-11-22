@@ -6,9 +6,10 @@ import type { AppSettings } from "@zcode/shared";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 
-vi.mock("@/hooks/usePlatform.js", () => ({
-  usePlatform: () => ({}),
-}));
+vi.mock("@/hooks/usePlatform.js", () => {
+  const platform = {};
+  return { usePlatform: () => platform, useOptionalPlatform: () => platform };
+});
 
 function createSettings(value: string): AppSettings {
   return { providerFamilyDomain: value } as AppSettings;

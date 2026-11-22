@@ -31,6 +31,34 @@ export function mapMessageWithParts(message: MessageWithParts): ZCodeMessageWith
                 >)
               : undefined,
             finish: message.info.finish,
+            ...(message.info.finishReason ?? message.info.finish
+              ? { finishReason: message.info.finishReason ?? message.info.finish }
+              : {}),
+            ...(message.info.rawFinishReason
+              ? { rawFinishReason: message.info.rawFinishReason }
+              : {}),
+            ...(message.info.rawTruncatedInputPreview ??
+            message.info.stepDiagnostics?.rawTruncatedInputPreview
+              ? {
+                  rawTruncatedInputPreview:
+                    message.info.rawTruncatedInputPreview ??
+                    message.info.stepDiagnostics?.rawTruncatedInputPreview,
+                }
+              : {}),
+            ...((message.info.repairAttempts ?? message.info.stepDiagnostics?.repairAttempts)
+              ?.length
+              ? {
+                  repairAttempts:
+                    message.info.repairAttempts ?? message.info.stepDiagnostics?.repairAttempts,
+                }
+              : {}),
+            ...((message.info.stateTransitions ?? message.info.stepDiagnostics?.stateTransitions)
+              ?.length
+              ? {
+                  stateTransitions:
+                    message.info.stateTransitions ?? message.info.stepDiagnostics?.stateTransitions,
+                }
+              : {}),
             messageId: String(message.info.id),
             model:
               message.info.providerId && message.info.modelId
@@ -233,6 +261,7 @@ function mapToolState(state: ToolState): ZCodeToolState {
         input: state.input,
         metadata: mapCompletedToolStateMetadata(state.metadata),
         output: state.output,
+        ...(state.repairAttempts?.length ? { repairAttempts: state.repairAttempts } : {}),
         startedAt: state.time.start,
         status: "completed",
         title: state.title,
@@ -243,6 +272,10 @@ function mapToolState(state: ToolState): ZCodeToolState {
         error: state.error,
         input: state.input,
         metadata: mapErrorToolStateMetadata(state.metadata),
+        ...(state.failureDiagnostics?.rawTruncatedInputPreview
+          ? { rawTruncatedInputPreview: state.failureDiagnostics.rawTruncatedInputPreview }
+          : {}),
+        ...(state.repairAttempts?.length ? { repairAttempts: state.repairAttempts } : {}),
         startedAt: state.time.start,
         status: "error",
       };

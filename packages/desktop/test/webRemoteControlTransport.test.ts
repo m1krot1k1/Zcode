@@ -32,13 +32,14 @@ async function fixture(
   const states: string[] = [];
   const stateEvents = new EventEmitter();
   const errors: Error[] = [];
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const transport = new WebRemoteControlDeviceTransport({
     relayWsUrl: relay.wsUrl,
     deviceMid: "mid-1",
     getToken: (signal) => createWebRemoteControlV2Http(relay.httpUrl).token("jwt", signal),
     resolveDeviceSid: async () => device.device_sid,
     meta: { name: "My desktop", platform: "darwin", version: "3.13.0" },
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    logger,
     onStateChange: (state) => {
       states.push(state);
       stateEvents.emit(`state:${state}`);
@@ -52,7 +53,7 @@ async function fixture(
     if (states.at(-1) !== state)
       await once(stateEvents, `state:${state}`, { signal: AbortSignal.timeout(5000) });
   };
-  return { relay, transport, states, errors, device, request, waitForState };
+  return { relay, transport, states, errors, device, request, waitForState, logger };
 }
 
 async function settle() {
@@ -135,18 +136,31 @@ describe("desktop relay V2 transport", () => {
       },
     });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    let retryScheduled!: () => void;
+    const retryScheduledSignal = new Promise<void>((resolve) => {
+      retryScheduled = resolve;
+    });
+    // 等到 503 已进入重试处理器；真实 HTTP 的固定延时不能保证 fake clock 起点稳定。
+    f.logger.warn.mockImplementationOnce(() => retryScheduled());
     f.transport.start();
-    await settle();
+    await retryScheduledSignal;
     let count = 1;
     const tokenCalls = () =>
       f.relay.httpCalls.filter((call) => call.path.endsWith("/token")).length;
     for (const ms of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
       expect(tokenCalls()).toBe(count);
+      let nextRetryScheduled!: () => void;
+      const nextRetryScheduledSignal = new Promise<void>((resolve) => {
+        nextRetryScheduled = resolve;
+      });
+      // Подтверждаем обработку очередного 503 до следующего шага fake clock.
+      f.logger.warn.mockImplementationOnce(() => nextRetryScheduled());
       await vi.advanceTimersByTimeAsync(ms - 1);
       await settle();
       expect(tokenCalls()).toBe(count);
       await vi.advanceTimersByTimeAsync(1);
-      await settle();
+      await nextRetryScheduledSignal;
+      expect(tokenCalls()).toBe(count + 1);
       count++;
     }
     failure = undefined;
@@ -157,8 +171,13 @@ describe("desktop relay V2 transport", () => {
     f.relay.disconnect({ role: "device" });
     await settle();
     const before = tokenCalls();
+    let networkRetryScheduled!: () => void;
+    const networkRetryScheduledSignal = new Promise<void>((resolve) => {
+      networkRetryScheduled = resolve;
+    });
+    f.logger.warn.mockImplementationOnce(() => networkRetryScheduled());
     await vi.advanceTimersByTimeAsync(1000);
-    await settle();
+    await networkRetryScheduledSignal;
     expect(tokenCalls()).toBe(before + 1);
     expect(f.states.at(-1)).toBe("connecting");
   });

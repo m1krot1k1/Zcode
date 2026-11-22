@@ -29,7 +29,7 @@ export interface AssistantCodeCommentCard extends AssistantCodeComment {
   path: string;
 }
 
-export interface AssistantCodeCommentProjection {
+interface AssistantCodeCommentProjection {
   comments: AssistantCodeComment[];
   visibleText: string;
 }

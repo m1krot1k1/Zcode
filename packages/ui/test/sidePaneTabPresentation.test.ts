@@ -18,6 +18,7 @@ const labels: SidePaneTabPresentationLabels = {
   whiteboardTitle: "Whiteboard",
   modelTrajectoryTitle: "Model trajectory",
   developerToolsTitle: "Developer tools",
+  agentWorkbenchTitle: "Agent Workbench",
   pluginMarketTitle: "Plugins",
   terminalTitle: "Terminal",
   subagentTypeLabel: "Subagent",

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- share 公开页的状态文案、Row allow-list 和登录态需保持同一安全边界。 */
 import {
   useCallback,
   useEffect,
@@ -29,8 +28,8 @@ const SHARE_LOGIN_PROVIDERS: readonly WebOAuthProviderId[] = [
   BIGMODEL_PROVIDER_ID,
 ];
 
-export type ConversationShareLandingLocale = "zh-CN" | "en-US";
-export type ConversationShareLandingState =
+type ConversationShareLandingLocale = "zh-CN" | "en-US";
+type ConversationShareLandingState =
   | { kind: "loading" }
   | { kind: "login_required" }
   | { kind: "ready"; preview: ConversationSharePreview }

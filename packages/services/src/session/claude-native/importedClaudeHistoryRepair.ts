@@ -14,13 +14,13 @@ import { claudeNativeSessionImportRepo } from "#src/session/claude-native/claude
 import { parseClaudeNativeSessionFile } from "#src/session/claude-native/claudeNativeSessionImportParser.js";
 import { safeParseLegacyTaskSessionFile } from "#src/session/legacyTaskSessionFile.js";
 
-export interface ImportedClaudeHistoryRepairTarget {
+interface ImportedClaudeHistoryRepairTarget {
   workspacePath: string;
   workspaceIdentity?: string;
   taskId: string;
 }
 
-export interface ImportedClaudeHistoryRepairResult {
+interface ImportedClaudeHistoryRepairResult {
   title?: string;
   createdAt?: number;
   updatedAt?: number;
@@ -28,11 +28,11 @@ export interface ImportedClaudeHistoryRepairResult {
   source: "legacySnapshot" | "nativeJsonl";
 }
 
-export interface ImportedClaudeSessionRepairTarget extends ImportedClaudeHistoryRepairTarget {
+interface ImportedClaudeSessionRepairTarget extends ImportedClaudeHistoryRepairTarget {
   mcpServers?: ZCodeAgentMcpServer[];
 }
 
-export interface ImportedClaudeSessionRepairCreateParams {
+interface ImportedClaudeSessionRepairCreateParams {
   workspacePath: string;
   workspaceIdentity?: string;
   sessionId: string;
@@ -60,7 +60,7 @@ function countAssistantMessages(messages: readonly ZCodeSessionImportMessage[]):
   return messages.filter((message) => message.role === "assistant").length;
 }
 
-export function shouldRepairImportedClaudeSnapshot(
+function shouldRepairImportedClaudeSnapshot(
   snapshot: Pick<ZCodeSessionStateSnapshot, "messages" | "runtime" | "session">,
 ): boolean {
   if (snapshot.session.status === "running" || snapshot.runtime.activeTurnId) {
@@ -92,11 +92,7 @@ function readLegacyImportedClaudeHistory(
   target: ImportedClaudeHistoryRepairTarget,
 ): ImportedClaudeHistoryRepairResult | null {
   const snapshotPath = [
-    getLegacyTaskSessionSnapshotPath(
-      target.workspacePath,
-      target.taskId,
-      target.workspaceIdentity,
-    ),
+    getLegacyTaskSessionSnapshotPath(target.workspacePath, target.taskId, target.workspaceIdentity),
     getLegacyDeletedTaskSessionSnapshotPath(
       target.workspacePath,
       target.taskId,
@@ -158,7 +154,7 @@ async function readNativeImportedClaudeHistory(
     : null;
 }
 
-export async function resolveImportedClaudeHistoryForRepair(
+async function resolveImportedClaudeHistoryForRepair(
   target: ImportedClaudeHistoryRepairTarget,
 ): Promise<ImportedClaudeHistoryRepairResult | null> {
   const legacyHistory = readLegacyImportedClaudeHistory(target);
@@ -169,7 +165,8 @@ export async function resolveImportedClaudeHistoryForRepair(
   const nativeHistory = await readNativeImportedClaudeHistory(target);
   if (
     nativeHistory &&
-    countAssistantMessages(nativeHistory.messages) >= countAssistantMessages(legacyHistory?.messages ?? [])
+    countAssistantMessages(nativeHistory.messages) >=
+      countAssistantMessages(legacyHistory?.messages ?? [])
   ) {
     // 旧版本可能已经把 user-only 的 legacy 备份写坏了。
     // 这时 legacy 不能再作为权威来源，需要按 taskId 反查原 Claude jsonl 重建 assistant。

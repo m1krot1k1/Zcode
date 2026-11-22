@@ -17,7 +17,7 @@ import type {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { recordModelUsageFact } from "./usage-observability.js";
-import { createRuntimeModel } from "./runtime-model.js";
+import { createRuntimeModel, getLatestCompletedModelRequestId } from "./runtime-model.js";
 import { normalizeStreamError } from "../helpers/index.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 
@@ -27,6 +27,18 @@ const CONNECTIVITY_PROBE_MAX_OUTPUT_TOKENS = 1;
 const CONNECTIVITY_PROBE_SYSTEM = "You are ZCode connectivity probe.";
 const CONNECTIVITY_PROBE_USER = "hi";
 const GIT_COMMIT_MESSAGE_QUERY_SOURCE = "git_commit_message";
+const BACKGROUND_QUERY_SOURCES = new Set([
+  "chat_autocomplete",
+  "proactive_suggestion",
+  "session_title",
+  "goal_summary_title",
+  "project_memory_extract",
+  "project_memory_dream",
+]);
+
+function isBackgroundQuerySource(querySource: string): boolean {
+  return BACKGROUND_QUERY_SOURCES.has(querySource);
+}
 
 export interface WorkspaceGenerateTextInput {
   selection: ModelSelection;
@@ -41,6 +53,7 @@ export interface WorkspaceGenerateTextResult {
   text: string;
   selection: ModelSelection;
   finishReason: string;
+  requestId?: string;
   usage?: ModelUsage;
   toolCalls?: ModelToolCall[];
 }
@@ -80,6 +93,9 @@ export async function testModelConnectivity(
   let finished = false;
   await runWithModelInvocationContext(
     {
+      // Bugfix: OpenCode CLI валидирует cwd в каждом модельном запросе; настройка проверки соединения
+      // раньше теряла каталог владельца. Передаём тот же workspace, что использует AgentRuntime.
+      workingDirectory: this.workingDirectory,
       metadata: traceContextToLogContext(traceContext),
       modelCall: { operation: "workspace_generate_text" },
       statusSink: this.createModelStatusSink(traceContext, []),
@@ -143,7 +159,11 @@ async function generateWorkspaceTextImpl(
   assertWorkspaceModelInput(input);
   const requestedSelection = input.selection;
   const querySource = input.querySource.trim() || "workspace_generate_text";
-  const baseModel = createRuntimeModel(this, { selection: requestedSelection, scope: "workspace" });
+  const baseModel = createRuntimeModel(this, {
+    selection: requestedSelection,
+    scope: "workspace",
+    admissionPriority: isBackgroundQuerySource(querySource) ? "background" : "main",
+  });
   // 辅助请求需要的是最低公开档位，不是扫描 off/nothink 等名称后强制关闭。
   const model =
     querySource === GIT_COMMIT_MESSAGE_QUERY_SOURCE
@@ -196,6 +216,9 @@ async function generateWorkspaceTextImpl(
 
   const result = await runWithModelInvocationContext(
     {
+      // Bugfix: swarm planner и остальные auxiliary calls шли без cwd, и OpenCode отвечал 500
+      // на отсутствующую папку. Контекст всегда получает cwd текущего runtime, без подмены fallback.
+      workingDirectory: this.workingDirectory,
       metadata: traceContextToLogContext(modelTraceContext),
       modelCall: {
         operation:
@@ -230,10 +253,12 @@ async function generateWorkspaceTextImpl(
   });
 
   const toolCalls = this.extractToolCallsFromResult(result);
+  const completedRequestId = getLatestCompletedModelRequestId(events);
   const modelCompleteEvent = this.createEvent(
     SessionEventType.ModelComplete,
     {
       content: result.text,
+      ...(completedRequestId ? { requestId: completedRequestId } : {}),
       querySource,
       stopReason: result.finishReason,
       toolCallCount: toolCalls.length,
@@ -263,6 +288,7 @@ async function generateWorkspaceTextImpl(
       ...(requestedSelection.options ? { options: { ...requestedSelection.options } } : {}),
     },
     finishReason: result.finishReason,
+    ...(completedRequestId ? { requestId: completedRequestId } : {}),
     usage: result.usage,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
   };

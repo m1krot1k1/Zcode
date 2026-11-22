@@ -14,6 +14,7 @@ import {
 import type {
   AccountProviderConfigSnapshot,
   ProviderConfigSnapshot,
+  RuntimeProviderCatalogSnapshot,
   ProviderSource,
 } from "./sources.js";
 
@@ -21,9 +22,11 @@ export interface ProviderRegistryServiceSnapshot {
   readonly sourceRevisions: {
     readonly config: string;
     readonly account: string;
+    readonly runtimeProviders?: string;
   };
   readonly config: ProviderConfigSnapshot;
   readonly account: AccountProviderConfigSnapshot;
+  readonly runtimeProviders?: RuntimeProviderCatalogSnapshot;
   readonly resolution: ProviderConfigResolution;
   readonly registry: ProviderRegistryView;
 }
@@ -41,6 +44,7 @@ export interface ProviderRegistryServiceRefreshErrorEvent {
 export interface ProviderRegistryServiceDependencies {
   readonly configSource: ProviderSource<ProviderConfigSnapshot>;
   readonly accountSource: ProviderSource<AccountProviderConfigSnapshot>;
+  readonly runtimeProviderSource?: ProviderSource<RuntimeProviderCatalogSnapshot>;
   readonly resolver?: ProviderConfigResolver;
 }
 
@@ -53,6 +57,7 @@ interface RefreshWaiter {
 export class ProviderRegistryService {
   readonly #configSource: ProviderSource<ProviderConfigSnapshot>;
   readonly #accountSource: ProviderSource<AccountProviderConfigSnapshot>;
+  readonly #runtimeProviderSource?: ProviderSource<RuntimeProviderCatalogSnapshot>;
   readonly #resolver: ProviderConfigResolver;
   readonly #registry = new ProviderRegistry();
   readonly #changeListeners = new Set<(event: ProviderRegistryServiceChangedEvent) => void>();
@@ -70,6 +75,7 @@ export class ProviderRegistryService {
   constructor(dependencies: ProviderRegistryServiceDependencies) {
     this.#configSource = dependencies.configSource;
     this.#accountSource = dependencies.accountSource;
+    this.#runtimeProviderSource = dependencies.runtimeProviderSource;
     this.#resolver = dependencies.resolver ?? new ProviderConfigResolver();
   }
 
@@ -81,6 +87,13 @@ export class ProviderRegistryService {
         this.#configSource.onDidChange((reason) => this.#refreshFromSource("config", reason)),
         this.#accountSource.onDidChange((reason) => this.#refreshFromSource("account", reason)),
       );
+      if (this.#runtimeProviderSource) {
+        this.#sourceDisposers.push(
+          this.#runtimeProviderSource.onDidChange((reason) =>
+            this.#refreshFromSource("runtime-providers", reason),
+          ),
+        );
+      }
       await this.#requestRefresh("start");
       return;
     }
@@ -140,7 +153,7 @@ export class ProviderRegistryService {
     this.#errorListeners.clear();
   }
 
-  #refreshFromSource(source: "config" | "account", reason: string): void {
+  #refreshFromSource(source: "config" | "account" | "runtime-providers", reason: string): void {
     if (this.#disposed) return;
     void this.#requestRefresh(`${source}:${reason || "changed"}`).catch(() => {
       // Source 驱动的后台刷新通过 onDidRefreshError 报告；调用栈没有 Promise 消费者。
@@ -186,10 +199,12 @@ export class ProviderRegistryService {
 
       let config: ProviderConfigSnapshot;
       let account: AccountProviderConfigSnapshot;
+      let runtimeProviders: RuntimeProviderCatalogSnapshot | undefined;
       try {
-        [config, account] = await Promise.all([
+        [config, account, runtimeProviders] = await Promise.all([
           this.#configSource.read(),
           this.#accountSource.read(),
+          this.#runtimeProviderSource?.read(),
         ]);
       } catch (error) {
         if (generation < this.#requestedGeneration) continue;
@@ -211,7 +226,7 @@ export class ProviderRegistryService {
         continue;
       }
 
-      if (this.#hasSameSourceRevisions(config, account)) {
+      if (this.#hasSameSourceRevisions(config, account, runtimeProviders)) {
         this.#completedGeneration = generation;
         this.#resolveRefreshWaiters(generation, this.#snapshot!);
         reasons.clear();
@@ -229,14 +244,23 @@ export class ProviderRegistryService {
           accountStates: account.states,
           personalProviderOrder: config.personalProviderOrder,
         });
-        this.#registry.replace(resolution.registryProviders, [...reasons].join(","));
+        this.#registry.replace(
+          [...resolution.registryProviders, ...(runtimeProviders?.providers ?? [])],
+          [...reasons].join(","),
+        );
         const snapshot = Object.freeze({
           sourceRevisions: Object.freeze({
             config: config.revision,
             account: account.revision,
+            ...(runtimeProviders ? { runtimeProviders: runtimeProviders.revision } : {}),
           }),
           config: Object.freeze({ ...config }),
           account: freezeAccountSnapshot(account),
+          ...(runtimeProviders
+            ? {
+                runtimeProviders: freezeRuntimeProviderSnapshot(runtimeProviders),
+              }
+            : {}),
           resolution,
           registry: this.#registry.getView(),
         });
@@ -275,10 +299,12 @@ export class ProviderRegistryService {
   #hasSameSourceRevisions(
     config: ProviderConfigSnapshot,
     account: AccountProviderConfigSnapshot,
+    runtimeProviders: RuntimeProviderCatalogSnapshot | undefined,
   ): boolean {
     return (
       this.#snapshot?.sourceRevisions.config === config.revision &&
-      this.#snapshot.sourceRevisions.account === account.revision
+      this.#snapshot.sourceRevisions.account === account.revision &&
+      this.#snapshot.sourceRevisions.runtimeProviders === runtimeProviders?.revision
     );
   }
 
@@ -311,5 +337,29 @@ function freezeAccountSnapshot(
     basedOnZCodeBuiltinRevision: snapshot.basedOnZCodeBuiltinRevision,
     providers: snapshot.providers,
     ...(snapshot.states ? { states: snapshot.states } : {}),
+  });
+}
+
+function freezeRuntimeProviderSnapshot(
+  snapshot: RuntimeProviderCatalogSnapshot,
+): RuntimeProviderCatalogSnapshot {
+  return Object.freeze({
+    revision: snapshot.revision,
+    ...(snapshot.cliExecutablePath ? { cliExecutablePath: snapshot.cliExecutablePath } : {}),
+    providers: Object.freeze(
+      snapshot.providers.map((provider) =>
+        Object.freeze({
+          providerId: provider.providerId,
+          providerName: provider.providerName,
+          templateId: provider.templateId,
+          config: provider.config,
+          models: Object.freeze(
+            provider.models.map((model) =>
+              Object.freeze({ modelId: model.modelId, config: model.config }),
+            ),
+          ),
+        }),
+      ),
+    ),
   });
 }

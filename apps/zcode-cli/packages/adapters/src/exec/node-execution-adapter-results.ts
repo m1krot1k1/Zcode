@@ -248,6 +248,7 @@ export class NodeExecutionAdapterResults extends NodeExecutionAdapterBase {
     signal?: string;
     error?: ExecutionFailure;
     resolvedCwd?: string;
+    sandbox?: ExecutionResult["sandbox"];
   }): ExecutionResult {
     return {
       status: args.status,
@@ -263,10 +264,22 @@ export class NodeExecutionAdapterResults extends NodeExecutionAdapterBase {
       pid: args.pid,
       error: args.error,
       resolvedCwd: args.resolvedCwd,
+      ...(args.sandbox ? { sandbox: args.sandbox } : {}),
     };
   }
 
   protected toFailure(type: ExecutionFailure["type"], error: unknown): ExecutionFailure {
+    const resourceMessage = describeHostResourceFailure(error);
+    if (resourceMessage !== null) {
+      // EAGAIN/EMFILE/ENFILE/ENOMEM — исчерпание ресурсов хоста, а не ошибка команды.
+      // Явная подсказка останавливает модель от повторных запусков: без снижения
+      // параллелизма повтор упадёт так же и сожжёт шаг.
+      return {
+        type: "spawn_error",
+        message: resourceMessage,
+        cause: error,
+      };
+    }
     if (error instanceof Error) {
       return {
         type,
@@ -286,4 +299,27 @@ export class NodeExecutionAdapterResults extends NodeExecutionAdapterBase {
     if (!options.onEvent) return;
     void Promise.resolve(options.onEvent(event)).catch(() => undefined);
   }
+}
+
+const HOST_RESOURCE_ERROR_CODES = new Set(["EAGAIN", "EMFILE", "ENFILE", "ENOMEM", "ENOSPC"]);
+
+/**
+ * Распознаёт отказ операционной системы выдать ресурс под процесс.
+ *
+ * `spawn /bin/zsh EAGAIN` означает, что упёрлись в `kern.maxprocperuid` или нехватку
+ * памяти, а не что команда написана неверно. Возвращаем диагностическое сообщение
+ * с явным запретом повторять вызов, иначе модель тратит шаги на гарантированно
+ * неуспешные ретраи, а пользователь видит зависший субагент.
+ */
+function describeHostResourceFailure(error: unknown): string | null {
+  const code = readErrorCode(error);
+  if (!code || !HOST_RESOURCE_ERROR_CODES.has(code)) return null;
+  const detail = error instanceof Error ? error.message : String(error);
+  return `host_resource_exhausted (${code}): ${detail}. The host cannot start another process right now; do not retry this command. Reduce parallel work or free resources instead.`;
+}
+
+function readErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
 }

@@ -48,7 +48,7 @@ export interface WorkflowBlockedReminder {
   now: number;
 }
 
-export interface WorkflowBlockedReminderHost {
+interface WorkflowBlockedReminderHost {
   /** 本会话此刻在飞的 workflow run（每次求值现读，不缓存）。 */
   liveRunIds(): readonly string[];
   /** 会话此刻是否空闲（没有在跑的、排着的、预留的回合）。到点时的最后一道核对。 */

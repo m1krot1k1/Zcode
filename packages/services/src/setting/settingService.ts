@@ -183,7 +183,19 @@ async function writeSettingsAt(
   commitAccountSelection = false,
 ): Promise<void> {
   const settingsDir = dirname(settingsFile);
-  log("writing settings to:", settingsFile, JSON.stringify(settings));
+  // 代理 URL 可能包含用户名和密码；日志仅保留是否配置及列表数量，避免泄露凭据。
+  const safeLogSettings = {
+    ...settings,
+    httpProxy: settings.httpProxy ? "[configured]" : undefined,
+    httpProxyList: settings.httpProxyList
+      ? settings.httpProxyList
+          .split(/\r?\n/u)
+          .filter(Boolean)
+          .map(() => "[configured]")
+          .join("\n")
+      : undefined,
+  };
+  log("writing settings to:", settingsFile, JSON.stringify(safeLogSettings));
   maybeThrowInjectedFsFault({ operation: "mkdir", path: settingsDir });
   await mkdir(settingsDir, { recursive: true });
   if (!shouldCommit()) return;

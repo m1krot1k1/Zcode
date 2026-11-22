@@ -43,7 +43,7 @@ export function timelineRounds(model: WorkflowTimelineModel): number {
 }
 
 function count(format: FormatMessage, one: string, many: string, value: number): string {
-  return format({ id: value === 1 ? one : many }, { count: value.toLocaleString() });
+  return format({ id: value === 1 ? one : many }, { count: value.toLocaleString("en-US") });
 }
 
 /**
@@ -204,7 +204,7 @@ export function workflowSummaryParts(
     parts.push(
       format(
         { id: "chat.toolCall.workflow.card.tokens" },
-        { count: run.usage.spentTokens.toLocaleString() },
+        { count: run.usage.spentTokens.toLocaleString("en-US") },
       ),
     );
   }

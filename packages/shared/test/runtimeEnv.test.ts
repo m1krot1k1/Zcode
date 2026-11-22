@@ -14,9 +14,25 @@ import {
   sanitizeZCodeRuntimeEnv,
   getCapturedZCodeAgentTelemetryEnv,
   resetCapturedZCodeAgentTelemetryEnvForTest,
+  readSpawnBudget,
+  readSubagentMaxParallel,
+  readSubagentTaskTimeoutMinutes,
 } from "../src/runtimeEnv.js";
 
 describe("runtimeEnv", () => {
+  it("parses bounded subagent concurrency and timeout settings without losing zero", () => {
+    expect(readSpawnBudget(undefined)).toBeUndefined();
+    expect(readSpawnBudget("0")).toBe(0);
+    expect(readSpawnBudget("128")).toBe(128);
+    expect(readSubagentMaxParallel("0")).toBe(0);
+    expect(readSubagentMaxParallel("64")).toBe(64);
+    expect(readSubagentMaxParallel("129")).toBe(129);
+    expect(readSubagentMaxParallel("1.5")).toBeUndefined();
+    expect(readSubagentTaskTimeoutMinutes("0")).toBe(0);
+    expect(readSubagentTaskTimeoutMinutes("180")).toBe(180);
+    expect(readSubagentTaskTimeoutMinutes("181")).toBeUndefined();
+  });
+
   it("enables internal CUA by default while honoring explicit false values", () => {
     expect(isZCodeCuaInternalFeatureEnabled({})).toBe(true);
     expect(isZCodeCuaInternalFeatureEnabled({ ZCODE_CUA_PRODUCT_HELPER: "0" })).toBe(false);

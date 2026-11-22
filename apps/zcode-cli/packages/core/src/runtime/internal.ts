@@ -16,12 +16,14 @@ import type {
   ContextSourceSnapshot,
   ExecutionPort,
   FileSystemPort,
+  CodeIntelligencePort,
   HookRunner,
   ImageProcessorPort,
   PdfDocumentPort,
   McpConnectionSnapshot,
   SkillLoadOutcome,
   SkillPort,
+  CapabilityInstallPort,
   McpPort,
   DynamicWorkflowRunPort,
   ModelCatalogPort,
@@ -60,10 +62,16 @@ import type { ProjectMemoryRecallPrefetch } from "./helpers/project-memory-recal
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import type { ProjectMemoryUpdate } from "./helpers/project-memory-dream.js";
 import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
+import type { IFileTransactionTaskRegistry } from "../tool/file-transaction/task-contract.js";
+import type { IFileLockRegistry } from "../tool/file-transaction/contract.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
+  reloadAgentDefinitions(input: {
+    signal: AbortSignal;
+    traceContext: TraceContext;
+  }): Promise<void>;
   sessionId: SessionId;
   turnNumber: number;
   config: AgentRuntimeConfig;
@@ -87,7 +95,14 @@ export interface AgentRuntimeInternal
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
   browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
+  backgroundModelRequestAdmission?: AgentRuntimeDeps["backgroundModelRequestAdmission"];
   sessionModelSelection: ModelSelection | undefined;
+  /**
+   * Явно ли пользователь выбрал текущий reasoningLevel. Default модели/workspace
+   * preference не делают уровень явным; `/effort` и смена уровня в submission — делают.
+   * Живёт рядом с sessionModelSelection и переживает resume через core-owned sidecar entry.
+   */
+  reasoningLevelExplicit: boolean;
   messageHistory: MessageHistory;
   readFileState: ReadFileStateMap;
   cachedTools: ModelToolContract[] | null;
@@ -107,6 +122,7 @@ export interface AgentRuntimeInternal
   pendingMemoryUpdate?: ProjectMemoryUpdate;
   contextSourcePort?: ContextSourcePort;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;
   residencyBlockingWorkCount: number;
@@ -135,6 +151,9 @@ export interface AgentRuntimeInternal
   artifactStore?: ToolArtifactStorePort;
   executionPort?: ExecutionPort;
   fileSystemPort?: FileSystemPort;
+  fileLockRegistry: IFileLockRegistry;
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
+  codeIntelligencePort?: CodeIntelligencePort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
   skillLoadOutcome?: SkillLoadOutcome;
@@ -143,6 +162,12 @@ export interface AgentRuntimeInternal
   sessionStore?: SessionStorePort;
   sessionMailboxPort?: SessionMailboxPort;
   sessionPersisted: boolean;
+  /**
+   * Строка `session` уже создана в store. Именно это, а не `sessionPersisted`,
+   * определяет допустимость записи session_entry: FK `session_entry.session_id`.
+   * Draft-сессия в desktop создаёт строку только при первом сообщении.
+   */
+  sessionRowCreated: boolean;
   needsPlanModeExitReminder: boolean;
   latestConversationMessageId?: MessageId;
   latestAssistantMessageId?: MessageId;

@@ -4,7 +4,7 @@ import type { FeedbackSubmitDraft } from "@/feedback/feedbackStore.js";
 import { runExportLogsAction } from "@/lib/exportLogsAction.js";
 import { ZCODE_PRODUCT_DOCS_URL } from "@/lib/productDocs.js";
 
-export interface HelpMenuActionHandlers {
+interface HelpMenuActionHandlers {
   openIssueReport: () => Promise<void>;
   openProductDocs: () => void;
   exportLogs: () => void;

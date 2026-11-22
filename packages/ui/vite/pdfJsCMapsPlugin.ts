@@ -6,7 +6,7 @@ import type { Plugin } from "vite";
 const require = createRequire(import.meta.url);
 const PDFJS_CMAP_OUTPUT_DIRECTORY = "pdfjs/cmaps";
 
-export interface PdfJsCMapAsset {
+interface PdfJsCMapAsset {
   fileName: string;
   source: Uint8Array;
 }

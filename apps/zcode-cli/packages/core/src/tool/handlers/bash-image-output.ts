@@ -12,7 +12,7 @@ import { stripClaudeCodeHintLines } from "./bash-semantics.js";
 
 const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024;
 
-export interface BashImageSource {
+interface BashImageSource {
   artifactPath?: string;
   artifactSize?: number;
   inline: string;

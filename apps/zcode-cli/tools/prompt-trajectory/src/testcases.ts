@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { loadFixture, type PromptTrajectoryFixture } from "./fixture.js";
 import { recordPromptTrajectoryFromFixture } from "./record.js";
 
-export interface PromptTrajectoryCase {
+interface PromptTrajectoryCase {
   directory: string;
   expectPath: string;
   fixturePath?: string;
@@ -18,7 +18,7 @@ export interface SharedModelOptions {
   upstreamBaseURL?: string;
 }
 
-export async function discoverPromptTrajectoryCases(
+async function discoverPromptTrajectoryCases(
   casesDir: string,
 ): Promise<PromptTrajectoryCase[]> {
   const entries = await readdir(casesDir, { withFileTypes: true });
@@ -46,7 +46,7 @@ export async function discoverPromptTrajectoryCases(
   return cases.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export async function createTimestampedRunDirectory(
+async function createTimestampedRunDirectory(
   outRoot: string,
   now = new Date(),
 ): Promise<string> {
@@ -64,7 +64,7 @@ export async function createTimestampedPromptDirectory(
   return directory;
 }
 
-export async function promptFixtureFromCase(
+async function promptFixtureFromCase(
   testcase: PromptTrajectoryCase,
   modelOptions?: SharedModelOptions,
 ): Promise<PromptTrajectoryFixture> {

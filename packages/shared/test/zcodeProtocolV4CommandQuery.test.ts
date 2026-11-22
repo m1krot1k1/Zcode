@@ -16,7 +16,10 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
     text: "原文",
     delivery: { requested: "guide" as const, admitted: "queue" as const },
     order: { admissionSeq: 3, queuePosition: 1 },
-    steer: { state: "fellBack" as const, reasonCode: "guide.attachmentsUnsupported" },
+    steer: {
+      state: "fellBack" as const,
+      reasonCode: "guide.attachmentsUnsupported",
+    },
     dispatch: { state: "queued" as const },
     admittedAt: 1000,
   };
@@ -24,6 +27,7 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
   it("完整字段通过，缺省 attachments 规范化为 []", () => {
     expect(conversationInputIntentSchema.parse(baseIntent)).toEqual({
       ...baseIntent,
+      executionRoute: { kind: "zcode" },
       attachments: [],
     });
 
@@ -40,12 +44,18 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
       dispatch: { state: "reserved", reservationId: "reservation-1" },
     });
     expect(parsed.attachments).toHaveLength(1);
-    expect(parsed.dispatch).toEqual({ state: "reserved", reservationId: "reservation-1" });
+    expect(parsed.dispatch).toEqual({
+      state: "reserved",
+      reservationId: "reservation-1",
+    });
   });
 
   it("严格拒绝额外字段和非法顺序", () => {
     expect(
-      conversationInputIntentSchema.safeParse({ ...baseIntent, unknownField: true }).success,
+      conversationInputIntentSchema.safeParse({
+        ...baseIntent,
+        unknownField: true,
+      }).success,
     ).toBe(false);
     expect(
       conversationInputIntentSchema.safeParse({
@@ -86,6 +96,101 @@ describe("ZCode Protocol v4 authoritative input intent", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("QueueItem preserves orchestration mode while legacy inputs stay ordinary", () => {
+    const queued = queueItemSchema.parse({
+      ...baseIntent,
+      orchestrationMode: "swarm",
+      attachments: [],
+      dispatch: { state: "queued" },
+    });
+    expect(queued.orchestrationMode).toBe("swarm");
+    const autoQueued = queueItemSchema.parse({
+      ...baseIntent,
+      orchestrationMode: "auto",
+      attachments: [],
+      dispatch: { state: "queued" },
+    });
+    expect(autoQueued.orchestrationMode).toBe("auto");
+    expect(
+      queueItemSchema.parse({
+        ...baseIntent,
+        attachments: [],
+        dispatch: { state: "queued" },
+      }),
+    ).not.toHaveProperty("orchestrationMode");
+  });
+
+  it("canonical OpenCode route is explicit, text-only and immediate", () => {
+    const openCodeIntent = {
+      ...baseIntent,
+      text: "run delegated task",
+      executionRoute: { kind: "opencode-acp", model: { kind: "default" } },
+      delivery: {
+        requested: "startNow" as const,
+        admitted: "startNow" as const,
+      },
+      steer: { state: "notRequested" as const },
+      dispatch: { state: "admitted" as const },
+    };
+    expect(conversationInputIntentSchema.parse(openCodeIntent).executionRoute).toEqual(
+      openCodeIntent.executionRoute,
+    );
+    const swarmOnAcp = conversationInputIntentSchema.safeParse({
+      ...openCodeIntent,
+      orchestrationMode: "swarm",
+    });
+    expect(swarmOnAcp.success).toBe(false);
+    if (!swarmOnAcp.success) {
+      expect(swarmOnAcp.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ["orchestrationMode"],
+          message: "OpenCode ACP route forbids ZCode swarm orchestration",
+        }),
+      );
+    }
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        modelSelection: { providerId: "api", modelId: "model" },
+      }).success,
+    ).toBe(false);
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        attachments: [
+          {
+            ref: "artifact:1",
+            fileName: "note.txt",
+            mime: "text/plain",
+            bytes: 4,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        delivery: { requested: "guide", admitted: "queue" },
+      }).success,
+    ).toBe(false);
+    expect(
+      conversationInputIntentSchema.safeParse({
+        ...openCodeIntent,
+        kind: "sendGoalCommand",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("preserves automatic orchestration in canonical queued input intents", () => {
+    const intent = conversationInputIntentSchema.parse({
+      ...baseIntent,
+      orchestrationMode: "auto",
+      attachments: [],
+      dispatch: { state: "queued" },
+    });
+    expect(intent.orchestrationMode).toBe("auto");
+  });
 });
 
 describe("ZCode Protocol v4 commands/query", () => {
@@ -112,8 +217,10 @@ describe("ZCode Protocol v4 commands/query", () => {
       }).success,
     ).toBe(false);
     expect(
-      commandsQueryParamsSchema.safeParse({ commands: [key(1)], callerWorkspace: "/forged" })
-        .success,
+      commandsQueryParamsSchema.safeParse({
+        commands: [key(1)],
+        callerWorkspace: "/forged",
+      }).success,
     ).toBe(false);
   });
 

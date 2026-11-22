@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
  * 因此驻留开关不能依赖托盘是否创建成功，必须显式探测该 DBus name。
  */
 
-export interface DesktopCloseToTrayCapability {
+interface DesktopCloseToTrayCapability {
   /** 关闭驻留托盘是否可用 */
   supported: boolean;
   /** 是否为 GNOME 系桌面且无托盘；仅用于设置页置灰文案追加扩展安装提示 */
@@ -175,11 +175,7 @@ export function createCloseToTrayCapabilityMonitor(options: {
       return pending;
     },
   };
-}
-
-export type CloseToTrayCapabilityMonitor = ReturnType<typeof createCloseToTrayCapabilityMonitor>;
-
-/**
+}/**
  * 关窗可隐藏能力的最终裁决（CR-01）：DBus watcher 存在只证明"桌面可能有托盘 host"，
  * 不能证明 Electron Tray 实例创建成功（图标缺失、会话未就绪等会让 new Tray() 抛错）。
  * 隐藏窗口前必须验证最终用户入口真实存在，否则违反 spec"不会隐藏后失联"的承诺。

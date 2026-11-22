@@ -75,10 +75,10 @@ function Harness({
         normalizedValue: model,
         triggerLabel:
           groups.flatMap((group) => group.items).find((item) => item.value === model)?.name ??
-          "Select model",
+          "Select provider and model",
         tooltipTitle:
           groups.flatMap((group) => group.items).find((item) => item.value === model)?.name ??
-          "Select model",
+          "Select provider and model",
         showManageModelsAction: Boolean(onManageModels),
         manageModelsLabel: "Manage models",
         onManageModels,
@@ -96,7 +96,7 @@ function Harness({
           modelsLabel: "Models",
           effortLabel: "Effort",
           effortShortcutLabel,
-          selectModelLabel: "Select model",
+          selectModelLabel: "Select provider and model",
           levels: loading ? [] : (levelsOverride ?? levels),
           value: thought,
           onValueChange: setThought,
@@ -130,7 +130,7 @@ describe("composer combined model and thinking picker", () => {
       expect(trigger.querySelector('[data-composer-trigger-frame="closed"]')).toBeNull(),
     );
     expect(trigger.querySelector('[data-composer-trigger-frame="open"]')?.textContent).toBe(
-      "Select modelHigh",
+      "Select provider and modelHigh",
     );
 
     expect(screen.getByTestId("chat-model-select-trigger")).toBe(trigger);
@@ -230,12 +230,12 @@ describe("composer combined model and thinking picker", () => {
   it("keeps an empty selection secondary without a phantom effort or effort placeholder", () => {
     render(createElement(Harness, { empty: true }));
     const trigger = screen.getByTestId("chat-model-select-trigger");
-    expect(trigger.textContent).toBe("Select model");
-    expect(trigger.getAttribute("aria-label")).toBe("Select model");
+    expect(trigger.textContent).toBe("Select provider and model");
+    expect(trigger.getAttribute("aria-label")).toBe("Select provider and model");
 
     expect(screen.queryByTestId("composer-thought-meter")).toBeNull();
     fireEvent.keyDown(screen.getByRole("slider"), { key: "Escape" });
-    expect(trigger.textContent).toBe("Select model");
+    expect(trigger.textContent).toBe("Select provider and model");
   });
   it("keeps the native input while replacing model visuals", () => {
     render(createElement(Harness));
@@ -251,10 +251,14 @@ describe("composer combined model and thinking picker", () => {
   it("shows a model selection label while open and restores selection text after closing", () => {
     render(createElement(Harness));
     const trigger = screen.getByTestId("chat-model-select-trigger");
-    expect(trigger.querySelector("[data-composer-open-label]")?.textContent).toBe("Select model");
+    expect(trigger.querySelector("[data-composer-open-label]")?.textContent).toBe(
+      "Select provider and model",
+    );
 
     fireEvent.change(screen.getByRole("slider"), { target: { value: "1" } });
-    expect(trigger.querySelector("[data-composer-open-label]")?.textContent).toBe("Select model");
+    expect(trigger.querySelector("[data-composer-open-label]")?.textContent).toBe(
+      "Select provider and model",
+    );
     fireEvent.keyDown(screen.getByRole("slider"), { key: "Escape" });
     expect(trigger.textContent).toContain("GLM-5.3-Flash");
     expect(trigger.textContent).toContain("Medium");

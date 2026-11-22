@@ -1,7 +1,6 @@
 import { SidebarNativeTooltip } from "@/ControlHintTooltip.js";
 import { useCodingPlanEntryGate } from "@/settings/CodingPlanEntryButton.js";
-/* eslint-disable max-lines -- footer 套餐徽标、升级入口与 entitlement 探测共用同一份
-   provider 选择与 family 过滤上下文，拆文件会让 zai/bigmodel 对称性难以追踪。 */
+
 import { useEffect, useMemo } from "react";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
@@ -53,37 +52,6 @@ export {
 } from "@/WorkspaceSidebarFooterPlanBadgeHelpers.js";
 
 const TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON = "sidebar-coding-plan-upgrade-button";
-
-export function WorkspaceSidebarFooterUsageSummary({
-  enabled,
-  onUsageClick,
-  onUpgradeClick,
-  workspaceIdentity,
-  workspacePath,
-}: {
-  enabled: boolean;
-  onUsageClick?: () => void;
-  onUpgradeClick?: (
-    providerId: SidebarUsageCodingPlanProviderId,
-    funnelContext: CodingPlanFunnelContext,
-  ) => void;
-  workspaceIdentity?: string;
-  workspacePath?: string;
-}) {
-  const state = useWorkspaceSidebarFooterUsageSummaryState({
-    enabled,
-    workspaceIdentity,
-    workspacePath,
-  });
-  return (
-    <WorkspaceSidebarFooterUsageSummaryContent
-      state={state}
-      onUsageClick={onUsageClick}
-      onUpgradeClick={onUpgradeClick}
-    />
-  );
-}
-
 export function useWorkspaceSidebarFooterUsageSummaryState({
   enabled,
   workspaceIdentity,
@@ -412,7 +380,7 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
   };
 }
 
-export type WorkspaceSidebarFooterUsageSummaryState = ReturnType<
+type WorkspaceSidebarFooterUsageSummaryState = ReturnType<
   typeof useWorkspaceSidebarFooterUsageSummaryState
 >;
 

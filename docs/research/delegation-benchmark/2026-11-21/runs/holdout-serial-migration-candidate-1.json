@@ -1,0 +1,22 @@
+{
+  "taskId": "holdout-serial-migration",
+  "family": "serial-migration",
+  "arm": "candidate",
+  "repeat": 1,
+  "startedAt": "2026-11-21T08:12:18.402Z",
+  "durationMs": 41774,
+  "tokens": 268841,
+  "success": true,
+  "criticalRegressions": 0,
+  "criticalReasons": [],
+  "acceptance": true,
+  "acceptanceDetail": "migration acceptance ok",
+  "claimConflicts": 0,
+  "taskSpawns": [],
+  "modelSelection": null,
+  "turnStarts": 1,
+  "exitCode": 0,
+  "timedOut": false,
+  "responsePreview": "Migration complete and verified.\n\n**What changed** (in `docs/research/delegation-benchmark/2026-11-21/workspaces/holdout-serial-migration-candidate-1/`):\n\n- Created `config.v2.json` containing exactly `{\"version\":2,\"server\":{\"host\":\"localhost\",\"port\":8080},\"logging\":{\"level\":\"debug\"}}` (83 bytes, no trailing newline). `host`/`port` moved from the top level into `server`, and `debug: true` became `logging.level: \"debug\"`.\n- Created `migration.log` with exactly `read v1`, `write v2`, `verify v2` (27 bytes: `read v1\\nwrite v2\\nverify v2\\n`), written at each step as the migration progressed.\n- `config.v1.json` untouched.\n\n**Verification (all actually run):**\n\n- The fixture's own acceptance script `node accept/holdout-serial-migration.mjs workspaces/holdout-serial-migration-candidate-1` printed `migration acceptance ok` — confirming v2 parses deep-equal to the target including key order, v1 unchanged, and the log trims to exactly the three lines.\n- `shasum -a 256 config.v1.json` after migra",
+  "stderrPreview": "ZCode Built-in skipped (not-due)\n"
+}

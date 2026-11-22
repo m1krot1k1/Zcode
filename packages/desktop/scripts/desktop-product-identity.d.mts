@@ -12,6 +12,7 @@ export interface DesktopProductIdentity {
   readonly flavor: DesktopProductFlavor;
   readonly appId: string;
   readonly productName: string;
+  readonly macExecutableName: string;
   readonly linuxExecutableName: string;
   readonly linuxPackageName: string;
   readonly cuaHelperInstallVariant: "preview" | null;

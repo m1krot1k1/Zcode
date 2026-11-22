@@ -31,7 +31,7 @@ export interface BrowserExecuteRequestMessage {
   command: BrowserCommand;
 }
 
-export interface BrowserExecuteResultMessage {
+interface BrowserExecuteResultMessage {
   requestId: string;
   result: BrowserCommandResult;
 }
@@ -92,7 +92,7 @@ function mayHaveSideEffects(command: BrowserCommand): boolean {
   ].includes(command.method);
 }
 
-export interface BrowserControlMainBridge {
+interface BrowserControlMainBridge {
   list(): Promise<BrowserBackendDescriptor[]>;
   execute(input: {
     requestId?: string;

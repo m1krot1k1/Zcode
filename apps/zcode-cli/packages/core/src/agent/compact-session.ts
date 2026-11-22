@@ -26,7 +26,7 @@ export function compactActiveSessionMessages(
   ];
 }
 
-export function compactPreservedSegmentMessages(
+function compactPreservedSegmentMessages(
   messages: MessageWithParts[],
   boundaryIndex: number,
 ): MessageWithParts[] {
@@ -57,7 +57,7 @@ function cloneCompactPreservedSessionMessage(message: MessageWithParts): Message
   };
 }
 
-export function compactBoundaryFromMessage(
+function compactBoundaryFromMessage(
   message: MessageWithParts,
 ): CompactBoundaryPayload | undefined {
   for (const part of message.parts) {

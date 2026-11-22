@@ -36,8 +36,8 @@ import {
   persistTaskNotificationEnabled,
   persistTaskNotificationSoundEnabled,
 } from "@/lib/taskNotificationPreferences.js";
-import type { Theme } from "../useTheme.js";
-import { applyTheme, normalizeThemePreference, resolveTheme } from "../useTheme.js";
+import type { Theme } from "../theme.js";
+import { applyTheme, normalizeThemePreference, resolveTheme, THEME_STORAGE_KEY } from "../theme.js";
 
 import {
   INTERFACE_MODE_STORAGE_KEY,
@@ -127,10 +127,6 @@ export interface ZCodeState {
   /** 当前主题 */
   theme: Theme;
   setTheme: (theme: Theme) => void;
-
-  /** 当前语言 */
-  locale: string;
-  setLocale: (locale: string) => void;
 
   /** 代码预览设置 */
   codePreviewSettings: CodePreviewSettings;
@@ -235,17 +231,10 @@ export interface ZCodeState {
 // 需要广播的字段 —— 只有这些字段的变更会发送给其他窗口
 // ============================================================================
 
-const BROADCAST_FIELDS = new Set([
-  "theme",
-  "locale",
-  "uiFontSizePx",
-  "interfaceMode",
-  "notificationEnabled",
-]);
+const BROADCAST_FIELDS = new Set(["theme", "uiFontSizePx", "interfaceMode", "notificationEnabled"]);
 
 type BroadcastField =
   | "theme"
-  | "locale"
   | "uiFontSizePx"
   | "interfaceMode"
   // 任务通知开关跨窗口同步：角标是应用级表面，A 窗口关通知而 B 窗口仍上报未读时，
@@ -291,20 +280,16 @@ export function createZCodeStore(
     },
     // 默认主题统一收敛到 Zai dark，避免首次启动时 store 与其他主题入口表现不一致。
     // 仍然优先尊重 localStorage 中已保存的用户选择，不覆盖已有偏好。
-    theme: normalizeThemePreference((readSafeLocalStorage("zcode-theme") as Theme) || "zai-dark"),
+    theme: normalizeThemePreference(
+      (readSafeLocalStorage(THEME_STORAGE_KEY) as Theme) || "zai-dark",
+    ),
     setTheme: (theme: Theme) => {
       const normalizedTheme = normalizeThemePreference(theme);
-      writeSafeLocalStorage("zcode-theme", normalizedTheme);
+      writeSafeLocalStorage(THEME_STORAGE_KEY, normalizedTheme);
       syncSystemThemeListener(normalizedTheme);
       applyTheme(normalizedTheme);
 
       set({ theme: normalizedTheme });
-    },
-
-    locale: readSafeLocalStorage("zcode-locale") || "zh-CN",
-    setLocale: (locale: string) => {
-      writeSafeLocalStorage("zcode-locale", locale);
-      set({ locale });
     },
 
     codePreviewSettings: loadCodePreviewSettings(),
@@ -527,8 +512,6 @@ export function createZCodeStore(
       const state = useStore.getState();
       if (field === "theme" && typeof msg.payload === "string") {
         state.setTheme(msg.payload as Theme);
-      } else if (field === "locale" && typeof msg.payload === "string") {
-        state.setLocale(msg.payload);
       } else if (
         field === "interfaceMode" &&
         (msg.payload === "office" || msg.payload === "coding")

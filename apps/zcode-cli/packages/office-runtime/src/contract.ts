@@ -84,7 +84,7 @@ export interface ViewerSnapshot {
   reveal?: { targets: ShowTarget[]; note?: string; seq: number };
 }
 
-export type OfficeErrorCode =
+type OfficeErrorCode =
   | "invalid_path"
   | "path_outside_workspace"
   | "not_found"

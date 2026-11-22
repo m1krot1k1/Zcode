@@ -1,5 +1,5 @@
 import type { ProjectCatalogPort, ProjectCatalogSnapshot } from "#src/project-catalog/contract.js";
-export type { ProjectCatalogPort, ProjectCatalogSnapshot } from "#src/project-catalog/contract.js";
+export type { ProjectCatalogSnapshot } from "#src/project-catalog/contract.js";
 export { projectSelectionId } from "#src/project-catalog/selection-id.js";
 
 export async function readProjectCatalog(

@@ -12,7 +12,7 @@ export interface CliProcessErrorBoundaryTarget {
   off(event: string, listener: (...args: unknown[]) => void): unknown;
 }
 
-export interface CliProcessErrorBoundaryOptions {
+interface CliProcessErrorBoundaryOptions {
   onFatal: (reason: unknown) => void;
   target?: CliProcessErrorBoundaryTarget;
   stderr?: {

@@ -2313,6 +2313,62 @@ describe("zcodeSessionProjection", () => {
     ]);
   });
 
+  it("projects an OpenCode provider-executed tool once as completed activity", () => {
+    const state = {
+      streamingToolInputById: new Map(),
+      toolNameById: new Map<string, string>(),
+    };
+    const common = {
+      sessionId: "sess_1",
+      seq: 4,
+      timestamp: 4,
+      traceId: "trace_opencode_tool",
+      type: "model.streaming" as const,
+    };
+
+    expect(
+      zcodeSessionEventToZCodeStreamEvents({
+        event: {
+          ...common,
+          eventId: "evt_provider_tool_start",
+          payload: {
+            kind: "tool_input_start",
+            providerExecuted: true,
+            toolCallId: "oc-tool-1",
+            toolName: "Read",
+          },
+        },
+        state,
+        taskId: "sess_1",
+      }),
+    ).toEqual([]);
+
+    expect(
+      zcodeSessionEventToZCodeStreamEvents({
+        event: {
+          ...common,
+          eventId: "evt_provider_tool_call",
+          payload: {
+            kind: "tool_call",
+            input: { filePath: "README.md" },
+            providerExecuted: true,
+            toolCallId: "oc-tool-1",
+            toolName: "Read",
+          },
+        },
+        state,
+        taskId: "sess_1",
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        type: "tool_call_update",
+        toolId: "oc-tool-1",
+        toolName: "Read",
+        status: "completed",
+      }),
+    ]);
+  });
+
   it("maps model streaming tool input into pending tool call previews", () => {
     const state = {
       streamingToolInputById: new Map(),

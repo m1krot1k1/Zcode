@@ -1,0 +1,705 @@
+import assert from "node:assert/strict";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import {
+  assertMacReleaseAssetPair,
+  assertZipContainsOnlyReleaseApp,
+  assertAssetHashes,
+  assertReleaseBranch,
+  assertReleaseMetadata,
+  assertReleaseTargetSha,
+  assertUnsignedMacApp,
+  bumpSemver,
+  buildReleaseCreateArgs,
+  clearExpectedMacReleaseAssets,
+  expectedMacReleaseAssetNames,
+  macTargetArch,
+  preflightMacRelease,
+  replacePackageVersion,
+  resolveTagCommitSha,
+  selectMacReleaseAppBundle,
+  selectMacReleaseAssets,
+  sha256,
+} from "../release-macos-local.mjs";
+import {
+  assertPinnedNodeVersion,
+  parsePinnedNodeVersion,
+  readPinnedNodeVersion,
+} from "../assert-node-version.mjs";
+import {
+  assertPreviewReleaseMetadata,
+  createPreviewBuildEnvironment,
+} from "../release-macos-preview.mjs";
+import { createReleaseFixture } from "./release-macos-local-fixture.mjs";
+
+// preflight-тесты передают версии Node явно и не зависят от версии Node в shell.
+const pinnedNodeOptions = { nodeVersion: "24.14.0", pinnedNodeVersion: "24.14.0" };
+
+test("пин [tools] node читается из mise.toml с кавычками и комментариями", async () => {
+  assert.equal(parsePinnedNodeVersion('[tools]\nnode = "24.14.0" # pin\n'), "24.14.0");
+  assert.throws(() => parsePinnedNodeVersion('[tools]\npnpm = "10.33.2"\n'), /не найден пин/u);
+  assert.throws(() => parsePinnedNodeVersion('[tools]\nnode = "24"\n'), /X\.Y\.Z/u);
+  assert.match(await readPinnedNodeVersion(), /^\d+\.\d+\.\d+$/u);
+});
+
+test("совпадение версии Node с пином mise.toml не блокирует выпуск", () => {
+  assert.doesNotThrow(() => assertPinnedNodeVersion({ actual: "24.14.0", pinned: "24.14.0" }));
+});
+
+test("несовпадение версии Node с пином mise.toml называет обе версии и команду mise", () => {
+  assert.throws(
+    () => assertPinnedNodeVersion({ actual: "24.22.2", pinned: "24.14.0" }),
+    (error) => {
+      assert.match(error.message, /24\.22\.2/u);
+      assert.match(error.message, /24\.14\.0/u);
+      assert.match(error.message, /mise exec -- pnpm release:macos:preview/u);
+      assert.match(error.message, /mise exec -- pnpm release:macos </u);
+      return true;
+    },
+  );
+});
+
+test("preflight останавливается на чужой версии Node до чтения dist", async () => {
+  await assert.rejects(
+    preflightMacRelease({
+      version: "3.17.1",
+      targetArch: "arm64",
+      distDir: path.join(tmpdir(), "zcode-missing-dist"),
+      nodeVersion: "24.22.2",
+      pinnedNodeVersion: "24.14.0",
+    }),
+    /не совпадает с пином/u,
+  );
+});
+
+test("major и minor сбрасывают младшие разряды", () => {
+  assert.equal(bumpSemver("3.16.2", "patch"), "3.16.3");
+  assert.equal(bumpSemver("3.16.2", "minor"), "3.17.0");
+  assert.equal(bumpSemver("3.16.2", "major"), "4.0.0");
+});
+
+test("Preview identity использует тестовый backend и не наследует секреты подписи или GitHub", () => {
+  const env = createPreviewBuildEnvironment({
+    PATH: "/usr/bin",
+    ZCODE_PREVIEW_TEST_BASE_URL: "https://preview.example.invalid/api/v1",
+    APPLE_API_KEY: "must-not-be-forwarded",
+    APPLE_ID: "must-not-be-forwarded",
+    CSC_LINK: "must-not-be-forwarded",
+    CSC_NAME: "must-not-be-forwarded",
+    GH_TOKEN: "must-not-be-forwarded",
+    GITHUB_TOKEN: "must-not-be-forwarded",
+    ZCODE_ENV: "test",
+    ZCODE_PREVIEW_IDENTITY: "0",
+    ZCODE_ENABLE_MAC_SIGN: "1",
+    ZCODE_ENABLE_MAC_NOTARIZE: "1",
+  });
+  assert.equal(env.PATH, "/usr/bin");
+  assert.equal(env.ZCODE_ENV, "test");
+  assert.equal(env.ZCODE_PREVIEW_IDENTITY, "1");
+  assert.equal(env.ZCODE_ENABLE_MAC_SIGN, "0");
+  assert.equal(env.ZCODE_ENABLE_MAC_NOTARIZE, "0");
+  assert.equal(env.CSC_IDENTITY_AUTO_DISCOVERY, "false");
+  assert.equal("APPLE_API_KEY" in env, false);
+  assert.equal("APPLE_ID" in env, false);
+  assert.equal("CSC_LINK" in env, false);
+  assert.equal("CSC_NAME" in env, false);
+  assert.equal("GH_TOKEN" in env, false);
+  assert.equal("GITHUB_TOKEN" in env, false);
+});
+
+test("Preview release требует опубликованный prerelease", () => {
+  const metadata = {
+    tagName: "v3.17.1",
+    isDraft: false,
+    isPrerelease: true,
+    assets: [{ name: "ZCode.Preview-3.17.1-mac-arm64_TEST.dmg" }],
+  };
+  assert.doesNotThrow(() =>
+    assertPreviewReleaseMetadata(metadata, "v3.17.1", ["ZCode Preview-3.17.1-mac-arm64_TEST.dmg"]),
+  );
+  assert.throws(
+    () =>
+      assertPreviewReleaseMetadata({ ...metadata, isPrerelease: false }, "v3.17.1", [
+        "ZCode Preview-3.17.1-mac-arm64_TEST.dmg",
+      ]),
+    /prerelease/u,
+  );
+});
+
+test("unsigned Preview отклоняет app bundle с подписью", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-preview-unsigned-"));
+  try {
+    const contents = path.join(root, "Contents");
+    await mkdir(contents, { recursive: true });
+    await assertUnsignedMacApp(root);
+    await mkdir(path.join(contents, "_CodeSignature"));
+    await assert.rejects(assertUnsignedMacApp(root), /ожидается unsigned/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("неизвестный уровень не молча становится patch", () => {
+  assert.throws(() => bumpSemver("3.16.2", "beta"), /major, minor или patch/);
+});
+
+test("версия в package.json меняется на месте", () => {
+  const source = '{\n  "name": "zcode",\n  "version": "3.16.2",\n  "private": true\n}\n';
+  assert.equal(
+    replacePackageVersion(source, "3.17.0"),
+    '{\n  "name": "zcode",\n  "version": "3.17.0",\n  "private": true\n}\n',
+  );
+});
+
+test("в релиз попадает точная пара dmg и zip этой версии и архитектуры", () => {
+  const selected = selectMacReleaseAssets(
+    [
+      "ZCode-3.17.0-mac-arm64.dmg",
+      "ZCode-3.17.0-mac-arm64.dmg.blockmap",
+      "ZCode-3.17.0-mac-arm64.zip",
+      "ZCode-3.17.0-mac-x64.dmg",
+      "ZCode-3.17.0-mac-x64.zip",
+      "ZCode-3.17.0-mac-arm64_TEST.dmg",
+      "ZCode Preview-3.17.0-mac-arm64.dmg",
+      "ZCode-3.16.2-mac-arm64.dmg",
+      "ZCode-3.17.0-win-arm64.exe",
+    ],
+    "3.17.0",
+    "arm64",
+  );
+  assert.deepEqual(selected, ["ZCode-3.17.0-mac-arm64.dmg", "ZCode-3.17.0-mac-arm64.zip"]);
+  assert.throws(() => selectMacReleaseAssets([], "3.17.0"), /точная архитектура/);
+});
+
+test("Preview assets используют тестовый backend suffix и отделены от stable assets", () => {
+  assert.deepEqual(
+    selectMacReleaseAssets(
+      [
+        "ZCode Preview-3.17.0-mac-arm64_TEST.dmg",
+        "ZCode Preview-3.17.0-mac-arm64_TEST.zip",
+        "ZCode-3.17.0-mac-arm64.dmg",
+        "ZCode Preview-3.17.0-mac-arm64.dmg",
+      ],
+      "3.17.0",
+      "arm64",
+      "ZCode Preview",
+      "_TEST",
+    ),
+    ["ZCode Preview-3.17.0-mac-arm64_TEST.dmg", "ZCode Preview-3.17.0-mac-arm64_TEST.zip"],
+  );
+});
+
+test("перед сборкой удаляются только точные DMG/ZIP текущей версии и архитектуры", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-clean-output-"));
+  try {
+    const distDir = path.join(root, "dist");
+    await mkdir(distDir, { recursive: true });
+    const files = [
+      "ZCode-3.17.1-mac-arm64.dmg",
+      "ZCode-3.17.1-mac-arm64.zip",
+      "ZCode-3.17.1-mac-arm64.dmg.blockmap",
+      "ZCode-3.17.1-mac-x64.dmg",
+      "ZCode-3.17.0-mac-arm64.zip",
+    ];
+    for (const name of files) await writeFile(path.join(distDir, name), name);
+    const removed = [];
+    const paths = await clearExpectedMacReleaseAssets({
+      distDir,
+      version: "3.17.1",
+      targetArch: "arm64",
+      removeFile: async (filePath) => {
+        removed.push(path.basename(filePath));
+        await rm(filePath, { force: true });
+      },
+    });
+    assert.deepEqual(removed, ["ZCode-3.17.1-mac-arm64.dmg", "ZCode-3.17.1-mac-arm64.zip"]);
+    assert.deepEqual(
+      paths.map((filePath) => path.basename(filePath)),
+      removed,
+    );
+    assert.deepEqual((await readdir(distDir)).sort(), files.slice(2).sort());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ZIP listing rejects entries outside app bundle and path traversal", () => {
+  assert.doesNotThrow(() =>
+    assertZipContainsOnlyReleaseApp(["ZCode.app/", "ZCode.app/Contents/Info.plist"]),
+  );
+  assert.throws(
+    () => assertZipContainsOnlyReleaseApp(["ZCode.app/Contents/Info.plist", "README.txt"]),
+    /только ZCode\.app/u,
+  );
+  assert.throws(
+    () => assertZipContainsOnlyReleaseApp(["ZCode.app/../../outside"]),
+    /только ZCode\.app/u,
+  );
+});
+
+test("архитектура сборки совпадает с машиной", () => {
+  assert.equal(macTargetArch("arm64"), "arm64");
+  assert.equal(macTargetArch("x64"), "x64");
+  assert.throws(() => macTargetArch("ia32"), /не поддерживает/);
+});
+
+test("релиз возможен только из dev", () => {
+  assert.doesNotThrow(() => assertReleaseBranch("dev"));
+  assert.throws(() => assertReleaseBranch("main"), /только из dev/);
+});
+
+test("production app bundle и exact asset pair обязательны", () => {
+  assert.equal(
+    selectMacReleaseAppBundle([
+      { name: "ZCode.app", isDirectory: () => true },
+      { name: "ZCode Helper.app", isDirectory: () => false },
+    ]),
+    "ZCode.app",
+  );
+  assert.throws(
+    () => selectMacReleaseAppBundle([{ name: "ZCode Preview.app", isDirectory: () => true }]),
+    /production-сборка ZCode\.app/u,
+  );
+  assert.doesNotThrow(() =>
+    assertMacReleaseAssetPair(
+      ["ZCode-3.17.1-mac-arm64.dmg", "ZCode-3.17.1-mac-arm64.zip"],
+      "3.17.1",
+      "arm64",
+    ),
+  );
+  assert.throws(
+    () =>
+      assertMacReleaseAssetPair(
+        ["ZCode-3.17.1-mac-arm64_TEST.dmg", "ZCode-3.17.1-mac-arm64.zip"],
+        "3.17.1",
+        "arm64",
+      ),
+    /Нужна ровно пара/u,
+  );
+});
+
+test("release target обязан быть SHA собранного commit", () => {
+  const expected = "a".repeat(40);
+  assert.doesNotThrow(() => assertReleaseTargetSha(expected, expected));
+  assert.throws(() => assertReleaseTargetSha("b".repeat(40), expected), /не совпадает/u);
+  assert.throws(() => assertReleaseTargetSha("dev", expected), /не совпадает/u);
+});
+
+test("annotated tag разрешается до commit SHA, lightweight tag принимается напрямую", async () => {
+  const expectedCommit = "a".repeat(40);
+  const firstTag = "b".repeat(40);
+  const secondTag = "c".repeat(40);
+  const calls = [];
+  const commit = await resolveTagCommitSha("v3.17.1", async (route) => {
+    calls.push(route);
+    if (route.endsWith("/git/ref/tags/v3.17.1")) {
+      return { object: { type: "tag", sha: firstTag } };
+    }
+    if (route.endsWith(`/git/tags/${firstTag}`)) {
+      return { object: { type: "tag", sha: secondTag } };
+    }
+    return { object: { type: "commit", sha: expectedCommit } };
+  });
+  assert.equal(commit, expectedCommit);
+  assert.equal(calls.length, 3);
+
+  assert.equal(
+    await resolveTagCommitSha("v3.17.1", async () => ({
+      object: { type: "commit", sha: expectedCommit },
+    })),
+    expectedCommit,
+  );
+});
+
+test("локальный release preflight проходит без публикации, проверяя app staple и обе локальные пары", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-preflight-"));
+  try {
+    const fixture = await createReleaseFixture(root);
+    const preflight = await preflightMacRelease({
+      ...pinnedNodeOptions,
+      version: "3.17.1",
+      targetArch: "arm64",
+      distDir: fixture.distDir,
+      runCommand: fixture.runCommand,
+      captureCommand: fixture.captureCommand,
+    });
+
+    assert.equal(preflight.appPath, fixture.sourceAppPath);
+    assert.deepEqual(preflight.assetNames, [
+      path.basename(fixture.dmgPath),
+      path.basename(fixture.zipPath),
+    ]);
+    assert.equal(fixture.doctorCalls.length, 3, "source app, ZIP app, DMG app each pass doctor");
+    assert.deepEqual(
+      fixture.doctorCalls.map(({ options }) => options.env.ZCODE_MACOS_REQUIRE_APP_STAPLE),
+      ["1", "1", "1"],
+    );
+    assert.equal(fixture.doctorCalls[0].appPath, await realpath(fixture.sourceAppPath));
+    assert.ok(fixture.commands.some((command) => command[0] === "ditto"));
+    assert.ok(
+      fixture.commands.some((command) => command[0] === "hdiutil" && command[1] === "attach"),
+    );
+    assert.ok(
+      fixture.commands.some((command) => command[0] === "hdiutil" && command[1] === "detach"),
+    );
+    assert.deepEqual(
+      new Map(
+        await Promise.all(
+          [fixture.dmgPath, fixture.zipPath].map(async (assetPath) => [
+            path.basename(assetPath),
+            sha256(await readFile(assetPath)),
+          ]),
+        ),
+      ),
+      preflight.assetHashes,
+    );
+
+    const releaseCommitSha = "d".repeat(40);
+    assertReleaseTargetSha(releaseCommitSha, releaseCommitSha);
+    const assetNames = preflight.assetNames;
+    const createArgs = buildReleaseCreateArgs({
+      tag: "v3.17.1",
+      commitSha: releaseCommitSha,
+      targetArch: "arm64",
+      assetPaths: preflight.assetPaths,
+    });
+    assert.equal(createArgs[0], "gh");
+    assert.equal(createArgs[1], "release");
+    assert.equal(createArgs[2], "create");
+    assert.equal(createArgs[createArgs.indexOf("--target") + 1], releaseCommitSha);
+    assert.deepEqual(createArgs.slice(-2), preflight.assetPaths);
+    assert.doesNotThrow(() =>
+      assertReleaseMetadata(
+        {
+          tagName: "v3.17.1",
+          isDraft: false,
+          assets: assetNames.map((name) => ({ name })),
+        },
+        "v3.17.1",
+        assetNames,
+      ),
+    );
+    const downloadedHashes = new Map(preflight.assetHashes);
+    assert.doesNotThrow(() => assertAssetHashes(preflight.assetHashes, downloadedHashes));
+    assert.equal(
+      fixture.commands.some((command) => command.includes("push") || command.includes("create")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Preview preflight validates preview identity, architecture and unsigned archive payloads", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-preview-preflight-"));
+  try {
+    const fixture = await createReleaseFixture(root, {
+      productName: "ZCode Preview",
+      appBundleName: "ZCodePreview.app",
+      bundleId: "dev.zcode.app.preview",
+      unsigned: true,
+      artifactSuffix: "_TEST",
+    });
+    const result = await preflightMacRelease({
+      ...pinnedNodeOptions,
+      version: "3.17.1",
+      targetArch: "arm64",
+      distDir: fixture.distDir,
+      productName: "ZCode Preview",
+      appBundleName: "ZCodePreview.app",
+      artifactSuffix: "_TEST",
+      expectedBundleId: "dev.zcode.app.preview",
+      requireStaple: false,
+      requireUnsigned: true,
+      runCommand: fixture.runCommand,
+      captureCommand: fixture.captureCommand,
+      hashDirectory: async () => "preview-app-tree",
+    });
+    assert.equal(path.basename(result.appPath), "ZCodePreview.app");
+    assert.deepEqual(result.assetNames, [
+      "ZCode Preview-3.17.1-mac-arm64_TEST.dmg",
+      "ZCode Preview-3.17.1-mac-arm64_TEST.zip",
+    ]);
+    assert.equal(fixture.doctorCalls.length, 0);
+    assert.equal(
+      fixture.commands.some((command) => command[0] === "bash"),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("отказ local signing/notarization gate прерывает preflight до release actions", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-preflight-fail-"));
+  try {
+    const fixture = await createReleaseFixture(root, { doctorRejectAt: 2 });
+    await assert.rejects(
+      preflightMacRelease({
+        ...pinnedNodeOptions,
+        version: "3.17.1",
+        targetArch: "arm64",
+        distDir: fixture.distDir,
+        runCommand: fixture.runCommand,
+        captureCommand: fixture.captureCommand,
+      }),
+      /Gatekeeper\/staple rejection/u,
+    );
+    assert.equal(fixture.doctorCalls.length, 2, "ZIP payload reruns the fail-closed doctor gate");
+    assert.equal(
+      fixture.commands.some((command) => command.includes("push") || command.includes("create")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("устаревшее приложение в ZIP отклоняется по версии до публикации", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-stale-zip-"));
+  try {
+    const fixture = await createReleaseFixture(root, { zipVersion: "3.17.0" });
+    await assert.rejects(
+      preflightMacRelease({
+        ...pinnedNodeOptions,
+        version: "3.17.1",
+        targetArch: "arm64",
+        distDir: fixture.distDir,
+        runCommand: fixture.runCommand,
+        captureCommand: fixture.captureCommand,
+      }),
+      /version 3\.17\.0 не совпадает/u,
+    );
+    assert.equal(
+      fixture.doctorCalls.length,
+      1,
+      "source bundle passed; stale ZIP failed before doctor",
+    );
+    assert.equal(
+      fixture.commands.some((command) => command.includes("push") || command.includes("create")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("подменённая подпись в ZIP отклоняется сравнением extracted app tree", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-substituted-zip-"));
+  try {
+    const fixture = await createReleaseFixture(root, { zipSignature: "different-signature" });
+    await assert.rejects(
+      preflightMacRelease({
+        ...pinnedNodeOptions,
+        version: "3.17.1",
+        targetArch: "arm64",
+        distDir: fixture.distDir,
+        runCommand: fixture.runCommand,
+        captureCommand: fixture.captureCommand,
+      }),
+      /ZIP app payload\/signature\/staple отличается/u,
+    );
+    assert.equal(
+      fixture.doctorCalls.length,
+      2,
+      "ZIP app still passes the same doctor checks before identity comparison",
+    );
+    assert.equal(
+      fixture.commands.some((command) => command.includes("push") || command.includes("create")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("подменённый notarization ticket в DMG отклоняется и образ всегда отсоединяется", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-substituted-dmg-"));
+  try {
+    const fixture = await createReleaseFixture(root, { dmgTicket: "different-ticket" });
+    await assert.rejects(
+      preflightMacRelease({
+        ...pinnedNodeOptions,
+        version: "3.17.1",
+        targetArch: "arm64",
+        distDir: fixture.distDir,
+        runCommand: fixture.runCommand,
+        captureCommand: fixture.captureCommand,
+      }),
+      /DMG app payload\/signature\/staple отличается/u,
+    );
+    assert.equal(
+      fixture.doctorCalls.length,
+      3,
+      "the DMG payload passed the same doctor checks first",
+    );
+    assert.ok(
+      fixture.commands.some((command) => command[0] === "hdiutil" && command[1] === "detach"),
+    );
+    assert.equal(
+      fixture.commands.some((command) => command.includes("push") || command.includes("create")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("DMG с приложением другой архитектуры отклоняется и образ отсоединяется", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-dmg-arch-"));
+  try {
+    const fixture = await createReleaseFixture(root, { dmgArch: "x86_64" });
+    await assert.rejects(
+      preflightMacRelease({
+        ...pinnedNodeOptions,
+        version: "3.17.1",
+        targetArch: "arm64",
+        distDir: fixture.distDir,
+        runCommand: fixture.runCommand,
+        captureCommand: fixture.captureCommand,
+      }),
+      /architecture x86_64 не совпадает с arm64/u,
+    );
+    assert.equal(
+      fixture.doctorCalls.length,
+      2,
+      "DMG architecture check fails before its doctor run",
+    );
+    assert.ok(
+      fixture.commands.some((command) => command[0] === "hdiutil" && command[1] === "detach"),
+    );
+    assert.equal(
+      fixture.commands.some((command) => command.includes("push") || command.includes("create")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ZIP app symlink вместо bundle отклоняется", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-zip-symlink-"));
+  try {
+    const fixture = await createReleaseFixture(root);
+    const extractionOutside = path.join(root, "zip-payload", "ZCode.app");
+    const extractor = fixture.runCommand;
+    fixture.runCommand = async (command, options) => {
+      if (command[0] === "ditto") {
+        await symlink(extractionOutside, path.join(command[4], "ZCode.app"));
+        return;
+      }
+      return extractor(command, options);
+    };
+    await assert.rejects(
+      preflightMacRelease({
+        ...pinnedNodeOptions,
+        version: "3.17.1",
+        targetArch: "arm64",
+        distDir: fixture.distDir,
+        runCommand: fixture.runCommand,
+        captureCommand: fixture.captureCommand,
+      }),
+      /(обычной директорией|находится вне app bundle)/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("опубликованные файлы и их SHA-256 совпадают с локальной сборкой", () => {
+  const assetNames = ["ZCode-3.17.1-mac-arm64.dmg", "ZCode-3.17.1-mac-arm64.zip"];
+  const release = {
+    tagName: "v3.17.1",
+    isDraft: false,
+    assets: assetNames.map((name) => ({ name })),
+  };
+  assert.doesNotThrow(() => assertReleaseMetadata(release, "v3.17.1", assetNames));
+  assert.throws(
+    () => assertReleaseMetadata({ ...release, isDraft: true }, "v3.17.1", assetNames),
+    /не подтвердил/,
+  );
+  assert.throws(
+    () =>
+      assertReleaseMetadata(
+        { ...release, assets: [{ name: assetNames[0] }] },
+        "v3.17.1",
+        assetNames,
+      ),
+    /неверный набор файлов/,
+  );
+  assert.doesNotThrow(() =>
+    assertAssetHashes(
+      new Map([
+        [assetNames[0], sha256("dmg")],
+        [assetNames[1], sha256("zip")],
+      ]),
+      new Map([
+        [assetNames[0], sha256("dmg")],
+        [assetNames[1], sha256("zip")],
+      ]),
+    ),
+  );
+  assert.throws(
+    () =>
+      assertAssetHashes(
+        new Map([[assetNames[0], sha256("dmg")]]),
+        new Map([[assetNames[0], sha256("other")]]),
+      ),
+    /не совпадает/,
+  );
+
+  const previewAssetNames = [
+    "ZCode Preview-3.17.2-mac-arm64_TEST.dmg",
+    "ZCode Preview-3.17.2-mac-arm64_TEST.zip",
+  ];
+  const githubPreviewNames = previewAssetNames.map((name) => name.replaceAll(" ", "."));
+  assert.doesNotThrow(() =>
+    assertReleaseMetadata(
+      {
+        tagName: "v3.17.2",
+        isDraft: false,
+        assets: githubPreviewNames.map((name) => ({ name })),
+      },
+      "v3.17.2",
+      previewAssetNames,
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertAssetHashes(
+      new Map([
+        [previewAssetNames[0], sha256("preview dmg")],
+        [previewAssetNames[1], sha256("preview zip")],
+      ]),
+      new Map([
+        [githubPreviewNames[0], sha256("preview dmg")],
+        [githubPreviewNames[1], sha256("preview zip")],
+      ]),
+    ),
+  );
+});
+
+test("production release names do not carry the preview _TEST suffix", () => {
+  assert.deepEqual(expectedMacReleaseAssetNames("3.17.69", "arm64", "ZCode Preview"), [
+    "ZCode Preview-3.17.69-mac-arm64.dmg",
+    "ZCode Preview-3.17.69-mac-arm64.zip",
+  ]);
+});
+
+test("desktop publish placeholder is not a localhost feed", async () => {
+  const config = await readFile(
+    path.resolve(import.meta.dirname, "../../packages/desktop/electron-builder.config.js"),
+    "utf8",
+  );
+  assert.ok(!config.includes("localhost:8081"));
+});

@@ -427,12 +427,16 @@ describe("ConversationDraftSuggestedPromptsContainer", () => {
         eventRegion: "app.session",
         eventType: "ck",
         eventText: pluginLabel,
-        eventExtraDetail: {
+        // Причина: полный текст шаблона больше не уходит в телеметрию (privacy);
+        // остаются длина и стабильный хеш для корреляции.
+        eventExtraDetail: expect.objectContaining({
           template_id: "create-pdf",
-          template_prompt: pluginPrompt,
-        },
+          template_prompt_length: String(pluginPrompt.length),
+          template_prompt_hash: expect.any(String),
+        }),
       }),
     );
+    expect(JSON.stringify(reportTelemetryEvent.mock.calls)).not.toContain(pluginPrompt);
   });
 
   it("does not report template clicks on non-Desktop surfaces", async () => {

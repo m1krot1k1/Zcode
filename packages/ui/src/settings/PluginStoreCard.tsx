@@ -8,7 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
-import { Switch } from "@/components/ui/switch.js";
+import "@/components/ui/switch.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +40,17 @@ export interface PluginStoreActions {
   /** 删除当前 Workspace scope 的显式配置，使其回退到 User。 */
   onResetConfig?: (pluginId: string) => void;
   onUpdate: (pluginId: string) => void;
-  activeOperations: ReadonlyArray<{ id: string }>;
+  /** 取消同插件当前在途安装；仅安装条目可取消，restore/update 不提供入口。 */
+  onCancelInstall?: (item: StorePluginItem) => void;
+  activeOperations: ReadonlyArray<{
+    id: string;
+    /** CLI operationId；取消按钮据此判断该安装是否可中止。 */
+    remoteOperationId?: string;
+  }>;
+  /** 已发出取消请求、等待 CLI 应答的 remote operationId。 */
+  cancelRequestOperationIds?: readonly string[];
+  /** CLI 已确认中止、等待安装收口的 remote operationId。 */
+  cancellingOperationIds?: readonly string[];
   togglingPluginId: string | null;
 }
 
@@ -74,37 +84,7 @@ export function PluginStorePaidPlanBadge({
       </span>
     </ControlHintTooltip>
   );
-}
-
-/** 详情页与管理视图的插件级启停开关；紧凑商店卡片只保留「…」菜单。 */
-export function PluginStoreEnabledSwitch({
-  item,
-  actions,
-}: {
-  item: StorePluginItem;
-  actions: PluginStoreActions;
-}) {
-  const { intl } = useZCodeIntl();
-  if (!item.info || !actions.onSetEnabled) return null;
-  const enabled = item.info.enabled;
-  return (
-    <Switch
-      data-testid="plugin-store-enabled-switch"
-      data-plugin-id={item.id}
-      checked={enabled}
-      disabled={actions.togglingPluginId === item.id}
-      aria-label={
-        enabled
-          ? intl.formatMessage({ id: "settings.plugins.store.menu.disable" })
-          : intl.formatMessage({ id: "settings.plugins.store.menu.enable" })
-      }
-      onClick={(event) => event.stopPropagation()}
-      onCheckedChange={(checked) => actions.onSetEnabled?.(item.id, checked)}
-    />
-  );
-}
-
-/** 已安装条目的「…」菜单：启用/禁用、更新（有更新时）、卸载。卡片与详情页共用。 */
+}/** 已安装条目的「…」菜单：启用/禁用、更新（有更新时）、卸载。卡片与详情页共用。 */
 export function PluginStoreItemMenu({
   item,
   actions,
@@ -194,10 +174,70 @@ export function PluginStoreInstallButton({
   size?: "sm" | "default" | "lg";
 }) {
   const { intl } = useZCodeIntl();
-  const installing =
-    actions.activeOperations.some(
-      (operation) => operation.id === `plugin:install:${item.name}@${item.marketplace}`,
-    ) || actions.activeOperations.some((operation) => operation.id === `plugin:restore:${item.id}`);
+  const installOperationId = `plugin:install:${item.name}@${item.marketplace}`;
+  const installOperation = actions.activeOperations.find(
+    (operation) => operation.id === installOperationId,
+  );
+  const restoring = actions.activeOperations.some(
+    (operation) => operation.id === `plugin:restore:${item.id}`,
+  );
+  const installing = Boolean(installOperation) || restoring;
+  const remoteOperationId = installOperation?.remoteOperationId;
+  // 只有真正带到 CLI 的 operationId 才能被取消；restore 没有该字段，不显示入口。
+  const cancellable = Boolean(remoteOperationId && actions.onCancelInstall);
+  const cancelling = Boolean(
+    remoteOperationId && actions.cancellingOperationIds?.includes(remoteOperationId),
+  );
+  // 取消请求在途时安装本身仍在继续，文案保持“安装中”，只禁止重复取消；
+  // 只有 CLI 确认 abort 后才切换为“正在取消”。
+  const cancelRequestPending = Boolean(
+    remoteOperationId && actions.cancelRequestOperationIds?.includes(remoteOperationId),
+  );
+  if (installing) {
+    const statusLabel = cancelling
+      ? intl.formatMessage({ id: "settings.plugins.store.cancelling" })
+      : intl.formatMessage({ id: "settings.plugins.marketplace.installing" });
+    return (
+      <div className="flex min-w-0 items-center gap-1.5">
+        {/* 安装状态会从 Installing 变成 Cancelling，必须由 live region 主动播报。 */}
+        <span className="sr-only" role="status" aria-live="polite">
+          {statusLabel}
+        </span>
+        <Button
+          type="button"
+          data-testid="plugin-store-install"
+          data-plugin-id={item.id}
+          variant="secondary"
+          size={size}
+          className="rounded-full"
+          disabled
+          aria-busy
+        >
+          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          {statusLabel}
+        </Button>
+        {cancellable ? (
+          <Button
+            type="button"
+            data-testid="plugin-store-install-cancel"
+            data-plugin-id={item.id}
+            variant="outline"
+            size={size}
+            className="rounded-full"
+            // 取消请求已发出时不能再发第二次；安装是否真正中止由安装胶囊说明。
+            disabled={cancelling || cancelRequestPending}
+            aria-label={intl.formatMessage({ id: "settings.plugins.store.cancelInstall" })}
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.onCancelInstall?.(item);
+            }}
+          >
+            {intl.formatMessage({ id: "settings.plugins.store.cancelInstall" })}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
   return (
     <Button
       type="button"
@@ -206,7 +246,6 @@ export function PluginStoreInstallButton({
       variant="secondary"
       size={size}
       className="rounded-full"
-      disabled={installing}
       onClick={(event) => {
         event.stopPropagation();
         runUserAction({
@@ -217,10 +256,7 @@ export function PluginStoreInstallButton({
         });
       }}
     >
-      {installing ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
-      {installing
-        ? intl.formatMessage({ id: "settings.plugins.marketplace.installing" })
-        : intl.formatMessage({ id: "settings.plugins.store.install" })}
+      {intl.formatMessage({ id: "settings.plugins.store.install" })}
     </Button>
   );
 }

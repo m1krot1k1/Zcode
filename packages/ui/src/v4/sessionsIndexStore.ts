@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- index projection、applied-base 与 recovery flight 必须由同一原子 store 裁决。 */
 // sessions-index topic 的 renderer 只读 store：
 // snapshot 帧全量替换；delta 帧仅在区间衔接（frame.fromSeq === watermark）时 apply，
 // 断档不猜、不缓存补偿——重订阅交由服务端裁决续传或全量（与 ConversationProjectionStore 同策略）。
@@ -15,7 +14,7 @@ import { ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE } from "@zcode/services";
 import { logger } from "@/logger.js";
 import type { SessionsIndexTransport } from "@/v4/agentSessionsIndexTransport.js";
 
-export interface SessionsIndexState {
+interface SessionsIndexState {
   /** workspaceId → 已知；null = 尚无 snapshot。 */
   workspaceId: string | null;
   logEpoch: string | null;
@@ -84,7 +83,7 @@ async function unsubscribeIgnoringFailure(
   }
 }
 
-export interface ApplySessionsIndexResult {
+interface ApplySessionsIndexResult {
   state: SessionsIndexState;
   /** true = 帧区间断档（fromSeq 与水位不衔接），调用方应重订阅。 */
   gap: boolean;

@@ -4,15 +4,19 @@ import type { ModelSelectionView } from "@zcode/services";
 import { validateModelSelectionOptions } from "@zcode/provider";
 
 export interface ComposerSubmissionConfig {
-  modelSelection: ModelSelection;
-  mode: SubmissionMode;
-  planEnabled: boolean;
+  modelSelection?: ModelSelection;
+  mode?: SubmissionMode;
+  planEnabled?: boolean;
 }
 
 /** 在点击提交的瞬间，把 Composer 意图冻结成本次 Submission 的执行配置。 */
 export function createComposerSubmissionConfig(
   composer:
-    | { mode?: string; planEnabled?: boolean; modelSelection?: ModelSelection }
+    | {
+        mode?: string;
+        planEnabled?: boolean;
+        modelSelection?: ModelSelection;
+      }
     | null
     | undefined,
   view: ModelSelectionView | null,

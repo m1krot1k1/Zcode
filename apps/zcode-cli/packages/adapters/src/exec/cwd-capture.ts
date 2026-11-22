@@ -9,7 +9,7 @@ import {
   windowsPathToGitBashPath,
 } from "@zcode/contracts";
 
-export interface CwdCapturePlan {
+interface CwdCapturePlan {
   command: ExecutionCommand;
   cwdFilePath?: string;
 }

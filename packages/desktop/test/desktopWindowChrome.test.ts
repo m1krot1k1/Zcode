@@ -21,6 +21,8 @@ const electronMocks = vi.hoisted(() => {
       once: vi.fn(),
       send: vi.fn(),
       setZoomFactor: vi.fn(),
+      // 主窗口 navigation/popup guard 在 createBrowserWindow 内注册。
+      setWindowOpenHandler: vi.fn(),
     },
   };
 
@@ -99,6 +101,7 @@ describe("desktopWindowChrome", () => {
     electronMocks.browserWindowInstance.webContents.once.mockClear();
     electronMocks.browserWindowInstance.webContents.send.mockClear();
     electronMocks.browserWindowInstance.webContents.setZoomFactor.mockClear();
+    electronMocks.browserWindowInstance.webContents.setWindowOpenHandler.mockClear();
     electronMocks.loadWindow.mockReset();
     electronMocks.menuBuildFromTemplate.mockClear();
     electronMocks.shouldUseDarkColors = true;

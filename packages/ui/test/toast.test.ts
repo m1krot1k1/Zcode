@@ -154,4 +154,26 @@ describe("toast", () => {
     expect(visibleHtml).toContain("opacity-100");
     expect(visibleHtml).not.toContain("-translate-y-1");
   });
+
+  it("announces notices through an explicit live region", () => {
+    const render = (variant: "default" | "warning") =>
+      renderToStaticMarkup(
+        createElement(ToastMessageView, {
+          item: {
+            id: 7,
+            message: "已保存设置",
+            durationMs: 3000,
+            position: "top-center" as const,
+            variant,
+          },
+          visible: true,
+        }),
+      );
+
+    expect(render("default")).toContain('role="status"');
+    expect(render("default")).toContain('aria-live="polite"');
+    expect(render("warning")).toContain('role="alert"');
+    expect(render("warning")).toContain('aria-live="assertive"');
+    expect(render("default")).toContain('aria-atomic="true"');
+  });
 });

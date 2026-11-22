@@ -1,13 +1,20 @@
-/* oxlint-disable eslint(max-lines) -- AppSettings schema 聚合历史迁移、默认值和 patch 校验，拆分会削弱设置迁移的单一入口。 */
 import { z } from "zod";
 import { appToolSearchModeSchema } from "./app-runtime-preferences.js";
-import type { AppSettings } from "./protocol.js";
 import { REMOTE_ASSET_INSTALL_MODES } from "./remoteAssetInstallMode.js";
 import { isKnownRemoteResourcePackageId } from "./remoteResourcePackages.js";
 import { wslUserSchema } from "./wslUserValidation.js";
 import { ZCODE_ENABLED_AGENT_PROVIDERS } from "./zcode-agent-policy.js";
 import { DYNAMIC_WORKFLOW_MODES } from "./dynamic-workflow-feature.js";
+import {
+  DEFAULT_PROMPT_DEPTH_PROFILE,
+  PROMPT_DEPTH_PROFILES,
+  promptDepthSchema,
+} from "./prompt-depth.js";
 import { normalizeZCodeEndpointOrigin } from "./zcodeEndpoint.js";
+import {
+  stage4SettingsObjectSchema,
+  stage4SettingsPatchSchema,
+} from "./stage4-settings/settings.js";
 import {
   DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
   embeddedBrowserViewportPreferenceSchema,
@@ -40,8 +47,8 @@ export const appSettingsOccupationEnum = appSettingsOccupationSchema;
 
 const nonEmptyStringSchema = z.string().trim().min(1);
 
-export const localeSchema = z.enum(["zh-CN", "en-US"]);
-export const localePreferenceSchema = z.enum(["system", "zh-CN", "en-US"]);
+export const localeSchema = z.enum(["zh-CN", "en-US", "ru-RU"]);
+const localePreferenceSchema = z.enum(["system", "zh-CN", "en-US", "ru-RU"]);
 const zcodeInteractionBehaviorSchema = z.enum(["queue", "guide"]);
 // launch.md「The user's choice」：读文件时未知取值（降级后读到新版本写的值）按「跟随」处理，
 // 不能让一个偏好字段把整份设置读坏。
@@ -290,6 +297,76 @@ function migrateMessageStreamShowReasoningDefault(value: unknown): unknown {
   };
 }
 
+function migrateToolGroupingChangesDefault(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.toolGroupingChangesMigrationVersion === 1) {
+    return value;
+  }
+  return {
+    ...raw,
+    // 原因：旧版默认关闭且没有记录用户选择；本版本统一开启一次，
+    // 之后用户明确关闭会保留。
+    toolGroupingChangesEnabled: true,
+    toolGroupingChangesMigrationVersion: 1,
+  };
+}
+
+function migrateWorkingContextCeilingDefault(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.workingContextCeilingMigrationVersion === 1) {
+    return value;
+  }
+  const agentCore = raw.agentCoreAdvanced;
+  const nextCore =
+    agentCore && typeof agentCore === "object" && !Array.isArray(agentCore)
+      ? (agentCore as Record<string, unknown>)
+      : undefined;
+  return {
+    ...raw,
+    // The old 120k default was indistinguishable from a custom value. Migrate it once;
+    // later explicit 120k or any other custom ceiling is preserved by the version gate.
+    ...(nextCore?.workingContextCeilingTokens === 120_000
+      ? {
+          agentCoreAdvanced: {
+            ...nextCore,
+            workingContextCeilingTokens: 80_000,
+          },
+        }
+      : {}),
+    workingContextCeilingMigrationVersion: 1,
+  };
+}
+
+function migrateToolSearchDefault(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw.toolSearchModeMigrationVersion === 1) {
+    return value;
+  }
+  // Fresh settings have no persisted mode and keep the conservative schema default. An
+  // existing explicit "off" is the old default; upgrade it once to the measured 45% context
+  // win. A later manual "off" survives because the migration version is already 1.
+  if (!Object.hasOwn(raw, "toolSearchMode")) {
+    return { ...raw, toolSearchModeMigrationVersion: 1 };
+  }
+  if (raw.toolSearchMode !== "off") {
+    return { ...raw, toolSearchModeMigrationVersion: 1 };
+  }
+  return {
+    ...raw,
+    toolSearchMode: "auto",
+    toolSearchModeMigrationVersion: 1,
+  };
+}
+
 function migrateLegacyLocalePreference(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return value;
@@ -502,6 +579,9 @@ function migrateLegacyWorkspaceSession(value: unknown): unknown {
 }
 
 const appSettingsObjectSchema = z.object({
+  // Настройки подсистем Этапа 4 (4.1–4.6): единая схема с дефолтами на каждой секции,
+  // поэтому старые `setting.json` читаются без ошибок и получают значения по умолчанию.
+  ...stage4SettingsObjectSchema.shape,
   recentProjects: z.array(z.string()).default([]),
   locale: localeSchema.default("zh-CN"),
   // 快捷键用户覆盖（语义校验在 ui/src/shortcuts 生效表阶段容错，schema 只管形状）
@@ -511,8 +591,13 @@ const appSettingsObjectSchema = z.object({
   terminalFontFamily: nonEmptyStringSchema.optional(),
   integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
   httpProxy: nonEmptyStringSchema.optional(),
+  httpProxyList: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
+  // Legacy-поле сохраняется при чтении старых настроек, но runtime его игнорирует.
+  spawnBudget: z.number().int().min(0).safe().optional(),
+  subagentMaxParallel: z.number().int().min(0).safe().optional(),
+  subagentTaskTimeoutMinutes: z.number().int().min(0).max(180).optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().default(false),
   embeddedBrowserViewportPreference: embeddedBrowserViewportPreferenceSchema.default(
     DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
@@ -533,10 +618,14 @@ const appSettingsObjectSchema = z.object({
   desktopChromiumHardwareAccelerationEnabled: z.boolean().default(true),
   messageStreamShowReasoning: z.boolean().default(true),
   messageStreamShowReasoningMigrationInitialized: z.boolean().default(true),
+  telemetryEnabled: z.boolean().optional(),
+  workspaceBoundary: z.enum(["strict", "ask", "allow"]).optional(),
   messageStreamShowTodos: z.boolean().default(false),
   toolGroupingExploreEnabled: z.boolean().default(true),
   toolGroupingTerminalEnabled: z.boolean().default(true),
-  toolGroupingChangesEnabled: z.boolean().default(false),
+  toolGroupingChangesEnabled: z.boolean().default(true),
+  // 一次性迁移：旧版本把默认 false 与用户手动关闭都存成同一个值。
+  toolGroupingChangesMigrationVersion: z.literal(1).default(1),
   zcodeInteractionBehavior: zcodeInteractionBehaviorSchema.default("queue"),
   askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
   modelIoFullRetentionEnabled: z.boolean().default(false),
@@ -544,6 +633,7 @@ const appSettingsObjectSchema = z.object({
   enabledBuiltinAgentCliProviders: enabledBuiltinAgentCliProvidersSchema.default([
     ...ZCODE_ENABLED_AGENT_PROVIDERS,
   ]),
+  openCodeCliEnabled: z.boolean().default(false),
   startPlanRecommendationDismissed: z.boolean().default(false),
   providerFamilyConnectionSelections: providerFamilyConnectionSelectionSettingsSchema.default({}),
   providerFamilyDomain: providerFamilyDomainSchema.optional(),
@@ -551,6 +641,14 @@ const appSettingsObjectSchema = z.object({
   providerFamilyDomainMigrated: z.boolean().default(false),
   nativeSearchEnhancementsEnabled: z.boolean().default(true),
   toolSearchMode: appToolSearchModeSchema.default("off"),
+  // One-time migration: the old default and an explicit opt-out were indistinguishable.
+  toolSearchModeMigrationVersion: z.literal(1).default(1),
+  // One-time migration of the old 120k working-context default to 80k.
+  workingContextCeilingMigrationVersion: z.literal(1).default(1),
+  // Инкремент 4.4: профиль глубины рассуждений. Владелец — настройки; рантайм читает его
+  // при сборке системного промпта и при выборе thinking/maxOutputTokens. UI-переключатель
+  // появится в 4.6, но схема и рантайм-поддержка готовы здесь.
+  promptDepth: promptDepthSchema.default(DEFAULT_PROMPT_DEPTH_PROFILE),
   onboardingOccupation: appSettingsOccupationSchema.nullish(),
   proactiveSuggestionsEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().default(false),
@@ -586,13 +684,21 @@ export const appSettingsSchema = z.preprocess(
   (value) =>
     sanitizeEmbeddedBrowserViewportPreference(
       sanitizeDesktopWindowSize(
-        migrateMessageStreamShowReasoningDefault(
-          migrateCloseToTrayOnWindowsDefault(
-            migrateLegacyLocalePreference(
-              sanitizeZCodeEndpointOrigin(
-                migrateLegacyWorkspaceSession(
-                  migrateLegacyBuiltinAgentCliProviders(
-                    migrateRemoteBoundaryIntroAcknowledgement(migrateTaskAutoArchiveReset(value)),
+        migrateWorkingContextCeilingDefault(
+          migrateToolSearchDefault(
+            migrateToolGroupingChangesDefault(
+              migrateMessageStreamShowReasoningDefault(
+                migrateCloseToTrayOnWindowsDefault(
+                  migrateLegacyLocalePreference(
+                    sanitizeZCodeEndpointOrigin(
+                      migrateLegacyWorkspaceSession(
+                        migrateLegacyBuiltinAgentCliProviders(
+                          migrateRemoteBoundaryIntroAcknowledgement(
+                            migrateTaskAutoArchiveReset(value),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -605,6 +711,7 @@ export const appSettingsSchema = z.preprocess(
 );
 
 export const appSettingsPatchSchema = z.object({
+  ...stage4SettingsPatchSchema.shape,
   recentProjects: z.array(z.string()).optional(),
   locale: localeSchema.optional(),
   shortcutBindings: z.record(z.string(), z.array(z.string())).optional(),
@@ -613,8 +720,13 @@ export const appSettingsPatchSchema = z.object({
   terminalFontFamily: nonEmptyStringSchema.optional(),
   integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
   httpProxy: nonEmptyStringSchema.optional(),
+  httpProxyList: nonEmptyStringSchema.optional(),
   httpProxyNoProxy: nonEmptyStringSchema.optional(),
   httpProxyCaCertPath: nonEmptyStringSchema.optional(),
+  // Legacy-поле сохраняется при чтении старых настроек, но runtime его игнорирует.
+  spawnBudget: z.number().int().min(0).safe().optional(),
+  subagentMaxParallel: z.number().int().min(0).safe().optional(),
+  subagentTaskTimeoutMinutes: z.number().int().min(0).max(180).optional(),
   embeddedBrowserAllowInsecureCertificates: z.boolean().optional(),
   embeddedBrowserViewportPreference: embeddedBrowserViewportPreferenceSchema.optional(),
   computerUseComposerEntryHidden: z.boolean().optional(),
@@ -629,6 +741,8 @@ export const appSettingsPatchSchema = z.object({
   desktopChromiumHardwareAccelerationEnabled: z.boolean().optional(),
   messageStreamShowReasoning: z.boolean().optional(),
   messageStreamShowReasoningMigrationInitialized: z.boolean().optional(),
+  telemetryEnabled: z.boolean().optional(),
+  workspaceBoundary: z.enum(["strict", "ask", "allow"]).optional(),
   messageStreamShowTodos: z.boolean().optional(),
   toolGroupingExploreEnabled: z.boolean().optional(),
   toolGroupingTerminalEnabled: z.boolean().optional(),
@@ -639,6 +753,7 @@ export const appSettingsPatchSchema = z.object({
   // 空串是「删除选择、回到跟随」的哨兵：RPC 会吞掉 undefined，normalizeSettingsPatch 把它归一成删除。
   dynamicWorkflowMode: z.union([z.enum(DYNAMIC_WORKFLOW_MODES), z.literal("")]).optional(),
   enabledBuiltinAgentCliProviders: enabledBuiltinAgentCliProvidersSchema.optional(),
+  openCodeCliEnabled: z.boolean().optional(),
   startPlanRecommendationDismissed: z.boolean().optional(),
   providerFamilyConnectionSelections: providerFamilyConnectionSelectionSettingsSchema.optional(),
   providerFamilyDomain: z.union([providerFamilyDomainSchema, z.literal("")]).optional(),
@@ -646,6 +761,7 @@ export const appSettingsPatchSchema = z.object({
   providerFamilyDomainMigrated: z.boolean().optional(),
   nativeSearchEnhancementsEnabled: z.boolean().optional(),
   toolSearchMode: appToolSearchModeSchema.optional(),
+  promptDepth: promptDepthSchema.optional(),
   onboardingOccupation: z
     .enum([
       "office",

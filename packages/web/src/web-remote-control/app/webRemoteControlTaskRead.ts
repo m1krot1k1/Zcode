@@ -1,22 +1,22 @@
-export interface WebRemoteControlTaskReadTarget {
+interface WebRemoteControlTaskReadTarget {
   taskId: string;
   workspacePath: string;
   workspaceIdentity?: string;
   expectedUnreadAt: number;
 }
 
-export interface WebRemoteControlTaskReadService {
+interface WebRemoteControlTaskReadService {
   setTaskUnread(params: WebRemoteControlTaskReadTarget & { unread: false }): Promise<unknown>;
 }
 
-export interface WebRemoteControlTaskReadBridge {
+interface WebRemoteControlTaskReadBridge {
   kind: "local" | "remote";
   workspacePath: string;
   workspaceIdentity?: string;
   initialTaskId?: string;
 }
 
-export type WebRemoteControlTaskReadResult = { ok: true } | { ok: false; error: unknown };
+type WebRemoteControlTaskReadResult = { ok: true } | { ok: false; error: unknown };
 
 /**
  * 手机任务首页的 unreadAt 来自 desktop 快照，不保证存在于当前 Root 的 query cache。

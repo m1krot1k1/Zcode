@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { createE2ERunnerFinalizationGuard } from "./e2e/helpers/e2e-runner-finalization-guard.js";
 import { runMeasuredE2ELifecyclePhase } from "./e2e/helpers/e2e-lifecycle-measurement.js";
+import { readWdioConfigSource } from "./e2e/helpers/wdio-config-source.js";
 
 describe("desktop E2E infrastructure lifecycle", () => {
   it("records a failed lifecycle phase before rethrowing the original error", async () => {
@@ -37,9 +37,7 @@ describe("desktop E2E infrastructure lifecycle", () => {
         throw "";
       }),
     ).rejects.toBe("");
-    expect(record).toHaveBeenCalledWith(
-      expect.objectContaining({ error: "", status: "failed" }),
-    );
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ error: "", status: "failed" }));
   });
 
   it("keeps a referenced finalization timer until it is disarmed", () => {
@@ -61,7 +59,7 @@ describe("desktop E2E infrastructure lifecycle", () => {
   });
 
   it("arms after the last worker and disarms before normal onComplete", () => {
-    const source = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+    const source = readWdioConfigSource();
     const workerEnd = source.slice(
       source.indexOf("  onWorkerEnd("),
       source.indexOf("  async afterTest(", source.indexOf("  onWorkerEnd(")),

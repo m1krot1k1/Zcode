@@ -15,7 +15,7 @@ import {
 import type { ToolEntry, ToolHandler } from "../types.js";
 
 /** 技能正文的默认字节上限；超出部分由 adapter 从尾部截掉。 */
-export const MAX_SKILL_BYTES = 100_000;
+const MAX_SKILL_BYTES = 100_000;
 
 /**
  * `dynamic-workflows` 技能的字节上限（docs/dynamic-workflow/authoring.md「The skill」）。
@@ -117,6 +117,7 @@ Important:
 - Do not invoke a skill that is already running
 - Do not use this tool for built-in CLI commands (like /help, /clear, etc.)
 - If you see a <command-name> tag in the current conversation turn, the skill has ALREADY been loaded - follow the instructions directly instead of calling this tool again
+- If no available skill matches, use SkillSearch to find one in the public skills.sh marketplace, SkillInstall to add it, then call Skill again
 `,
     readOnly: true,
     destructive: false,

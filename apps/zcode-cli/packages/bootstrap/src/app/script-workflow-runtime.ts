@@ -279,9 +279,6 @@ export class ScriptWorkflowRuntime {
     input: WorkflowAgentCallInput,
     options?: ScriptWorkflowRunOptions,
   ): Promise<unknown> {
-    if (input.opts?.isolation === "worktree") {
-      throw new Error("workflow agent isolation 'worktree' is not implemented yet.");
-    }
     const startedAt = Date.now();
     const childSessionId = createSessionId(`workflow_${activity.id}`);
     const childTraceContext = createChildTraceContext(this.deps.traceContext, {
@@ -292,9 +289,12 @@ export class ScriptWorkflowRuntime {
       },
       sessionId: childSessionId,
     });
+    const initialContextSourceSnapshot =
+      await this.deps.runtime.getAcceptedContextSourceSnapshot(childTraceContext);
     const childRuntime = createScriptWorkflowAgentRuntime({
       childSessionId,
       deps: this.deps,
+      initialContextSourceSnapshot,
       request: input,
       traceContext: childTraceContext,
     });

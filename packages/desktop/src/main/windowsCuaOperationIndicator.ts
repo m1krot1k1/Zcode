@@ -19,7 +19,7 @@ const HIDE_ANIMATION_MS = 120;
 const AUTO_HIDE_MS = 30_000;
 const CREATE_RETRY_MS = 250;
 
-export interface WindowsCuaOperationIndicatorWindow {
+interface WindowsCuaOperationIndicatorWindow {
   readonly webContents: Pick<BrowserWindow["webContents"], "executeJavaScript">;
   destroy(): void;
   hide(): void;
@@ -34,7 +34,7 @@ export interface WindowsCuaOperationIndicatorWindow {
   showInactive(): void;
 }
 
-export interface WindowsCuaOperationIndicator {
+interface WindowsCuaOperationIndicator {
   handleState(source: object, event: HostCuaOperationStateResponse): void;
   clearSource(source: object): void;
   ownsWindow(candidate: object): boolean;

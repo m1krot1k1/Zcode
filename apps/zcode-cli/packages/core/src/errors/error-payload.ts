@@ -242,7 +242,7 @@ function collectErrorPayloadFrames(error: unknown): ErrorPayloadFrame[] {
 
 function toErrorPayloadFrame(entry: Record<string, unknown>): ErrorPayloadFrame {
   const context = isRecord(entry.context) ? entry.context : undefined;
-  const originalMessage = readOriginalText(entry.message);
+  const originalMessage = normalizeSdkMessage(readOriginalText(entry.message));
   const message = sanitizeText(originalMessage);
   const role =
     readErrorPayloadRole(entry.errorPayloadRole) ?? readErrorPayloadRole(context?.errorPayloadRole);
@@ -267,6 +267,15 @@ function toErrorPayloadFrame(entry: Record<string, unknown>): ErrorPayloadFrame 
     ...(retryable !== undefined ? { retryable } : {}),
     ...(role ? { role } : {}),
   };
+}
+
+function normalizeSdkMessage(message: string | undefined): string | undefined {
+  if (message && /OpenCode returned no response data for model\b/iu.test(message)) {
+    // SDK EmptyResponseData может приписать догадку о недоступном model ID к общему 500.
+    // Эта догадка не является диагностикой OpenCode и не должна попадать в UI.
+    return "OpenCode returned no model response. The model ID has not been identified as the cause; check the OpenCode CLI logs.";
+  }
+  return message;
 }
 
 function selectPrimaryErrorFrame(

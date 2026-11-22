@@ -3,7 +3,7 @@ import type { ZCodeModelTrajectory } from "@zcode/services";
 import { logger } from "@/logger.js";
 import { useZCodeTaskService } from "@/hooks/useZCodeTaskService.js";
 
-export interface ModelTrajectoryState {
+interface ModelTrajectoryState {
   loading: boolean;
   data: ZCodeModelTrajectory | null;
   error: string | null;

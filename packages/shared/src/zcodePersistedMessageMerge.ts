@@ -76,6 +76,14 @@ function mergeAssistantPair(
       ? undefined
       : mergedContent.length;
   const mergedMessageIds = collectMergedMessageIds(first, next);
+  const mergedRepairAttempts =
+    (first.repairAttempts?.length ?? 0) + (next.repairAttempts?.length ?? 0) > 0
+      ? [...(first.repairAttempts ?? []), ...(next.repairAttempts ?? [])]
+      : undefined;
+  const mergedStateTransitions =
+    (first.stateTransitions?.length ?? 0) + (next.stateTransitions?.length ?? 0) > 0
+      ? [...(first.stateTransitions ?? []), ...(next.stateTransitions ?? [])]
+      : undefined;
 
   return {
     ...first,
@@ -85,6 +93,10 @@ function mergeAssistantPair(
     durationMs,
     characterCount,
     interrupted: next.interrupted ?? first.interrupted,
+    finishReason: next.finishReason ?? first.finishReason,
+    rawTruncatedInputPreview: next.rawTruncatedInputPreview ?? first.rawTruncatedInputPreview,
+    ...(mergedRepairAttempts ? { repairAttempts: mergedRepairAttempts } : {}),
+    ...(mergedStateTransitions ? { stateTransitions: mergedStateTransitions } : {}),
     feedback: next.feedback ?? first.feedback,
     mergedMessageIds: mergedMessageIds.length > 0 ? mergedMessageIds : undefined,
     goalIteration: next.goalIteration ?? first.goalIteration,

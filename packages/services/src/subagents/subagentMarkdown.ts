@@ -31,13 +31,13 @@ const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>([
   "plan",
 ]);
 
-export interface ParseSubagentMarkdownInput {
+interface ParseSubagentMarkdownInput {
   content: string;
   path: string;
   scope: AgentScope;
 }
 
-export interface ParseSubagentMarkdownResult {
+interface ParseSubagentMarkdownResult {
   agent?: AgentSummary;
   diagnostic?: AgentDiagnostic;
 }
@@ -77,6 +77,7 @@ export function parseSubagentMarkdown(
   const tools = parseToolSpecList(frontmatter.tools);
   const disallowedTools = parseToolSpecList(frontmatter.disallowedTools);
   const skills = parseStringList(frontmatter.skills);
+  const includeInSwarm = parseOptionalBoolean(frontmatter.includeInSwarm);
   const background = parseOptionalBoolean(frontmatter.background);
   const injectAgentsMd = parseOptionalBoolean(frontmatter.injectAgentsMd);
   const mcpServers = Array.isArray(frontmatter.mcpServers) ? frontmatter.mcpServers : undefined;
@@ -92,6 +93,7 @@ export function parseSubagentMarkdown(
       ...(tools ? { tools } : {}),
       ...(disallowedTools ? { disallowedTools } : {}),
       ...(skills ? { skills } : {}),
+      ...(includeInSwarm !== undefined ? { includeInSwarm } : {}),
       ...(permissionMode ? { permissionMode } : {}),
       ...(maxTurns ? { maxTurns } : {}),
       ...(background !== undefined ? { background } : {}),
@@ -122,6 +124,9 @@ export function serializeSubagentMarkdown(config: SubAgentConfig): string {
   appendList(frontmatterLines, "tools", config.tools);
   appendList(frontmatterLines, "disallowedTools", config.disallowedTools);
   appendList(frontmatterLines, "skills", config.skills);
+  if (config.includeInSwarm !== undefined) {
+    frontmatterLines.push(`includeInSwarm: ${config.includeInSwarm ? "true" : "false"}`);
+  }
   appendScalar(frontmatterLines, "permissionMode", config.permissionMode);
   if (config.maxTurns !== undefined) {
     frontmatterLines.push(`maxTurns: ${config.maxTurns}`);

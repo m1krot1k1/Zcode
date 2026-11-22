@@ -12,6 +12,7 @@ import {
 } from "./command-center.js";
 import { loadCliDotenv } from "./env.js";
 import { createCliHeadlessBrowserRuntime } from "./headless-browser.js";
+import { runEnhanceCommand } from "./enhance-command.js";
 import {
   createHeadlessPermissionBroker,
   createHeadlessSessionObserver,
@@ -486,7 +487,13 @@ async function routesToPromptCommandCenter(
   deps: RunDependencies,
 ): Promise<boolean> {
   if (slashCommand.type === "known") {
-    return slashCommand.name === "expert" || slashCommand.name === "goal";
+    // `/enhance` возвращает улучшенный текст и не должен уходить модели как обычный prompt:
+    // иначе изменённое намерение исполнилось бы без подтверждения.
+    return (
+      slashCommand.name === "expert" ||
+      slashCommand.name === "goal" ||
+      slashCommand.name === "enhance"
+    );
   }
   return !(await isResolvableCustomCommand(deps, slashCommand.rawName));
 }
@@ -535,6 +542,14 @@ async function runPromptCommandCenterCommand(
   const commandCenter = createCommandCenter({
     getApp: async () => app as unknown as CommandCenterApp,
     getMode: () => app.getMode?.() ?? mode ?? "build",
+    workspacePath: (deps.cwd ?? process.cwd)(),
+    enhancePrompt: async (draftText, enhanceOptions) =>
+      await runEnhanceCommand(draftText, {
+        runtime: app.runtime,
+        workspacePath: (deps.cwd ?? process.cwd)(),
+        sessionId: String(app.sessionId),
+        ...(enhanceOptions?.abortSignal ? { abortSignal: enhanceOptions.abortSignal } : {}),
+      }),
     listCustomCommands: () => listCustomCommandsForPrompt(deps),
     loadCustomCommand: (name) => loadCustomCommandForPrompt(deps, name),
     recordInputHistory: async (input, kind) => {

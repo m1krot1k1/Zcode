@@ -1,5 +1,9 @@
 const SORTED_PROVIDER_TOOL_NAMES = new Set([
   "Agent",
+  // ApplyPatch/MultiEdit — универсальные файловые инструменты, доступные всем моделям
+  // (снятие модельного гейта F-03); держим их в отсортированном стабильном префиксе,
+  // чтобы промпт-кэш не инвалидировался от порядка регистрации.
+  "ApplyPatch",
   "AskUserQuestion",
   "Bash",
   "CronCreate",
@@ -14,7 +18,9 @@ const SORTED_PROVIDER_TOOL_NAMES = new Set([
   "Glob",
   "Grep",
   "LSP",
+  "MultiEdit",
   "NotebookEdit",
+  "PtySession",
   "Read",
   "ScheduleWakeup",
   "Skill",

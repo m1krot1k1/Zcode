@@ -871,6 +871,35 @@ describe("ProviderConfigService", () => {
     ).rejects.toThrow();
   });
 
+  it("拒绝从 deprecated compatibility Template 新建 Provider", async () => {
+    const legacyTemplate = new ProviderTemplate({
+      templateId: "opencode-zen-chat",
+      templateNameMap: { "en-US": "OpenCode Zen (Chat)" },
+      deprecated: true,
+      config: createApiKeyProviderConfig({
+        label: "OpenCode Zen (Chat)",
+        apiFormat: "openai-chat-completions",
+        baseURL: "https://opencode.ai/zen/v1",
+        models: ["deepseek-v4-pro"],
+      }),
+    });
+    const zcodeBuiltin = new MutableSource({
+      ...layerSnapshot("zcodeBuiltin-1"),
+      providerTemplates: new ProviderTemplateMap([[legacyTemplate.templateId, legacyTemplate]]),
+    });
+    const personal = new MemoryPersonalRepository(layerSnapshot("personal-1"));
+    const service = new ProviderConfigService({
+      zcodeBuiltinSource: zcodeBuiltin,
+      personalRepository: personal,
+    });
+
+    await expect(
+      service.createPersonalProvider({ templateId: "opencode-zen-chat" }),
+    ).rejects.toThrow("Provider Template 已弃用");
+    expect(personal.current.providers.keys()).toEqual([]);
+    service.dispose();
+  });
+
   it("写入 Provider 顺序使用未排序 Built-in、请求顺序、未排序 Personal 三段语义", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(

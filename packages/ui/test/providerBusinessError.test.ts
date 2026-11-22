@@ -8,10 +8,24 @@ import {
   resolveStartPlanConcurrentLimitBannerReason,
   resolveStartPlanQuotaExhaustedBusinessCode,
   shouldRefreshQuotaOnProviderBusinessRetry,
+  isSuspiciousEmptyModelResultMessage,
   START_PLAN_BUSY_AUTO_RETRY_EXHAUSTED_MESSAGE,
 } from "@/lib/providerBusinessError.js";
 
 describe("providerBusinessError", () => {
+  it("recognizes the updated visible-empty-response error and the previous wording", () => {
+    expect(
+      isSuspiciousEmptyModelResultMessage(
+        "Model completed without returning visible text or tool calls.",
+      ),
+    ).toBe(true);
+    expect(
+      isSuspiciousEmptyModelResultMessage(
+        "Model returned no text, no tool calls, and no usage before completing the turn.",
+      ),
+    ).toBe(true);
+  });
+
   it("refreshes quota snapshot before retrying upstream failures", () => {
     expect(shouldRefreshQuotaOnProviderBusinessRetry("2007")).toBe(true);
     expect(shouldRefreshQuotaOnProviderBusinessRetry("1005")).toBe(true);
@@ -30,26 +44,16 @@ describe("providerBusinessError", () => {
 
   it("recognizes provider business codes for localized banners", () => {
     expect(isProviderBusinessErrorCode("3007")).toBe(true);
-    expect(getProviderBusinessErrorMessageId("1005")).toBe(
-      "zcode.error.providerBusiness.1005",
-    );
+    expect(getProviderBusinessErrorMessageId("1005")).toBe("zcode.error.providerBusiness.1005");
     expect(isProviderBusinessErrorCode("3010")).toBe(true);
-    expect(getProviderBusinessErrorMessageId("3010")).toBe(
-      "zcode.error.providerBusiness.3010",
-    );
+    expect(getProviderBusinessErrorMessageId("3010")).toBe("zcode.error.providerBusiness.3010");
     expect(isProviderBusinessErrorCode("invalid_model_request")).toBe(false);
   });
 
   it("3010 shares the Start Plan concurrent upgrade banner path", () => {
-    expect(resolveStartPlanConcurrentLimitBusinessCode("3008", "concurrent limit")).toBe(
-      "3008",
-    );
-    expect(resolveStartPlanConcurrentLimitBusinessCode("3009", "concurrent limit")).toBe(
-      "3009",
-    );
-    expect(resolveStartPlanConcurrentLimitBusinessCode("3010", "concurrent limit")).toBe(
-      "3010",
-    );
+    expect(resolveStartPlanConcurrentLimitBusinessCode("3008", "concurrent limit")).toBe("3008");
+    expect(resolveStartPlanConcurrentLimitBusinessCode("3009", "concurrent limit")).toBe("3009");
+    expect(resolveStartPlanConcurrentLimitBusinessCode("3010", "concurrent limit")).toBe("3010");
     expect(
       resolveStartPlanConcurrentLimitBusinessCode(
         "unknown_error",
@@ -62,13 +66,9 @@ describe("providerBusinessError", () => {
   });
 
   it("区分 Start Plan 首轮繁忙和自动重试耗尽文案", () => {
-    expect(resolveStartPlanConcurrentLimitBannerReason("普通并发上限")).toBe(
-      "initial-busy",
-    );
+    expect(resolveStartPlanConcurrentLimitBannerReason("普通并发上限")).toBe("initial-busy");
     expect(
-      resolveStartPlanConcurrentLimitBannerReason(
-        START_PLAN_BUSY_AUTO_RETRY_EXHAUSTED_MESSAGE,
-      ),
+      resolveStartPlanConcurrentLimitBannerReason(START_PLAN_BUSY_AUTO_RETRY_EXHAUSTED_MESSAGE),
     ).toBe("retry-exhausted-busy");
   });
 
@@ -77,12 +77,12 @@ describe("providerBusinessError", () => {
     expect(
       resolveStartPlanQuotaExhaustedBusinessCode("PROVIDER_BUSINESS_ERROR", "exceed limit"),
     ).toBe("1005");
-    expect(
-      resolveStartPlanQuotaExhaustedBusinessCode("unknown_error", "exceed quota limit"),
-    ).toBe("1005");
-    expect(
-      resolveStartPlanQuotaExhaustedBusinessCode("unknown_error", "quota exceeded"),
-    ).toBe("1005");
+    expect(resolveStartPlanQuotaExhaustedBusinessCode("unknown_error", "exceed quota limit")).toBe(
+      "1005",
+    );
+    expect(resolveStartPlanQuotaExhaustedBusinessCode("unknown_error", "quota exceeded")).toBe(
+      "1005",
+    );
     expect(resolveStartPlanQuotaExhaustedBusinessCode("SEND_FAILED", "exceed limit")).toBe("1005");
     expect(resolveStartPlanQuotaExhaustedBusinessCode("unknown_error", "exceed limit")).toBe(
       "1005",

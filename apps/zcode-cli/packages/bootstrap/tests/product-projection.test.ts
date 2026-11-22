@@ -131,6 +131,186 @@ function inputTextAppends(deltas: readonly ConversationDelta[]): string[] {
 // ── A 组：基础 turn 生命周期 ──
 
 describe("ProductProjection 黄金测试（L1）", () => {
+  it("projects the core-owned swarm lifecycle into one row with actual child session IDs", () => {
+    const log = new EventLog();
+    const projection = new ProductProjection("session-1", "epoch-1");
+    const planning = log.push(SessionEventType.SwarmRunUpdated, {
+      swarmRunId: "swarm_turn-1",
+      status: "planning",
+    });
+    expect(projection.applyEvent(planning).find((delta) => delta.op.startsWith("row."))).toMatchObject({
+      op: "row.appended",
+      row: { kind: "swarmRun", swarmRunId: "swarm_turn-1", status: "planning" },
+    });
+
+    const completed = log.push(SessionEventType.SwarmRunUpdated, {
+      swarmRunId: "swarm_turn-1",
+      status: "completed",
+      taskCount: 2,
+      childSessionIds: ["child-a", "child-b", "child-a"],
+      childAgentTypes: {
+        "child-a": "researcher",
+        "child-b": "implementer",
+        rogue: "security-reviewer",
+      },
+      summary: "Задач: 2. Дочерних сессий: 2.",
+        outcomeAcceptance: "verified",
+    });
+    expect(projection.applyEvent(completed).find((delta) => delta.op.startsWith("row."))).toMatchObject({
+      op: "row.upserted",
+    });
+    expect(projection.getSnapshot().rows.window.filter((row) => row.kind === "swarmRun")).toMatchObject([
+      {
+        kind: "swarmRun",
+        swarmRunId: "swarm_turn-1",
+        status: "completed",
+        outcomeAcceptance: "verified",
+        taskCount: 2,
+        childSessionIds: ["child-a", "child-b"],
+        childAgentTypes: { "child-a": "researcher", "child-b": "implementer" },
+      },
+    ]);
+  });
+
+  it("projects legacy terminal swarm events as unknown instead of inferring success", () => {
+    const log = new EventLog();
+    const projection = new ProductProjection("session-1", "epoch-1");
+    const completed = log.push(SessionEventType.SwarmRunUpdated, {
+      swarmRunId: "swarm-legacy",
+      status: "completed",
+    });
+
+    projection.applyEvent(completed);
+
+    expect(projection.getSnapshot().rows.window).toMatchObject([
+      { kind: "swarmRun", swarmRunId: "swarm-legacy", status: "completed", outcomeAcceptance: "unknown" },
+    ]);
+  });
+
+  it("OpenCode ACP 更新保持外部 agent 身份并原位更新摘要", () => {
+    const log = new EventLog();
+    const first = log.push(SessionEventType.OpenCodeAgentRunUpdated, {
+      runId: "run-oc-1",
+      commandId: "run-oc-1",
+      modelId: "opencode/deepseek-v4.1-flash-free",
+      promptText: "检查这个仓库",
+      outputText: "正在分析",
+      tools: [{ toolCallId: "tool-1", title: "Read src/main.ts", status: "running" }],
+      status: "running",
+      startedAt: 100,
+    });
+    const projection = new ProductProjection("session-1", "epoch-1");
+    expect(projection.applyEvent(first).find((delta) => delta.op.startsWith("row."))).toMatchObject({
+      op: "row.appended",
+    });
+    expect(projection.getSnapshot().control).toMatchObject({
+      canStop: true,
+      stopState: "stoppable",
+      stopTargetKind: "externalAgentRun",
+      activeWorks: [
+        {
+          kind: "externalAgentRun",
+          commandId: "run-oc-1",
+          runId: "run-oc-1",
+        },
+      ],
+    });
+    const updated = log.push(SessionEventType.OpenCodeAgentRunUpdated, {
+      runId: "run-oc-1",
+      commandId: "run-oc-1",
+      modelId: "opencode/deepseek-v4.1-flash-free",
+      promptText: "Проверь этот репозиторий",
+      outputText: "Проверка завершена",
+      tools: [{ toolCallId: "tool-1", title: "Read src/main.ts", status: "completed" }],
+      status: "completed",
+      startedAt: 100,
+      endedAt: 200,
+    });
+    expect(
+      projection.applyEvent(updated).find((delta) => delta.op.startsWith("row.")),
+    ).toMatchObject({ op: "row.upserted" });
+    const rows = projection.getSnapshot().rows.window;
+    expect(rows.filter((row) => row.kind === "externalAgentRun")).toMatchObject([
+      {
+        runId: "run-oc-1",
+        provider: "opencode-cli",
+        status: "completed",
+        promptText: "Проверь этот репозиторий",
+        output: { text: "Проверка завершена" },
+      },
+    ]);
+    expect(rows.some((row) => row.kind === "assistantText" || row.kind === "toolCall")).toBe(false);
+    expect(projection.getSnapshot().control).toMatchObject({
+      canStop: false,
+      stopState: "idle",
+      stopTargetKind: "unknown",
+      activeWorks: [],
+    });
+  });
+
+  it("live-only OpenCode permission requests appear inline, accept only exact options, and clear", () => {
+    const log = new EventLog();
+    const projection = new ProductProjection("session-1", "epoch-1");
+    projection.applyEvent(
+      log.push(SessionEventType.OpenCodeAgentRunUpdated, {
+        runId: "run-oc-1",
+        commandId: "run-oc-1",
+        promptText: "inspect",
+        outputText: "",
+        tools: [],
+        status: "running",
+      }),
+    );
+    projection.applyEvent(
+      log.push(SessionEventType.OpenCodeAgentPermissionUpdated, {
+        runId: "run-oc-1",
+        commandId: "run-oc-1",
+        opencodeSessionId: "acp-1",
+        requestId: "permission-1",
+        state: "requested",
+        request: {
+          title: "Run command",
+          inputSummary: "pnpm lint",
+          options: [
+            { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+            { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+          ],
+        },
+      }),
+    );
+    expect(projection.getSnapshot().rows.window).toMatchObject([
+      {
+        kind: "externalAgentRun",
+        runId: "run-oc-1",
+        pendingPermissions: [
+          {
+            requestId: "permission-1",
+            opencodeSessionId: "acp-1",
+            title: "Run command",
+            options: [
+              { optionId: "allow-once", name: "Allow once" },
+              { optionId: "reject-once", name: "Reject" },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    projection.applyEvent(
+      log.push(SessionEventType.OpenCodeAgentPermissionUpdated, {
+        runId: "run-oc-1",
+        commandId: "run-oc-1",
+        opencodeSessionId: "acp-1",
+        requestId: "permission-1",
+        state: "resolved",
+        cancelled: false,
+      }),
+    );
+    expect(
+      projection.getSnapshot().rows.window.find((row) => row.kind === "externalAgentRun"),
+    ).toMatchObject({ pendingPermissions: [] });
+  });
+
   it("Highspeed 单 Turn output tokens 由权威投影累计且不受快照观察时机影响", () => {
     const log = new EventLog();
     log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 });
@@ -2914,6 +3094,12 @@ describe("ProductProjection 黄金测试（L1）", () => {
         childSessionId: "sess_child_1",
         status: "completed",
         summaryText: "项目结构已经梳理完成",
+        totalTokens: 1200,
+        inputTokens: 900,
+        outputTokens: 300,
+        cacheReadTokens: 800,
+        cacheWriteTokens: 0,
+        reasoningTokens: 100,
       },
       { turnId },
     );
@@ -2926,6 +3112,12 @@ describe("ProductProjection 黄金测试（L1）", () => {
       status: "success",
       subagentType: "Explore",
       summaryText: "项目结构已经梳理完成",
+      totalTokens: 1200,
+      inputTokens: 900,
+      outputTokens: 300,
+      cacheReadTokens: 800,
+      cacheWriteTokens: 0,
+      reasoningTokens: 100,
     });
     expect(projection.getSnapshot().subagents).toMatchObject({
       childSessionIds: ["sess_child_1"],
@@ -3666,6 +3858,65 @@ describe("ProductProjection 黄金测试（L1）", () => {
     const { projection } = runAll(log.events);
     expect(projection.getSnapshot().control.lastError).toBeNull();
     expect(projection.getSnapshot().control.phase).toBe("running");
+  });
+
+  // MAXTURN-07：error_max_turns 是受限结果而非成功。投影必须在 control.lastError 写入
+  // 稳定 code，否则 ChatErrorBanner 永远走不到 ERROR_MAX_TURNS 本地化分支
+  //（composerError 只从 lastError 构建）。
+  it("MAXTURN-07: TurnComplete(error_max_turns) проецирует failed-заголовок и lastError с кодом", () => {
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+    log.push(
+      SessionEventType.TurnStarted,
+      { turnNumber: 1, input: "работай" },
+      { turnId: "turn-1" },
+    );
+    log.push(
+      SessionEventType.TurnComplete,
+      {
+        response: "сохранённый текст",
+        tokenCount: 0,
+        toolCallCount: 0,
+        duration: 12,
+        resultType: "error_max_turns",
+      },
+      { turnId: "turn-1" },
+    );
+
+    const { projection } = runAll(log.events);
+    const snapshot = projection.getSnapshot();
+    expect(snapshot.control.phase).toBe("error");
+    expect(snapshot.rows.window.find((row) => row.kind === "turnHeader")).toMatchObject({
+      state: "failed",
+    });
+    expect(snapshot.control.lastError).toMatchObject({
+      code: "error_max_turns",
+      recoverable: true,
+      source: "runtime",
+    });
+    expect(() => conversationSnapshotSchema.parse(snapshot)).not.toThrow();
+    // lastError — transient: следующий принятый turn сбрасывает его, как и TurnError.
+    log.push(
+      SessionEventType.TurnStarted,
+      { turnNumber: 2, input: "continue" },
+      { turnId: "turn-2" },
+    );
+    const next = runAll(log.events).projection.getSnapshot();
+    expect(next.control.phase).toBe("running");
+    expect(next.control.lastError).toBeNull();
+  });
+
+  // Обычный success/cancelled не создаёт lastError: фикс не должен менять их семантику.
+  it("MAXTURN-07: обычный success не выставляет lastError", () => {
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "hi" }, { turnId: "turn-1" });
+    log.push(
+      SessionEventType.TurnComplete,
+      { response: "done", tokenCount: 0, toolCallCount: 0, duration: 5, resultType: "success" },
+      { turnId: "turn-1" },
+    );
+    expect(runAll(log.events).projection.getSnapshot().control.lastError).toBeNull();
   });
 
   it("K10：retry 目标只允许全时间线最后一条 assistantText row", () => {
@@ -5947,7 +6198,7 @@ describe("fork / modelChange marker", () => {
     ).toHaveLength(1);
   });
 
-  it("modelChange：仅思考深度变化不产 marker", () => {
+  it("modelChange：仅思考深度变化產出 level marker", () => {
     const log = new EventLog();
     log.push(SessionEventType.ModelSelected, {
       modelSelection: { providerId: "default-deepseek", modelId: "deepseek-v4-flash" },
@@ -5977,13 +6228,23 @@ describe("fork / modelChange marker", () => {
       model: "deepseek-v4-flash",
       thought: "max",
     });
-    expect(
-      projection
-        .getSnapshot()
-        .rows.window.filter(
-          (row) => row.kind === "timelineMarker" && row.marker.type === "modelChange",
-        ),
-    ).toHaveLength(0);
+    const markers = projection
+      .getSnapshot()
+      .rows.window.filter(
+        (row) => row.kind === "timelineMarker" && row.marker.type === "modelChange",
+      );
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      marker: {
+        type: "modelChange",
+        fromProvider: "default-deepseek",
+        fromModel: "deepseek-v4-flash",
+        fromThought: "",
+        toProvider: "default-deepseek",
+        toModel: "deepseek-v4-flash",
+        toThought: "max",
+      },
+    });
   });
 
   // ── M4：rowId → messageId 侧表（forkAssistant/editUserQuery 桥接翻译，13 §E 组前置）──
@@ -6207,7 +6468,12 @@ describe("fork / modelChange marker", () => {
     const log = new EventLog();
     log.push(
       SessionEventType.TurnStarted,
-      { turnNumber: 1, input: "query", messageId: "message-user-1" },
+      {
+        turnNumber: 1,
+        input: "query",
+        messageId: "message-user-1",
+        intent: { orchestrationMode: "swarm" },
+      },
       { turnId: "turn-1" },
     );
     log.push(
@@ -6254,7 +6520,10 @@ describe("fork / modelChange marker", () => {
     expect(projection.resolveRowActionTarget(target, "editUserQuery")).toMatchObject({
       ok: true,
       action: "editUserQuery",
-      editTarget: { transcriptMessageId: "message-user-1" },
+      editTarget: {
+        transcriptMessageId: "message-user-1",
+        intent: { orchestrationMode: "swarm" },
+      },
     });
     expect(
       projection.resolveRowActionTarget(

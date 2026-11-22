@@ -492,8 +492,10 @@ describe("buildConversationTurnRenderUnits", () => {
       expect(units[0]?.latestAssistantTextRow?.rowId).toBe(4);
       expect(units[0]?.assistantHistoryDefaultOpen).toBe(true);
       expect(units[0]?.workSegments?.[0]?.assistantHistoryDefaultOpen).toBe(true);
+      // docs/specs/max-turns-limit.md MAXTURN-07：failed/受限终态不得映射为 success，
+      // 轮次状态词必须单独成态，不能与正常完成的 completed 混用。
       expect(units[0]?.workSegments?.[0]?.workStatus?.state).toBe(
-        state === "completedInterrupted" ? "interrupted" : "completed",
+        state === "completedInterrupted" ? "interrupted" : "failed",
       );
     },
   );
@@ -511,6 +513,26 @@ describe("buildConversationTurnRenderUnits", () => {
     expect(units[0]?.latestAssistantTextRow?.rowId).toBe(3);
     expect(units[0]?.assistantHistoryDefaultOpen).toBe(true);
     expect(units[0]?.workSegments?.[0]?.assistantHistoryDefaultOpen).toBe(true);
+    // 冷恢复尾窗没有 turnHeader 时，session phase=error 同样必须得到 failed 状态，
+    // 否则手机远控恢复后会把失败轮显示成「已工作」。
+    expect(units[0]?.workSegments?.[0]?.workStatus?.state).toBe("failed");
+  });
+
+  it("keeps earlier guide segments completed when only the last segment failed", () => {
+    const units = buildConversationTurnRenderUnits([
+      turnHeader(1, { state: "failed" }),
+      userInput(2, "第一段"),
+      reasoning(3, "第一段完成"),
+      assistantText(4, "第一段结果"),
+      userInput(5, "第二段", { guided: true }),
+      reasoning(6, "第二段失败"),
+      assistantText(7, "第二段部分结果", { state: "failed" }),
+    ]);
+
+    const segments = units[0]?.workSegments ?? [];
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.workStatus?.state).toBe("completed");
+    expect(segments[1]?.workStatus?.state).toBe("failed");
   });
 
   it("keeps normally completed history collapsible when final assistant text exists", () => {

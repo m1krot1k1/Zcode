@@ -1,26 +1,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { getSourceServerStatusRegistry } from "@/store/sourceServerStatusRegistry.js";
-import type { AggregatedSourceStatus } from "@/lib/remoteConnectionPresentation.js";
-
-const emptyStatuses: ReadonlyMap<string, AggregatedSourceStatus> = new Map();
-const subscribeToNothing = () => () => undefined;
-const getEmptyStatuses = () => emptyStatuses;
-
-export function useSourceServerStatuses() {
-  const management = useBaseWorkspaceServices().sourceServerManagementService;
-  const registry = useMemo(
-    () => (management ? getSourceServerStatusRegistry(management) : null),
-    [management],
-  );
-  return useSyncExternalStore(
-    registry?.subscribe ?? subscribeToNothing,
-    registry?.getSnapshot ?? getEmptyStatuses,
-    registry?.getSnapshot ?? getEmptyStatuses,
-  );
-}
-
-const emptyInputs: ReadonlyMap<
+const subscribeToNothing = () => () => undefined;const emptyInputs: ReadonlyMap<
   string,
   import("@/lib/remoteConnectionPresentation.js").RemoteConnectionPresentationInput
 > = new Map();

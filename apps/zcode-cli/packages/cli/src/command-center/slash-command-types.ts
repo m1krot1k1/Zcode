@@ -13,6 +13,12 @@ export type SlashCommand =
     }
   | {
       args: string;
+      name: "enhance";
+      rawName: string;
+      type: "known";
+    }
+  | {
+      args: string;
       name: "expert";
       rawName: string;
       type: "known";

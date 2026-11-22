@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 图谱节点、关系筛选和详情面板需要共享同一套交互状态。 */
 import "@xyflow/react/dist/style.css";
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
 import {

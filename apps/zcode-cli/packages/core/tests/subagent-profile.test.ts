@@ -1,14 +1,78 @@
 import { describe, expect, it } from "vitest";
+import { buildSkillAgentProfile } from "@zcode/shared";
 import {
   createBuiltInExploreAgentProfile,
-  createBuiltInGeneralPurposeAgentProfile,
+  formatAgentProfileForPrompt,
   formatAgentProfilesForPrompt,
+  getSwarmAgentProfiles,
+  isModelSelectableAgentProfile,
+  SWARM_AGENT_TYPES,
   isBuiltInExploreAgentProfile,
   normalizeAgentProfiles,
   parseAgentProfileFromMarkdown,
+  REVIEW_SUBAGENT_TOOL_NAMES,
+  ROOT_ONLY_TOOL_NAMES,
+  WORKER_SUBAGENT_TOOL_NAMES,
+  decideDelegationRoute,
+  resolveSwarmParallelism,
+  filterAgentTypesForCaller,
+  isAgentTypeAllowedForCaller,
+  matchAgentTypeInCatalog,
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
+  it("keeps /start agent-only and routes plugin skills through the plugin capability path", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    const start = profiles.find((profile) => profile.name === "start");
+    const orchestrator = profiles.find((profile) => profile.name === "orchestrator");
+
+    expect(start?.systemPrompt).toContain("Одна ограниченная задача без независимых веток");
+    expect(orchestrator?.systemPrompt).toContain("InstallCapability");
+    expect(orchestrator?.systemPrompt).toContain("только для skills.sh");
+    expect(orchestrator?.systemPrompt).toContain("ручной fallback");
+  });
+
+  it("gives every working role a role-specific evidence contract", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    const working = profiles.filter((profile) => profile.name !== "start" && profile.name !== "orchestrator");
+    expect(working).toHaveLength(14);
+    for (const profile of working) {
+      expect(profile.systemPrompt, profile.name).toContain("Evidence:");
+      expect(profile.systemPrompt.length, profile.name).toBeLessThanOrEqual(7_500);
+    }
+  });
+
+  it("keeps role prompts within the slim budget", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    for (const profile of profiles) {
+      expect(profile.systemPrompt.length, profile.name).toBeLessThanOrEqual(7_500);
+    }
+    expect(profiles.find((profile) => profile.name === "start")?.systemPrompt.length).toBeLessThanOrEqual(
+      7_000,
+    );
+  });
+
+  it("routes deep tasks through the deep-task-contract skill and structured handoff", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    for (const name of ["start", "orchestrator"]) {
+      const profile = profiles.find((candidate) => candidate.name === name);
+      expect(profile?.skills, name).toContain("deep-task-contract");
+      expect(profile?.systemPrompt, name).toContain("evidenceRefs");
+      expect(profile?.systemPrompt, name).toContain("unknown");
+    }
+  });
+
+  it("built-in roles have bounded maxTurns by default", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    for (const name of SWARM_AGENT_TYPES) {
+      const profile = profiles.find((candidate) => candidate.name === name);
+      expect(profile?.maxTurns, name).toBeTypeOf("number");
+      expect(profile?.maxTurns ?? 0, name).toBeGreaterThan(0);
+    }
+    expect(profiles.find((profile) => profile.name === "researcher")?.maxTurns).toBe(40);
+    expect(profiles.find((profile) => profile.name === "reviewer")?.maxTurns).toBe(25);
+  });
+
   it.each(['{"providerId":"wrong","modelId":"wrong"}', "null", '{"modelId":"broken"}'])(
     "中间字段不参与正式 Markdown 读取：%s",
     (value) => {
@@ -92,6 +156,7 @@ permissionMode: acceptEdits
 maxTurns: "7"
 background: "true"
 injectAgentsMd: "false"
+includeInSwarm: true
 mcpServers:
   - local-tools
 ---
@@ -107,6 +172,7 @@ mcpServers:
       disallowedTools: ["Edit", "Write"],
       maxTurns: 7,
       injectAgentsMd: false,
+      includeInSwarm: true,
       modelSelection: {
         providerId: "custom-openai",
         modelId: "reviewer-model",
@@ -234,7 +300,7 @@ tools:
     expect(result.profile?.tools).toBeUndefined();
   });
 
-  it("formats available profiles for Agent tool descriptions with built-in default agents", () => {
+  it("formats only named built-in roles for model-facing Agent tool descriptions", () => {
     const prompt = formatAgentProfilesForPrompt([
       {
         name: "zcode-reviewer",
@@ -247,22 +313,291 @@ tools:
     ]);
 
     expect(prompt).toContain("Available agent types and the tools they have access to:");
-    expect(prompt).toContain("general-purpose");
-    expect(prompt).toContain("Explore");
+    expect(prompt).not.toContain("general-purpose");
+    expect(prompt).not.toContain("Explore");
+    for (const role of SWARM_AGENT_TYPES) expect(prompt).toContain(`- ${role}:`);
     expect(prompt).toContain("- zcode-reviewer: 检查实现边界。 (Tools: Read)");
+    expect(prompt).toContain("- reviewer:");
+    expect(prompt).toContain(
+      "(Tools: CodeIndex, Read, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, SkillSearch",
+    );
+    expect(prompt).toContain(
+      "(Tools: CodeIndex, Read, Glob, Grep, Write, Edit, ApplyPatch, MultiEdit, Bash",
+    );
     expect(prompt).not.toContain("tools: Read");
     expect(prompt).not.toContain("background: true");
     expect(prompt).not.toContain("model:");
   });
 
   it("assigns explicit identity colors to built-in agents", () => {
-    expect(createBuiltInGeneralPurposeAgentProfile().color).toBe("blue");
     expect(createBuiltInExploreAgentProfile().color).toBe("cyan");
   });
 
+  it("adds only opted-in custom profiles with bounded tools to the swarm roster", () => {
+    const marketplaceSkill = buildSkillAgentProfile({
+      name: "visual-audit",
+      description: "Checks visual quality against a UI design skill.",
+      whenToUse: "Use for focused visual interface audits.",
+    });
+    const profiles = normalizeAgentProfiles([
+      {
+        ...marketplaceSkill.config,
+        source: "project",
+      },
+      {
+        name: "custom-debugger",
+        description: "Debug a focused issue",
+        source: "project",
+        systemPrompt: "Inspect evidence, reproduce the issue, and report the root cause.",
+        tools: ["Read", "Grep", "Bash"],
+        skills: ["zcode-verification"],
+        includeInSwarm: true,
+      },
+      {
+        name: "unbounded-debugger",
+        description: "Inherits every tool",
+        source: "project",
+        systemPrompt: "Unbounded",
+        tools: ["*"],
+        includeInSwarm: true,
+      },
+      {
+        name: "same-name-debugger",
+        description: "No explicit tool contract",
+        source: "project",
+        systemPrompt: "Unbounded by omission",
+        includeInSwarm: true,
+      },
+      {
+        name: "not-enabled-debugger",
+        description: "Not enabled for Swarm",
+        source: "project",
+        systemPrompt: "Regular profile only",
+        tools: ["Read"],
+      },
+      {
+        name: "REVIEWER",
+        description: "Cannot shadow a built-in role",
+        source: "project",
+        systemPrompt: "Shadow attempt",
+        tools: ["Read"],
+        includeInSwarm: true,
+      },
+    ]);
+
+    const swarmProfiles = getSwarmAgentProfiles(profiles);
+
+    const skillAgent = swarmProfiles.find(({ name }) => name === "visual-audit");
+    expect(skillAgent).toMatchObject({
+      description: expect.stringContaining("visual interface audits"),
+      skills: ["visual-audit"],
+      includeInSwarm: true,
+    });
+    expect(skillAgent?.systemPrompt).toContain("Если загрузка не удалась");
+    expect(skillAgent?.systemPrompt).toContain("сразу остановись со status=blocked");
+    expect(skillAgent?.systemPrompt).toContain("не продолжай без специализации");
+    expect(filterAgentTypesForCaller(swarmProfiles, "orchestrator").map(({ name }) => name)).toContain(
+      "visual-audit",
+    );
+    expect(filterAgentTypesForCaller(swarmProfiles, "visual-audit").map(({ name }) => name)).toContain(
+      "custom-debugger",
+    );
+    expect(isAgentTypeAllowedForCaller("custom-debugger", "visual-audit")).toBe(true);
+    expect(swarmProfiles.map(({ name }) => name)).toContain("custom-debugger");
+    expect(swarmProfiles.map(({ name }) => name)).not.toContain("unbounded-debugger");
+    expect(swarmProfiles.map(({ name }) => name)).not.toContain("same-name-debugger");
+    expect(swarmProfiles.map(({ name }) => name)).not.toContain("not-enabled-debugger");
+    expect(swarmProfiles.filter(({ name }) => name.toLowerCase() === "reviewer")).toHaveLength(1);
+    expect(swarmProfiles.find(({ name }) => name === "custom-debugger")).toMatchObject({
+      tools: ["Read", "Grep", "Bash"],
+      skills: ["zcode-verification"],
+      includeInSwarm: true,
+    });
+  });
+
+  it("limits delegation to ZCode roles and rejects generic profile IDs", () => {
+    const profiles = normalizeAgentProfiles([]);
+    const swarmProfiles = getSwarmAgentProfiles(profiles);
+
+    expect(swarmProfiles.map(({ name }) => name)).toEqual(SWARM_AGENT_TYPES);
+    const customProfiles = [
+      { ...createBuiltInExploreAgentProfile(), source: "user" as const },
+      {
+        name: "research-helper",
+        description: "Workspace research role",
+        source: "project" as const,
+        systemPrompt: "Research role prompt",
+        tools: ["Read"],
+      },
+      {
+        name: "general",
+        description: "Generic workspace role",
+        source: "project" as const,
+        systemPrompt: "Must not enter the ZCode roster",
+        tools: ["Read"],
+      },
+      {
+        name: "general-purpose",
+        description: "Legacy generic role",
+        source: "project" as const,
+        systemPrompt: "Must not enter the ZCode roster",
+        tools: ["Read"],
+      },
+      {
+        name: "reviewer",
+        description: "Workspace attempt to shadow the canonical role",
+        source: "project" as const,
+        systemPrompt: "Untrusted replacement prompt",
+        tools: ["Read"],
+      },
+    ];
+    const mergedProfiles = normalizeAgentProfiles(customProfiles);
+    const swarmWithCustomProfiles = getSwarmAgentProfiles(mergedProfiles);
+    expect(swarmWithCustomProfiles.map(({ name }) => name)).toEqual(SWARM_AGENT_TYPES);
+    expect(swarmWithCustomProfiles.find(({ name }) => name === "reviewer")).toMatchObject({
+      source: "built-in",
+      description: expect.not.stringContaining("Workspace attempt"),
+      tools: expect.arrayContaining(["Read", "Glob", "Grep", "Bash"]),
+    });
+    expect(swarmWithCustomProfiles.find(({ name }) => name === "reviewer")?.tools).toContain(
+      "Task",
+    );
+    const normalAgentPrompt = formatAgentProfilesForPrompt(mergedProfiles) ?? "";
+    expect(normalAgentPrompt).toContain("- research-helper: Workspace research role");
+    expect(normalAgentPrompt).not.toContain("general-purpose");
+    expect(normalAgentPrompt).not.toContain("- general:");
+    // built-in владеет своим именем: custom reviewer не подменяет системную роль.
+    expect(normalAgentPrompt).not.toContain("Workspace attempt to shadow the canonical role");
+    expect(normalAgentPrompt).toContain(
+      "- reviewer: Независимо ищет ошибки, пропущенные случаи и нарушения спецификации; не меняет код.",
+    );
+    const forgedBuiltInReviewer = {
+      name: "reviewer",
+      description: "Forged built-in profile",
+      source: "built-in" as const,
+      systemPrompt: "Forged system prompt",
+      tools: ["Read", "Task", "Write"],
+    };
+    expect(
+      getSwarmAgentProfiles([...mergedProfiles, forgedBuiltInReviewer]).find(
+        ({ name }) => name === "reviewer",
+      ),
+    ).toEqual(swarmProfiles.find(({ name }) => name === "reviewer"));
+    expect(swarmProfiles.every((profile) => profile.injectAgentsMd)).toBe(true);
+    const reviewOnlyRoles = new Set(["reviewer", "security-reviewer"]);
+    const leafRoles = new Set(["researcher"]);
+    expect(
+      swarmProfiles
+        .filter((profile) => !reviewOnlyRoles.has(profile.name) && !leafRoles.has(profile.name))
+        .every((profile) => profile.tools?.includes("Task")),
+    ).toBe(true);
+    for (const name of leafRoles) {
+      const tools = swarmProfiles.find((profile) => profile.name === name)?.tools ?? [];
+      expect(tools, name).not.toContain("Task");
+    }
+    for (const name of reviewOnlyRoles) {
+      const tools = swarmProfiles.find((profile) => profile.name === name)?.tools ?? [];
+      expect(tools, name).toContain("Task");
+      expect(tools, name).not.toContain("Write");
+      expect(tools, name).not.toContain("Edit");
+      expect(tools, name).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "Bash"]));
+    }
+    expect(swarmProfiles.every((profile) => profile.systemPrompt.includes("下一负责人"))).toBe(
+      true,
+    );
+    const startPrompt = swarmProfiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
+    expect(startPrompt).toContain("пользователем разрешение");
+    expect(startPrompt).toContain("не обещай возобновление после перезапуска");
+    const implementerPrompt =
+      swarmProfiles.find(({ name }) => name === "implementer")?.systemPrompt ?? "";
+    // Контракт изменился: сначала используется уже готовая подсказка, status/search — только без неё.
+    expect(implementerPrompt).toContain("Если в контексте уже есть `code-index hint`");
+    expect(implementerPrompt).toContain("сначала вызови CodeIndex status");
+    expect(implementerPrompt).toContain("Не дублируй индекс широким Explore/Grep обходом");
+    expect(implementerPrompt).toContain("offset = startLine");
+    const orchestratorPrompt =
+      swarmProfiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
+    expect(orchestratorPrompt).toContain(
+      "не создавай пересекающиеся ветки",
+    );    expect(orchestratorPrompt).toContain("После join сопоставь запрос");
+    expect(orchestratorPrompt).toContain("не предоставляет");
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "zcode-systematic-debugging",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "zcode-test-driven-development",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "test-engineer")?.skills).toContain(
+      "zcode-test-driven-development",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("task-planning");
+    expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain("research");
+    expect(swarmProfiles.find(({ name }) => name === "start")?.skills).toContain(
+      "doc-coauthoring",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "orchestrator")?.skills).toContain(
+      "codebase-design",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "image-to-code",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "doc-coauthoring",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "researcher")?.skills).toContain(
+      "domain-modeling",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "merge-conflict-resolution",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "mcp-authoring",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "test-engineer")?.skills).toContain(
+      "performance-tuning",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "orchestrator")?.skills).toContain("handoff");
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("ui-craft");
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain(
+      "image-to-code",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "implementer")?.skills).toContain(
+      "execution-patterns",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain(
+      "zcode-verification",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "reviewer")?.skills).toContain("reviewer");
+    const reviewerPrompt =
+      swarmProfiles.find(({ name }) => name === "reviewer")?.systemPrompt ?? "";
+    expect(reviewerPrompt).toContain("researcher-подагентов в пределах доступных runtime-слотов");
+    expect(reviewerPrompt).not.toContain("25 минут");
+    expect(reviewerPrompt).not.toContain("45 минут");
+    expect(swarmProfiles.find(({ name }) => name === "evaluator")?.skills).toContain(
+      "completion-gate",
+    );
+    expect(swarmProfiles.find(({ name }) => name === "self-improver")?.skills).toContain(
+      "self-improvement",
+    );
+    for (const profile of swarmProfiles.filter(({ tools }) => tools.includes("Task"))) {
+      expect(profile.skills).toContain("zcode-swarm");
+    }
+  });
+
+  it("restricts router roles to Task and plan todos so they cannot read or explore the repository", () => {
+    const swarmProfiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+    for (const name of ["start", "orchestrator"] as const) {
+      const profile = swarmProfiles.find((candidate) => candidate.name === name);
+      expect(profile?.tools, name).toEqual(["Task", "TodoRead", "TodoWrite"]);
+      const prompt = profile?.systemPrompt ?? "";
+      expect(prompt, name).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
+      expect(prompt, name).toContain("не исследу");
+      expect(prompt, name).not.toContain("Read-only триаж");
+    }
+  });
+
   it("uses explicit AGENTS.md injection defaults for built-in agents", () => {
-    expect(createBuiltInGeneralPurposeAgentProfile().injectAgentsMd).toBe(true);
-    expect(createBuiltInExploreAgentProfile().injectAgentsMd).toBe(false);
+    expect(createBuiltInExploreAgentProfile().injectAgentsMd).toBe(true);
   });
 
   it("parses explicit AGENTS.md injection while leaving missing custom values unset", () => {
@@ -341,7 +676,7 @@ Review carefully.`,
     expect(prompt).toContain(
       "- Explore: Custom mutable explorer (Tools: Write, mcp__local-tools__query)",
     );
-    expect(prompt).not.toContain("Tools: Read, Bash, WebFetch, WebSearch, TodoWrite");
+    expect(prompt).not.toContain("Tools: CodeIndex, Read, Bash, WebFetch, WebSearch, TodoWrite");
   });
 
   it("leaves built-in Explore on inherited model by default", () => {
@@ -369,20 +704,11 @@ Review carefully.`,
             modelId: "glm-5.2",
             options: { reasoningLevel: "max" },
           },
-          "general-purpose": {
-            providerId: "custom-openai",
-            modelId: "gpt-5.4",
-            options: { reasoningLevel: "high" },
-          },
         },
       },
     );
 
-    expect(profiles.find((profile) => profile.name === "general-purpose")?.modelSelection).toEqual({
-      providerId: "custom-openai",
-      modelId: "gpt-5.4",
-      options: { reasoningLevel: "high" },
-    });
+    expect(profiles.some((profile) => profile.name === "general-purpose")).toBe(false);
     expect(profiles.find((profile) => profile.name === "Explore")?.modelSelection).toEqual({
       providerId: "custom-openai",
       modelId: "glm-5.2",
@@ -394,14 +720,831 @@ Review carefully.`,
     });
   });
 
-  it("formats built-in Explore tools for the embedded search branch", () => {
+  it("applies router model overrides to start/orchestrator only", () => {
+    const routerSelection = { providerId: "custom-openai", modelId: "cheap-router" };
+    const profiles = normalizeAgentProfiles([], {
+      builtInModelSelectionOverrides: { start: routerSelection },
+    });
+
+    expect(profiles.find((profile) => profile.name === "start")?.modelSelection).toEqual(
+      routerSelection,
+    );
+    // Без override orchestrator продолжает наследовать модель сессии (undefined).
+    expect(
+      profiles.find((profile) => profile.name === "orchestrator")?.modelSelection,
+    ).toBeUndefined();
+    // Worker-роли не получают router-override.
+    expect(profiles.find((profile) => profile.name === "coder")?.modelSelection).toBeUndefined();
+  });
+
+  it("keeps built-in Explore internal while retaining its formatter for compatibility", () => {
     const prompt = formatAgentProfilesForPrompt([], {
       embeddedSearchEnabled: true,
     });
 
+    expect(prompt).not.toContain("Explore");
+    const compatibilityLine = formatAgentProfileForPrompt(createBuiltInExploreAgentProfile(), {
+      embeddedSearchEnabled: true,
+    });
+    expect(compatibilityLine).toContain("Tools: CodeIndex, Read, Bash, WebFetch, WebSearch, TodoWrite");
+    expect(compatibilityLine).not.toContain("Glob");
+    expect(compatibilityLine).not.toContain("Grep");
+  });
+
+  it("hides generic compatibility IDs from model-visible agent choices", () => {
+    expect(isModelSelectableAgentProfile({ name: "general-purpose", source: "built-in" })).toBe(
+      false,
+    );
+    expect(isModelSelectableAgentProfile({ name: "general", source: "project" })).toBe(false);
+    expect(isModelSelectableAgentProfile({ name: "Explore", source: "built-in" })).toBe(false);
+    expect(isModelSelectableAgentProfile({ name: "research-helper", source: "project" })).toBe(true);
+    expect(isModelSelectableAgentProfile({ name: "Explore", source: "user" })).toBe(true);
+  });
+
+  describe("built-in start gateway contract", () => {
+    // 回归依据：start 是无仓库访问能力的路由器；这里只锁定实际工具清单、独立任务边界和禁止自我复用。
+    const startProfile = () =>
+      getSwarmAgentProfiles(normalizeAgentProfiles([])).find(({ name }) => name === "start");
+    const startPrompt = () => startProfile()?.systemPrompt ?? "";
+
+    it("does not advertise root-only tools as subagent capabilities", () => {
+      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+
+      for (const profile of profiles) {
+        for (const tool of ROOT_ONLY_TOOL_NAMES) {
+          expect(profile.tools, `${profile.name}: ${tool}`).not.toContain(tool);
+        }
+      }
+    });
+
+    it("does not list tools that have no child runtime handler", () => {
+      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+
+      for (const profile of profiles) {
+        expect(profile.tools).not.toContain("NotebookEdit");
+        expect(profile.tools).not.toContain("LSP");
+      }
+    });
+
+    it("filters the model-visible catalog to the actual provider-visible tools", () => {
+      const prompt = formatAgentProfilesForPrompt([], {
+        availableToolNames: ["Read", "Glob", "Grep", "Bash", "Task", "Skill"],
+      });
+
+      expect(prompt).toContain("(Tools: Read, Glob, Grep, Bash");
+      expect(prompt).not.toContain("WebSearch");
+      expect(prompt).not.toContain("NotebookEdit");
+      expect(prompt).not.toContain("LSP");
+    });
+
+    it("routes implementation away from start and forbids orchestrator self-implementation", () => {
+      const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+      const start = profiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
+      const orchestrator = profiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
+
+      expect(start.toLowerCase()).toContain("рабочий запрос сразу передай точному worker-профилю");
+      expect(start).toContain("конверт для выбранного профильного worker-а");
+      expect(start.toLowerCase()).toContain("неясность, неизвестный объём или один поиск сами по себе не создают дополнительный уровень");
+      expect(start).toContain("worker");
+      expect(start).toContain("orchestrator");
+      expect(start.toLowerCase()).toContain("если task недоступен");
+      expect(start).toContain("не повторяй");
+      expect(start).toContain("только после изменения выбора");
+      expect(orchestrator).toContain("не исследуй и не исполняй сам");
+      expect(orchestrator).toContain("зафиксируй причину");
+    });
+
+    it("keeps delegation bounded by independent deliverables, not artificial nesting levels", () => {
+      const prompt = startPrompt();
+
+      expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
+      expect(prompt).toContain("Read/Glob/Grep/Skill/Bash/Write/Edit");
+      expect(prompt).toContain("недоступны");
+      expect(prompt).not.toContain("включая Read, Glob, Grep, Write, Edit, Bash");
+      for (const tool of ["Read", "Glob", "Grep", "Skill", "Task"]) expect(prompt).toContain(tool);
+      expect(prompt).toContain("самостоятельную независимую подзадачу с отдельным проверяемым результатом");
+      expect(prompt).toContain("не создавай Task для измерения глубины цепочки");
+      expect(prompt.toLowerCase()).toContain("неясность, неизвестный объём или один поиск сами по себе не создают дополнительный уровень");
+      expect(prompt).not.toContain("L4 — достаточная глубина");
+      expect(prompt).not.toContain("Level+1");
+    });
+
+    it("forbids reopening start or orchestrator without a narrower envelope", () => {
+      const prompt = startPrompt();
+
+      expect(prompt).toContain("Никогда не вызывай Task(start)");
+      expect(prompt).toContain("Task(orchestrator)");
+      expect(prompt).toContain("без нового, более узкого конверта");
+    });
+
+    it("does not excuse verification requests as trivial chatter", () => {
+      const prompt = startPrompt();
+
+      expect(prompt).not.toContain("Небольшой самостоятельный запрос обработай кратко");
+      expect(prompt).toContain("Тривиальна только светская реплика без задачи");
+      expect(prompt.toLowerCase()).toContain("рабочий запрос сразу передай точному worker-профилю");
+      expect(prompt).toContain("orchestrator нужен для независимых веток");
+    });
+  });
+});
+
+// 回归依据：custom-профиль с именем встроенной роли подменял prompt/tools, поэтому
+// каталог и Swarm-контракт зависели от пользовательского файла. Теперь built-in выигрывает.
+describe("built-in profile precedence over custom profiles", () => {
+  const builtIn = (name: string) =>
+    getSwarmAgentProfiles(normalizeAgentProfiles([])).find((profile) => profile.name === name);
+
+  it("keeps start and implementer prompts and tools when a custom profile reuses their names", () => {
+    const merged = normalizeAgentProfiles([
+      {
+        name: "start",
+        description: "Custom start",
+        source: "project",
+        systemPrompt: "CUSTOM_START_PROMPT",
+        tools: ["Read", "Write", "Edit", "Bash"],
+      },
+      {
+        name: "implementer",
+        description: "Custom implementer",
+        source: "user",
+        systemPrompt: "CUSTOM_IMPLEMENTER_PROMPT",
+        tools: ["Read"],
+      },
+    ]);
+
+    expect(merged.find((profile) => profile.name === "start")).toEqual(builtIn("start"));
+    expect(merged.find((profile) => profile.name === "implementer")).toEqual(builtIn("implementer"));
+    expect(merged.find((profile) => profile.name === "start")?.systemPrompt).not.toContain(
+      "CUSTOM_START_PROMPT",
+    );
+    expect(merged.find((profile) => profile.name === "implementer")?.tools).toEqual(
+      expect.arrayContaining(["Write", "Edit", "Bash"]),
+    );
+  });
+
+  it("blocks same-name built-ins regardless of casing", () => {
+    const merged = normalizeAgentProfiles([
+      {
+        name: "Reviewer",
+        description: "Case-variant shadow",
+        source: "project",
+        systemPrompt: "CUSTOM_REVIEWER_PROMPT",
+        tools: ["Read"],
+      },
+    ]);
+
+    expect(merged.filter((profile) => profile.name.toLowerCase() === "reviewer")).toHaveLength(1);
+    expect(merged.find((profile) => profile.name === "Reviewer")).toBeUndefined();
+  });
+
+  it("adds a custom profile with a unique name", () => {
+    const merged = normalizeAgentProfiles([
+      {
+        name: "mobile-coder",
+        description: "Mobile platform specialist",
+        source: "project",
+        systemPrompt: "MOBILE_CODER_PROMPT",
+        tools: ["Read", "Write"],
+      },
+    ]);
+
+    expect(merged.find((profile) => profile.name === "mobile-coder")).toMatchObject({
+      description: "Mobile platform specialist",
+      source: "project",
+      systemPrompt: "MOBILE_CODER_PROMPT",
+      tools: ["Read", "Write"],
+    });
+    expect(formatAgentProfilesForPrompt(merged)).toContain(
+      "- mobile-coder: Mobile platform specialist",
+    );
+  });
+});
+
+// 16 канонических ролей: специализированные исполнители, включая debugger.
+describe("specialized worker roster", () => {
+  const profiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
+  const profile = (name: string) => profiles().find((candidate) => candidate.name === name);
+
+  it("ships 16 canonical roles in a stable order, including a debugger", () => {
+    expect(SWARM_AGENT_TYPES).toHaveLength(16);
+    expect(profiles().map(({ name }) => name)).toEqual([...SWARM_AGENT_TYPES]);
+    expect(SWARM_AGENT_TYPES).toContain("debugger");
+    expect(profile("debugger")?.description).toContain("первопричину");
+    expect(profile("debugger")?.systemPrompt).toContain("Сначала воспроизведи дефект");
+  });
+
+  it.each(["coder", "frontend-coder", "backend-coder", "infra-coder"])(
+    "%s is a built-in worker with the full toolset and AGENTS.md injection",
+    (name) => {
+      expect(profile(name)).toMatchObject({
+        injectAgentsMd: true,
+        source: "built-in",
+        tools: [...WORKER_SUBAGENT_TOOL_NAMES],
+      });
+      expect(profile(name)?.description.length).toBeGreaterThan(0);
+      expect(profile(name)?.color).toBeDefined();
+      expect(profile(name)?.systemPrompt).toContain("下一负责人");
+    },
+  );
+
+  it("declares the requested skill allowlists", () => {
+    expect(profile("coder")?.skills).toEqual([
+      "*",
+      "code-craft",
+      "zcode-test-driven-development",
+      "zcode-verification",
+      "reference-first",
+      "architecture-governance",
+      "dep-refs",
+      "zcode-swarm",
+    ]);
+    expect(profile("frontend-coder")?.skills).toEqual([
+      "*",
+      "frontend-design",
+      "ui-craft",
+      "ai-elements",
+      "web-design-guidelines",
+      "vercel-react-best-practices",
+      "zcode-verification",
+      "zcode-swarm",
+    ]);
+    expect(profile("backend-coder")?.skills).toEqual([
+      "*",
+      "codebase-design",
+      "architecture-governance",
+      "domain-modeling",
+      "performance-tuning",
+      "zcode-verification",
+      "reference-first",
+      "zcode-swarm",
+    ]);
+    expect(profile("infra-coder")?.skills).toEqual([
+      "*",
+      "electron",
+      "dep-refs",
+      "performance-tuning",
+      "zcode-verification",
+      "reference-first",
+      "zcode-swarm",
+    ]);
+  });
+
+  it("states each specialized role boundary in its prompt", () => {
+    expect(profile("coder")?.description).toContain("регрессионными тестами");
+    expect(profile("coder")?.systemPrompt).toContain("production-код");
+    expect(profile("frontend-coder")?.systemPrompt).toContain("DESIGN.md");
+    expect(profile("frontend-coder")?.systemPrompt).toContain("i18n");
+    expect(profile("frontend-coder")?.systemPrompt).toContain("desktop");
+    expect(profile("backend-coder")?.systemPrompt).toContain("services/runtime/protocol/data");
+    expect(profile("backend-coder")?.systemPrompt).toContain("идемпотентность");
+    expect(profile("backend-coder")?.systemPrompt).toContain("конкурентных");
+    expect(profile("infra-coder")?.systemPrompt).toContain("build/release/CI/scripts/electron");
+    expect(profile("infra-coder")?.systemPrompt).toContain("Windows");
+    expect(profile("infra-coder")?.systemPrompt).toContain("Linux");
+  });
+
+  it("routes a single bounded task to a worker with orchestrator reserved for fan-out", () => {
+    const prompt = profile("start")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("Одна ограниченная задача");
+    expect(prompt).toContain("worker-профилем");
+    expect(prompt).toContain('Task(subagent_type: "orchestrator")');
+    expect(prompt).not.toContain("Твой единственный маршрут");
+    expect(prompt).toContain("не передаёт task_graph");
+    expect(prompt).toContain("новая wave");
+    expect(prompt).toContain("контекст и evidence");
+    expect(prompt).not.toContain("production-код — coder");
+    expect(prompt).not.toContain("Сразу маршрутизируй изменяющую работу специализированному исполнителю");
+  });
+
+  it("forbids orchestrator recursion and requires partial context for the next wave", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("Никогда не вызывай Task(start)");
+    expect(prompt).toContain("не вызывай Task(orchestrator)");
+    expect(prompt).toContain("Планируй для каждой ветки конечный проверяемый объём");
+    expect(prompt).toContain("не задавай искусственный тайм-бюджет или deadline");
+    expect(prompt).toContain("Планируй волнами по доступной ёмкости хоста и провайдера");
+    expect(prompt).not.toContain("15 минут своего hard deadline");
+    expect(prompt).toContain("следующий wave");
+    expect(prompt).toContain("накопленным контекстом");
+    expect(prompt).toContain("researcher");
+    expect(prompt).toContain("test-engineer");
+    expect(prompt).toContain("coder");
+  });
+
+  it("plans useful fan-out without a total task-count budget", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("доступной ёмкости хоста и провайдера");
+    expect(prompt).toContain("debugger — дефект");
+    expect(prompt).toContain("Сверь задачу с активным каталогом профилей");
+    expect(prompt).toContain("Планируй волнами");
+    expect(prompt).toContain("После join");
+    expect(prompt).toContain("debugger — дефект");
+    expect(prompt).toContain("subagent-factory");
+    expect(prompt).toContain("Не дроби deliverable");
+    expect(prompt).not.toContain("remaining_spawns");
+    expect(prompt).not.toContain("5–8 действительно независимых областей");
+  });
+
+  it("requires todo decomposition, same-message fan-out and distinct profiles for independent items", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
+    expect(prompt).toContain("Зависимую задачу разложи через TodoWrite");
+    expect(prompt).toContain("Независимые листья делегируй отдельными Task в одном assistant-сообщении");
+    expect(prompt).toContain("Все независимые листья запускай одним сообщением");
+    expect(prompt).toContain("Выбирай точные профили по компетенции");
+    expect(prompt).toContain("После join сверь отчёты с исходной целью");
+    expect(prompt).toContain("repair создавай только по конкретному проваленному критерию");
+    expect(prompt).toContain("Не ставь researcher обязательным этапом до исполнения");
+  });
+
+  it("re-dispatches after claim conflict and reacts to each terminal report", () => {
+    const prompt = profile("orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("write_claim_conflict");
+    expect(prompt).toContain("не считай её выполненной");
+    expect(prompt).toContain("отложи спавн и повтори после терминала держателя claim");
+    expect(prompt).toContain("Меняй план после отчёта только при блокере");
+    expect(prompt).toContain("SkillSearch/SkillInstall");
+    expect(prompt).toContain("requires:");
+    expect(prompt).toContain("Runtime отклонит spawn, пока capability не установлена");
+    expect(prompt).toContain("InstallCapability");
+    expect(prompt).toContain("needsApproval");
+    expect(prompt).toContain("yolo");
+    expect(prompt).toContain("повтори тот же Task");
+  });
+
+  it("turns subagent-factory into a real profile author with catalog boundaries", () => {
+    const factory = profile("subagent-factory");
+    const prompt = factory?.systemPrompt ?? "";
+
+    expect(factory?.description).toContain(".zcode/agents");
+    expect(prompt).toContain(".zcode/agents/<kebab-name>.md");
+    expect(prompt).toContain("frontmatter");
+    expect(prompt).toContain("disallowedTools");
+    expect(prompt).toContain("mcpServers");
+    for (const role of SWARM_AGENT_TYPES) expect(prompt, role).toContain(role);
+    expect(prompt).toContain("general-purpose");
     expect(prompt).toContain("Explore");
-    expect(prompt).toContain("Tools: Read, Bash, WebFetch, WebSearch, TodoWrite");
-    expect(prompt).not.toContain("Glob");
-    expect(prompt).not.toContain("Grep");
+    for (const tool of WORKER_SUBAGENT_TOOL_NAMES) expect(prompt, tool).toContain(tool);
+    expect(prompt).toContain("следующем turn");
+    expect(prompt).toContain("секреты");
+    expect(prompt).toContain("разовую задачу");
+    expect(prompt).toContain("generic-роль");
+    expect(prompt).toContain("не создавай профиль");
+    expect(prompt).toContain("существующие роли и навыки");
+  });
+});
+
+// docs/specs/agent-capability-gate.md: роль определяет реальный набор инструментов.
+// Ожидаемые списки продублированы литералами намеренно — изменение матрицы должно
+// требовать явного обновления теста, а не следовать за экспортированной константой.
+describe("built-in role capability matrix", () => {
+  const builtInProfiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
+  const toolsOf = (name: string): readonly string[] =>
+    builtInProfiles().find((profile) => profile.name === name)?.tools ?? [];
+
+  const ROUTER_TOOLS = ["Task", "TodoRead", "TodoWrite"];
+  const INSPECTION_TOOLS = [
+    "CodeIndex",
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "SkillSearch",
+    "SkillInstall",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+  ];
+  const RESEARCHER_TOOLS = INSPECTION_TOOLS.filter((tool) => tool !== "Task");
+  const REVIEW_TOOLS = [
+    "CodeIndex",
+    "Read",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "SkillSearch",
+    "SkillInstall",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+  ];
+  const WORKER_TOOLS = [
+    "CodeIndex",
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "ApplyPatch",
+    "MultiEdit",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+    "Skill",
+    "SkillSearch",
+    "SkillInstall",
+    "InstallCapability",
+    "TodoRead",
+    "TodoWrite",
+    "AskUserQuestion",
+    "TaskOutput",
+    "TaskStop",
+  ];
+
+  it.each(["start", "orchestrator"])(
+    "%s routes without reading or direct mutation tools",
+    (name) => {
+      const tools = toolsOf(name);
+
+      expect(tools).toEqual(ROUTER_TOOLS);
+      expect(tools).not.toContain("Read");
+      expect(tools).not.toContain("Glob");
+      expect(tools).not.toContain("Grep");
+      expect(tools).not.toContain("Skill");
+      expect(tools).not.toContain("Write");
+      expect(tools).not.toContain("Edit");
+      expect(tools).not.toContain("Bash");
+    },
+  );
+
+  it("researcher inspects with Bash but is a leaf without Task or write tools", () => {
+    const tools = toolsOf("researcher");
+
+    expect(tools).toEqual(RESEARCHER_TOOLS);
+    expect(tools).not.toContain("Task");
+    expect(tools).toContain("Bash");
+    expect(tools).not.toContain("Write");
+    expect(tools).not.toContain("Edit");
+  });
+
+  it("evaluator inspects and may delegate with Bash but cannot write files", () => {
+    const tools = toolsOf("evaluator");
+
+    expect(tools).toEqual(INSPECTION_TOOLS);
+    expect(tools).toContain("Task");
+    expect(tools).toContain("Bash");
+    expect(tools).not.toContain("Write");
+    expect(tools).not.toContain("Edit");
+  });
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s reviews the given diff with bounded researcher delegation",
+    (name) => {
+      const tools = toolsOf(name);
+
+      expect(tools).toEqual(REVIEW_TOOLS);
+      expect(tools).toEqual([...REVIEW_SUBAGENT_TOOL_NAMES]);
+      expect(tools).toContain("Task");
+      expect(tools).not.toContain("Agent");
+      expect(tools).toContain("Bash");
+      expect(tools).not.toContain("Write");
+      expect(tools).not.toContain("Edit");
+    },
+  );
+
+  it.each([
+    "implementer",
+    "coder",
+    "frontend-coder",
+    "backend-coder",
+    "infra-coder",
+    "test-engineer",
+    "self-improver",
+    "knowledge-curator",
+    "subagent-factory",
+  ])("%s keeps the full worker toolset", (name) => {
+    expect(toolsOf(name)).toEqual(WORKER_TOOLS);
+  });
+
+  it("keeps bounded parallel delegation on code-writing worker profiles", () => {
+    for (const name of [
+      "implementer",
+      "coder",
+      "frontend-coder",
+      "backend-coder",
+      "infra-coder",
+    ] as const) {
+      const prompt =
+        builtInProfiles().find((profile) => profile.name === name)?.systemPrompt ?? "";
+      expect(prompt, name).toContain(
+        "worker/researcher-подагентов одним сообщением, с непересекающимися путями и параллелизмом по свободным слотам runtime, не 1",
+      );
+      expect(prompt, name).toContain("Каждый подагент получает узкий deliverable");
+      expect(prompt, name).not.toContain("до двух worker/researcher-подагентов");
+    }
+  });
+
+  it("covers every built-in swarm role without gaps or duplicates", () => {
+    expect(builtInProfiles().map((profile) => profile.name)).toEqual([...SWARM_AGENT_TYPES]);
+  });
+
+  it("keeps inspection roles' prompts honest about Bash and write access", () => {
+    for (const role of ["researcher", "reviewer", "security-reviewer", "evaluator"] as const) {
+      const prompt =
+        builtInProfiles().find((profile) => profile.name === role)?.systemPrompt ?? "";
+
+      expect(prompt, role).toContain("Bash");
+      expect(prompt, role).toContain("Write/Edit недоступны");
+    }
+  });
+
+  it("keeps researcher a leaf and forbids re-opening settled facts", () => {
+    const prompt =
+      builtInProfiles().find((profile) => profile.name === "researcher")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("leaf-исследователь");
+    expect(prompt).toContain("не запускай других агентов");
+    expect(prompt).toContain("settled facts");
+    expect(prompt).not.toContain("запускай researcher-подагентов");
+  });
+
+  it("advertises the Task plus plan-todo router toolset in the orchestrator prompt", () => {
+    const prompt =
+      builtInProfiles().find((profile) => profile.name === "orchestrator")?.systemPrompt ?? "";
+
+    expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
+    expect(prompt).toContain("Read/Glob/Grep/Skill/Write/Edit/Bash недоступны");
+  });
+});
+
+// docs/specs/agent-capability-gate.md: review-тир не делегирует, начинает с выданного
+// diff, ограничивает findings и честно возвращает partial/blocked при исчерпании deadline.
+describe("review prompt contract", () => {
+  const promptOf = (name: string): string =>
+    getSwarmAgentProfiles(normalizeAgentProfiles([])).find((profile) => profile.name === name)
+      ?.systemPrompt ?? "";
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s reads the provided diff first and avoids broad repository re-traversal",
+    (name) => {
+      const prompt = promptOf(name);
+
+      expect(prompt).toContain("Первичный вход");
+      expect(prompt).toContain("Сначала прочитай diff");
+      expect(prompt).toContain("не делай широкий Explore-подобный обход репозитория");
+      expect(prompt).toContain("непосредственно требуемые call sites");
+    },
+  );
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s caps findings at 10 and reports files, tests and checklist",
+    (name) => {
+      const prompt = promptOf(name);
+
+      expect(prompt).toContain("Максимум 10 подтверждённых findings");
+      expect(prompt).toContain("severity, file:line, impact, reproduction/evidence");
+      expect(prompt).toContain("раздел gaps");
+      expect(prompt).toContain("просмотренные файлы");
+      expect(prompt).toContain("фактически запущенные тесты");
+      expect(prompt).toContain("использованный чеклист");
+    },
+  );
+
+  it.each(["reviewer", "security-reviewer"])(
+    "%s returns explicit partial/blocked only on real blockage",
+    (name) => {
+      const prompt = promptOf(name);
+
+      expect(prompt).toContain("partial или blocked");
+      expect(prompt).toContain("что просмотрено, что нет");
+      expect(prompt).toContain("Не вводи собственный тайм-бюджет");
+      expect(prompt).toContain("reviewer-веткам в пределах доступных runtime-слотов");
+      expect(prompt).toContain("Не запускай несколько агентов на одинаковый diff или проверку");
+      expect(prompt).not.toContain("2–3 параллельных reviewer");
+    },
+  );
+
+  it("scopes security-reviewer to security-sensitive diffs only", () => {
+    const prompt = promptOf("security-reviewer");
+
+    expect(prompt).toContain("только на security-sensitive diff");
+    expect(prompt).toContain("аутентификация и авторизация");
+    expect(prompt).toContain("границы доверия");
+    expect(prompt).toContain("сетевой ввод и парсинг");
+    expect(prompt).toContain("разрешения и sandbox");
+    expect(prompt).toContain("не запрашивает security-reviewer");
+    expect(prompt).toContain("не расширяй область поиска");
+  });
+});
+
+// Routing architecture: one caller-scoped filter feeds both the visible catalog and
+// Agent/Task admission. start is a gateway, orchestrator is the only dispatcher.
+describe("caller-scoped agent catalog", () => {
+  const profiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
+  const namesFor = (caller?: string) =>
+    filterAgentTypesForCaller(profiles(), caller).map((profile) => profile.name);
+
+  it("gives start workers plus orchestrator, but never itself", () => {
+    expect(namesFor("start")).toEqual(
+      expect.arrayContaining(["orchestrator", "researcher", "coder", "reviewer"]),
+    );
+    expect(namesFor("start")).not.toContain("start");
+  });
+
+  it("gives orchestrator worker roles but not the router roles", () => {
+    const names = namesFor("orchestrator");
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "researcher",
+        "reviewer",
+        "security-reviewer",
+        "test-engineer",
+        "evaluator",
+        "implementer",
+        "coder",
+        "frontend-coder",
+        "backend-coder",
+        "infra-coder",
+        "subagent-factory",
+      ]),
+    );
+    expect(names).not.toContain("start");
+    expect(names).not.toContain("orchestrator");
+  });
+
+  it.each(["reviewer", "security-reviewer", "evaluator"] as const)(
+    "gives %s only the model-selectable researcher entry",
+    (caller) => {
+      const visible = filterAgentTypesForCaller(profiles(), caller);
+
+      expect(visible.map((profile) => profile.name)).toEqual(["researcher"]);
+      expect(visible.every(isModelSelectableAgentProfile)).toBe(true);
+    },
+  );
+
+  it("gives researcher no delegation catalog because it is a leaf", () => {
+    expect(filterAgentTypesForCaller(profiles(), "researcher")).toEqual([]);
+  });
+
+  it("leaves root and main sessions unrestricted", () => {
+    expect(filterAgentTypesForCaller(profiles(), undefined)).toEqual(profiles());
+    expect(filterAgentTypesForCaller(profiles(), "")).toEqual(profiles());
+    expect(namesFor(undefined)).toEqual(expect.arrayContaining(["start", "orchestrator", "coder"]));
+  });
+
+  it("shares the admission predicate with the catalog", () => {
+    expect(isAgentTypeAllowedForCaller("orchestrator", "start")).toBe(true);
+    expect(isAgentTypeAllowedForCaller("coder", "start")).toBe(true);
+    expect(isAgentTypeAllowedForCaller("start", "start")).toBe(false);
+    expect(isAgentTypeAllowedForCaller("orchestrator", "orchestrator")).toBe(false);
+    expect(isAgentTypeAllowedForCaller("start", "orchestrator")).toBe(false);
+    expect(isAgentTypeAllowedForCaller("coder", "orchestrator")).toBe(true);
+    expect(isAgentTypeAllowedForCaller("coder", undefined)).toBe(true);
+    expect(isAgentTypeAllowedForCaller("researcher", "researcher")).toBe(false);
+  });
+
+  it.each(["reviewer", "security-reviewer", "evaluator"] as const)(
+    "admits only researcher for inspection caller %s",
+    (caller) => {
+      const forbiddenTargets = [
+        "reviewer",
+        "security-reviewer",
+        "evaluator",
+        "coder",
+        "test-engineer",
+        "start",
+        "orchestrator",
+      ];
+
+      expect(isAgentTypeAllowedForCaller("researcher", caller)).toBe(true);
+      for (const target of forbiddenTargets) {
+        expect(isAgentTypeAllowedForCaller(target, caller), `${caller} -> ${target}`).toBe(false);
+      }
+    },
+  );
+
+  it("admits no delegation target for researcher caller", () => {
+    for (const target of ["researcher", "coder", "start", "orchestrator"]) {
+      expect(isAgentTypeAllowedForCaller(target, "researcher"), `researcher -> ${target}`).toBe(
+        false,
+      );
+    }
+  });
+
+  it("keeps runner-resolvable fuzzy role names admissible", () => {
+    expect(matchAgentTypeInCatalog("coder", ["coder", "researcher"])).toBe("exact");
+    expect(matchAgentTypeInCatalog("Coder", ["coder", "researcher"])).toBe("normalized");
+    expect(matchAgentTypeInCatalog("foo bar", ["foo-bar", "foo_bar"])).toBe("ambiguous");
+    expect(matchAgentTypeInCatalog("report.v2", ["report-v2"])).toBe("none");
+  });
+});
+
+describe("delegation routing gate", () => {
+  it("answers social-only requests directly", () => {
+    expect(decideDelegationRoute({ role: "start", socialOnly: true })).toMatchObject({
+      route: "answer_directly",
+      maxParallel: 0,
+    });
+  });
+
+  it("never lets start or orchestrator integrate implementation inline", () => {
+    for (const role of ["start", "orchestrator"] as const) {
+      expect(
+        decideDelegationRoute({ role, serialDependencies: true, integrationOwnedByCaller: true }),
+      ).toMatchObject({ route: "delegate_single", maxParallel: 1 });
+    }
+  });
+
+  it("fans clear independent workstreams out directly from root", () => {
+    expect(decideDelegationRoute({ role: "root", independentWorkstreams: 3 })).toMatchObject({
+      route: "fanout_direct",
+      maxParallel: 3,
+    });
+  });
+
+  it("uses an orchestrator only when decomposition or joining needs a separate owner", () => {
+    expect(
+      decideDelegationRoute({ role: "root", independentWorkstreams: 3, needsOrchestrator: true }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 3 });
+  });
+
+  it("keeps serial caller-owned integration in the root", () => {
+    expect(
+      decideDelegationRoute({ role: "root", serialDependencies: true, integrationOwnedByCaller: true }),
+    ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
+  });
+
+  it("keeps one bounded task inline at root unless a distinct specialist is required", () => {
+    expect(decideDelegationRoute({ role: "root" })).toMatchObject({
+      route: "execute_inline",
+      maxParallel: 0,
+    });
+    expect(decideDelegationRoute({ role: "root", specialistRequired: true })).toMatchObject({
+      route: "delegate_single",
+      maxParallel: 1,
+    });
+  });
+
+  it("preserves multiple workstreams when requested concurrency is one", () => {
+    expect(
+      decideDelegationRoute({ role: "root", independentWorkstreams: 4, userMaxParallel: 1 }),
+    ).toMatchObject({ route: "fanout_direct", maxParallel: 1 });
+  });
+
+  it("uses workstream count and explicit concurrency preference, ignoring legacy task budgets", () => {
+    expect(
+      decideDelegationRoute({
+        role: "start",
+        independentWorkstreams: 6,
+        userMaxParallel: 8,
+      }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 6 });
+
+    expect(
+      decideDelegationRoute({
+        role: "root",
+        independentWorkstreams: 6,
+        userMaxParallel: 2,
+      }),
+    ).toMatchObject({ route: "fanout_direct", maxParallel: 2 });
+  });
+
+  it("allows read-only triage in place and still delegates implementation", () => {
+    expect(decideDelegationRoute({ role: "start", readOnly: true })).toMatchObject({
+      route: "integrate_inline",
+      maxParallel: 0,
+    });
+    expect(decideDelegationRoute({ role: "start" })).toMatchObject({ route: "delegate_single" });
+  });
+
+  it("embeds the routing contract in start and orchestrator prompts", () => {
+    const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
+
+    const start = profiles.find((profile) => profile.name === "start")?.systemPrompt ?? "";
+    const orchestrator =
+      profiles.find((profile) => profile.name === "orchestrator")?.systemPrompt ?? "";
+    expect(start).toContain("Одна ограниченная задача без независимых веток");
+    expect(start).not.toContain("integrate_inline");
+    expect(orchestrator).toContain("Перед действием классифицируй задачу");
+    expect(orchestrator).toContain("integrate_inline");
+    expect(orchestrator).toContain("max_parallel");
+  });
+
+  it("clamps the runtime swarm DAG parallelism through the routing gate", () => {
+    expect(
+      resolveSwarmParallelism({ nodeCount: 6, requestedMaxParallel: 8 }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 6 });
+    expect(
+      resolveSwarmParallelism({ nodeCount: 2, requestedMaxParallel: 8 }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
   });
 });

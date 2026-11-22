@@ -20,12 +20,12 @@ const DEFAULT_TEST_MODEL = {
   modelId: "glm-4.6",
 } as const;
 
-export interface RegistryBackedTestModelExecution {
+interface RegistryBackedTestModelExecution {
   providerId: string;
   modelId: string;
 }
 
-export interface RegistryBackedTestModelExecutor {
+interface RegistryBackedTestModelExecutor {
   generateText(
     request: ModelRequest,
     execution: RegistryBackedTestModelExecution,

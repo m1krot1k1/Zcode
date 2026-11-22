@@ -1,8 +1,8 @@
 import type { ToolSearchExecutionContext, ToolSearchMode } from "@zcode/contracts";
 import type { RequestVerificationReason } from "@zcode/shared";
 import type { GetAgentDefinitions, LoadAgentDefinitions } from "../subagent/definitions.js";
+import type { WorkLedger } from "../runtime-task/work-ledger.js";
 import type { RuntimeInputPresentation, TurnExecutionModelFallbackReason } from "@zcode/contracts";
-/* eslint-disable max-lines -- Runtime 类型集中承载 core/runtime 对外结构，拆分需要单独迁移。 */
 import { PermissionService, ToolScheduler } from "./deps.js";
 import type {
   JsonSchema,
@@ -17,15 +17,22 @@ import type {
   ModelRequestDependencies,
   ModelSelection,
   PluginReferenceCatalog,
+  CodeIntelligencePort,
   ResolvedUserInstructions,
+  ResolvedHarnessRule,
+  ResolvedWorkspaceRule,
+  ContextSourceSnapshot,
   StableForkGoalBoundaryMetadata,
   StableForkTargetMetadata,
   WorkspaceHookBundleSnapshot,
   WorkspaceId,
+  WorkspaceBoundaryMode,
 } from "@zcode/contracts";
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
+import type { ReadFileStateMap } from "../tool/types.js";
+import type { PromptDepthProfile } from "../context/cognitive-protocols.js";
 import type {
   CompactPhase,
   CompactReason,
@@ -82,6 +89,7 @@ import type {
   PdfDocumentPort,
   HooksRuntimeConfig,
   SkillPort,
+  CapabilityInstallPort,
   McpPort,
   McpServerConfig,
   SubagentPort,
@@ -112,6 +120,8 @@ import type {
 import type { AgentProfile } from "../subagent/profile.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
+import type { IFileTransactionTaskRegistry } from "../tool/file-transaction/task-contract.js";
+import type { IFileLockRegistry } from "../tool/file-transaction/contract.js";
 import type { PresentationSurface } from "../context/types.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 
@@ -126,17 +136,61 @@ export interface AgentRuntimeConfig {
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   remoteSessionId?: string;
   bashTimeoutPolicy?: BashTimeoutPolicy;
+  /**
+   * Host sandbox preference for Bash/PTY. `off` disables OS isolation; `auto`,
+   * `bwrap` and `seatbelt` request the platform sandbox. Undefined keeps the
+   * legacy workspace-write default for standalone CLI runs without a Host.
+   */
+  sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
+  /** `false` maps to networkAccess=deny for sandboxed Bash/PTY commands. */
+  sandboxAllowNetwork?: boolean;
   presentationSurface?: PresentationSurface;
   /** Execution Host's output root, independent of the working repository. */
   genUiOutputRoot?: string;
   mode?: CollaborationMode;
   planEnabled?: boolean;
+  /** Root-auto reasoning level; explicit user selection always wins. Default true. */
+  autoReasoningLevel?: boolean;
   modelStreaming?: "off" | "on";
   streamingToolExecution?: "off" | "readOnly";
   /** Session 创建时固定；缺省使用共享的模型上下文预算默认策略。 */
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
+  /** Включение детерминированного самовосстановления JSON/Zod аргументов инструментов (по умолчанию true). */
+  enableToolCallSelfRepair?: boolean;
+  /**
+   * Включение замкнутого цикла самовосстановления `cli-auto-repair-loop` (4.5b).
+   * По умолчанию `false`: поведение 4.1 не меняется, цикл подключается осознанно.
+   * При `true` агенту доступен верификационный гейт (typecheck/lint/тесты/браузер/PTY/файлы)
+   * с жёсткими лимитами и защитой от осцилляции.
+   */
+  enableAutoRepairLoop?: boolean;
+  /** Лимиты цикла; применяются только при `enableAutoRepairLoop: true`. */
+  autoRepairLoopLimits?: {
+    maxIterations?: number;
+    maxElapsedMs?: number;
+    repeatThreshold?: number;
+    maxSignalsPerIteration?: number;
+  };
+  /** Минимальный резерв выходных токенов под аргументы инструментов при активном thinking (по умолчанию 16384). */
+  reasoningReserveOutputTokens?: number;
+  /** Эффективный рабочий потолок контекста до квантованного Observation Masking (по умолчанию 120000). */
+  workingContextSoftCapTokens?: number;
   maxTurns?: number;
+  /** 每个 root run 的并行偏好上限；0/未设置按机器可用 CPU 与 Host capacity 计算。 */
+  subagentMaxParallel?: number;
+  /** 全部 subagent 的最短任务期限分钟数；0/未设置使用角色默认期限。 */
+  subagentTaskTimeoutMinutes?: number;
   permissionTimeoutMs?: number;
+  /**
+   * Workspace 边界模式（docs/specs/2026-11-11-workspace-boundary.md）。
+   * 由 bootstrap 从 `workspaceBoundary` 配置投影；缺省 = 兼容默认 `allow`。
+   */
+  workspaceBoundary?: WorkspaceBoundaryMode;
+  /**
+   * Явно объявленная область записи (`write_paths`), унаследованная дочерним runtime.
+   * `undefined` — ограничения нет (прежнее поведение); `[]` — запись запрещена.
+   */
+  writeScope?: readonly string[];
   compact?: AutoCompactPolicyConfig;
   targetCompletionVerification?: { enabled?: boolean };
   midConversationSystem?: {
@@ -155,6 +209,13 @@ export interface AgentRuntimeConfig {
   };
   toolAllowlist?: readonly string[];
   toolDisallowlist?: readonly string[];
+  /**
+   * Capability set, которое read-only маршрутизатор может делегировать детям, не
+   * показывая эти инструменты собственной модели. Наследуется только router-ролями
+   * (start/orchestrator); worker и read-only дети получают пересечение со своим
+   * фактическим tool surface.
+   */
+  delegationToolAllowlist?: readonly string[];
   /**
    * Defaults to main. Explore child runtimes use the explore toolset to opt into
    * 只读探索工具白名单；是否包含 direct Glob/Grep 由 embedded search branch 决定。
@@ -185,6 +246,12 @@ export interface AgentRuntimeConfig {
     enabled?: boolean;
     servers?: Record<string, McpServerConfig>;
     /**
+     * Plugin-owned servers that are connected only when the turn input or the
+     * selected capability explicitly needs them. They never start at session
+     * creation; activation mutates them into `servers`.
+     */
+    lazyServers?: Record<string, McpServerConfig>;
+    /**
      * Process-local provenance supplied by bootstrap after resolving bundled
      * official plugins. Never derive this list from serialized MCP config.
      */
@@ -212,6 +279,12 @@ export interface AgentRuntimeConfig {
   parentSessionId?: SessionId;
   taskType?: SessionTaskType;
   /**
+   * Caller routing identity. Root/main sessions leave it undefined; subagent children
+   * set their canonical profile name so Agent/Task admission and the visible catalog
+   * only expose roles the caller is allowed to spawn (start -> worker or orchestrator).
+   */
+  agentType?: string;
+  /**
    * 动态工作流灰度门（docs/dynamic-workflow/launch.md「Gray release」）：Host 判定后经
    * ZCode Protocol 下发，runtime 只消费。**缺席即开启**（进程内嵌入方靠这个极性）；
    * 独立 CLI 的 TUI 与 headless 按 --workflow-mode 显式传 true/false（缺省 disabled，DWG-04），
@@ -230,6 +303,13 @@ export interface AgentRuntimeConfig {
   // Context Builder config
   systemPrompt?: string;
   /**
+   * Профиль глубины рассуждений (инкремент 4.4). Владелец — настройки/сессия; runtime читает
+   * его при сборке системного промпта и при выборе thinking/maxOutputTokens. Смена профиля
+   * внутри сессии осознанно инвалидирует кэшируемый префикс: это выбор пользователя,
+   * а не реакция на динамический контекст.
+   */
+  promptDepth?: PromptDepthProfile;
+  /**
    * 动态工作流子代理的身份输入：在场即让
    * context builder 走「基座 + 工作流子代理契约 + persona 叠加」路径，而不是把 persona 当
    * `systemPrompt` 整段替换。与 `systemPrompt` 互斥（builder 抛错）。
@@ -244,6 +324,9 @@ export interface AgentRuntimeConfig {
   subagentContext?: {
     agentPrompt: string;
     userInstructions?: ResolvedUserInstructions;
+    bundledHarnessRules?: readonly ResolvedHarnessRule[];
+    workspaceRules?: readonly ResolvedWorkspaceRule[];
+    ruleTargetPaths?: readonly string[];
   };
   language?: string;
   outputStyle?: OutputStylePromptConfig;
@@ -328,10 +411,17 @@ export interface AgentRuntimeDeps {
   getAgentDefinitions?: GetAgentDefinitions;
   /** 新父上下文读取一次；子执行不得继承此加载器。 */
   loadAgentDefinitions?: LoadAgentDefinitions;
+  /** Явный refresh definitions после factory/plugin; не выполняется на каждом turn. */
+  reloadAgentDefinitions?: LoadAgentDefinitions;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryCausation?: AgentTelemetryCausation;
   agentTelemetryCausationMode?: "child" | "linked_root";
   appVersion?: string;
+  /**
+   * Accepted context snapshot inherited by an externally constructed child runtime.
+   * Core owns this copy; children must not resolve a second workspace/bundle snapshot.
+   */
+  initialContextSourceSnapshot?: ContextSourceSnapshot;
   eventStore: SessionEventStorePort;
   sessionStore?: SessionStorePort;
   sessionMailboxPort?: SessionMailboxPort;
@@ -349,15 +439,27 @@ export interface AgentRuntimeDeps {
   workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
   workspaceHookSnapshot?: WorkspaceHookBundleSnapshot;
   executionPort?: ExecutionPort;
+  /** Порт интерактивных PTY-сессий; присутствие включает инструмент PtySession. */
+  ptySessionPort?: import("../tool/handlers/pty-session.js").PtySessionPort;
   /** browser-use 控制端口；透传到 ToolExecutionContext.browserControlPort 供 node_repl 使用。 */
   browserControlPort?: BrowserControlPort;
   fileSystemPort?: FileSystemPort;
+  /** Единый межсубагентный реестр пофайловых RW-блокировок для родителя и всех детей Swarm (F-02). */
+  fileLockRegistry?: IFileLockRegistry;
+  /** Реестр жизненных циклов фоновых файловых транзакций (Инкремент 4.2). */
+  fileTransactionTaskRegistry?: IFileTransactionTaskRegistry;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
   skillPort?: SkillPort;
+  capabilityInstallPort?: CapabilityInstallPort;
   mcpPort?: McpPort;
   subagentPort?: SubagentPort;
+  /**
+   * Реестр работ: единственный владелец claim'ов подзадач в процессе. Отсутствует —
+   * объявления и блок «чем заняты другие» выключены (тесты и встраиваемые хосты).
+   */
+  workLedger?: WorkLedger;
   coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果的端口；存在即作为 submit_result 工具的注册门。 */
   workflowSubmitPort?: WorkflowSubmitPort;
@@ -378,6 +480,11 @@ export interface AgentRuntimeDeps {
    * 包装（受闸门约束），主 runtime 拿治理器的 observer（只喂信号）；缺席即不设闸门。
    */
   modelRequestAdmission?: ModelRequestAdmission;
+  /**
+   * Low-priority admission for autocomplete/proactive/title/memory. Missing falls
+   * back to the main admission so headless/embedded runtimes stay compatible.
+   */
+  backgroundModelRequestAdmission?: ModelRequestAdmission;
   onOffPeakLifecycleEvent?: (
     event: import("./off-peak/lifecycle.js").OffPeakLifecycleEvent,
   ) => void;
@@ -392,6 +499,13 @@ export interface AgentRuntimeDeps {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  /** Read-only local code graph/search queries routed through the owning Host. */
+  codeIntelligencePort?: CodeIntelligencePort;
+  /**
+   * Shared Read range cache for child runtimes in the same workspace.
+   * The key stays path + mtime + range; a repeat returns the existing stub.
+   */
+  sharedReadFileState?: ReadFileStateMap;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
   logger?: Logger;
@@ -450,7 +564,11 @@ export interface TurnResult {
  * 也不会成为 Session Selection 的第二份来源。
  */
 export interface ModelExecutionContext {
-  offPeak?: { executionId: string; ticketId: string; providerErrorCode: string };
+  offPeak?: {
+    executionId: string;
+    ticketId: string;
+    providerErrorCode: string;
+  };
   /** 仅当前 Turn 跳过自动 Project Memory Extraction；不修改 Session Memory 配置。 */
   memoryExtraction?: "skip";
   selectionScope: "execution";
@@ -502,6 +620,9 @@ export interface ExecuteTurnOptionsBase {
   inputSource?: SyntheticUserMessageSource;
   inputPresentation?: RuntimeInputPresentation;
   inputVisibility?: MessageVisibility;
+  /** 内部继承的 swarm lineage；仅 root turn 创建并结算共享预算。 */
+  internalSwarmRootRunId?: string;
+  internalSwarmRootTurnId?: TurnId;
   originMeta?: BackgroundResultOriginMeta;
   /** 仅用于冻结 background notification batch 的整批因果来源，不用于展示。 */
   backgroundSource?: BackgroundResultOriginMeta["backgroundSource"];
@@ -785,6 +906,8 @@ export interface ExecuteToolsOptions {
   /** 仅透传给当前 turn 同步等待的 Agent child。 */
   subagentModelOverride?: import("@zcode/contracts").SubagentRunOptions["modelOverride"];
   model?: Model;
+  finishReason?: string;
+  consecutiveSchemaFailuresByTool?: Map<string, number>;
   onBatchStart?: (toolCallIds: string[]) => Promise<void>;
 }
 
@@ -794,8 +917,6 @@ export interface ExecuteToolsResult {
 }
 
 export type ActiveTurnKind = "regular" | "compact" | "rewind";
-
-export const INLINE_TEXT_ATTACHMENT_MAX_BYTES = 64 * 1024;
 
 export const INLINE_MEDIA_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -849,19 +970,6 @@ export interface DrainedPendingInputDiagnostics {
   runtimeEntries: readonly RuntimeMessageEntry[];
   /** 本次 drain 注入的输入附带的工具隐藏列表，下一次 provider 请求必须继续生效。 */
   toolDisallowlist?: readonly string[];
-}
-
-export interface ProviderContextUsageSnapshot {
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  contextUsageTokens?: number;
-  inputTokens: number;
-  messageCount: number;
-  model: { providerId: Model["providerId"]; modelId: Model["modelId"] };
-  outputTokens?: number;
-  recordedAt: number;
-  traceId: TraceId;
-  turnId?: TurnId;
 }
 
 export interface RunModelTextRequestOptions {

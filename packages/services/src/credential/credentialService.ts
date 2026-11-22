@@ -12,6 +12,7 @@ import type { ICredentialService } from "./credential.js";
 import {
   createCredentialCipherProvider,
   type CredentialCipherProvider,
+  type CredentialSafeStorage,
 } from "./providers/credentialCipherProvider.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import { getAppConfigDir } from "../paths.js";
@@ -81,6 +82,10 @@ async function writeAll(credentialsFile: string, data: Record<string, string>): 
 
 interface CredentialServiceDependencies {
   cipherProvider?: CredentialCipherProvider;
+  /** Desktop main 可用 Electron safeStorage；Host/CLI 进程不传。 */
+  safeStorage?: CredentialSafeStorage;
+  /** 测试或自定义数据目录。 */
+  masterKeyPath?: string;
   /** Host 私有的持久化成功通知；不进入 Renderer/RPC 凭据接口。 */
   onDidMutate?: (event: { operation: "save" | "delete"; key: string }) => void;
 }
@@ -95,7 +100,12 @@ export interface LocalCredentialService extends ICredentialService {
 export function createCredentialService(
   dependencies: CredentialServiceDependencies = {},
 ): LocalCredentialService {
-  const cipherProvider = dependencies.cipherProvider ?? createCredentialCipherProvider();
+  const cipherProvider =
+    dependencies.cipherProvider ??
+    createCredentialCipherProvider({
+      safeStorage: dependencies.safeStorage,
+      masterKeyPath: dependencies.masterKeyPath,
+    });
 
   return {
     async recoverUnreadable(key, assertCurrent) {

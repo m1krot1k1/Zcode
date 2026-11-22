@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 已发布旧 Provider store 只在单向 importer 边界建模。 */
 import { z } from "zod";
 
 export interface ClaudeModelMapping {
@@ -29,11 +28,7 @@ export interface ModelProviderEndpoints {
   baseURL?: string;
   /** v2 catalog endpoint paths，key 使用公开 runtime kind。 */
   paths?: Partial<Record<ModelProviderKind, string>>;
-}
-
-export type RemoteProviderSchema = "anthropic" | "openai:chat" | "openai:messages" | "gemini";
-
-export type ModelProviderSupportedFormat = "anthropic" | "openai" | "responses" | "gemini";
+}export type ModelProviderSupportedFormat = "anthropic" | "openai" | "responses" | "gemini";
 
 export type ModelProviderApiFormat =
   | "anthropic-messages"
@@ -79,25 +74,7 @@ export interface ModelProviderCatalogModel {
   maxOutputTokens?: number;
   reasoning?: ModelProviderReasoningSpec;
   priority?: number;
-}
-
-export interface ModelProviderCatalogProvider {
-  id: string;
-  name: string;
-  endpoints: {
-    baseURL: string;
-    paths: Partial<Record<ModelProviderKind, string>>;
-  };
-  defaultKind?: ModelProviderKind;
-  models: ModelProviderCatalogModel[];
-}
-
-export interface ModelProviderCatalogFile {
-  schemaVersion: "zcode.model-providers.v1";
-  providers: ModelProviderCatalogProvider[];
-}
-
-export interface ModelProviderModelConfig extends ModelProviderCatalogModel {
+}export interface ModelProviderModelConfig extends ModelProviderCatalogModel {
   disabledReason?: string;
   supportsTools?: boolean;
   supportsStructuredOutput?: boolean;
@@ -146,14 +123,7 @@ export interface ModelProviderConfig {
   providerMappings?: ProviderModelMappings;
   createdAt: number;
   updatedAt: number;
-}
-
-export interface ModelProviderStoreFile {
-  schemaVersion: "zcode.model-providers.v2";
-  providers: ModelProviderConfig[];
-}
-
-const claudeModelMappingSchema = z.object({
+}const claudeModelMappingSchema = z.object({
   haiku: z.string(),
   sonnet: z.string(),
   opus: z.string(),
@@ -178,13 +148,13 @@ export const modelProviderKindSchema = z.enum(["anthropic", "openai", "openai-co
 
 export const modelProviderCatalogSourceIdSchema = z.enum(["china-llm-zcode-dev"]);
 
-export const modelProviderModalitySchema = z.enum(["text", "image", "video", "audio", "pdf"]);
+const modelProviderModalitySchema = z.enum(["text", "image", "video", "audio", "pdf"]);
 
 const providerOptionsPatchOperationSchema = z.object({
   path: z.array(z.string().min(1)).min(1),
 });
 
-export const providerOptionsPatchSchema = z.object({
+const providerOptionsPatchSchema = z.object({
   set: z.array(providerOptionsPatchOperationSchema.extend({ value: z.unknown() })).optional(),
   unset: z.array(providerOptionsPatchOperationSchema).optional(),
 });
@@ -197,17 +167,17 @@ export const modelProviderReasoningSpecSchema = z.object({
   ),
 });
 
-export const modelProviderEndpointPathsSchema = z.partialRecord(
+const modelProviderEndpointPathsSchema = z.partialRecord(
   modelProviderKindSchema,
   z.string(),
 );
 
-const modelProviderCatalogEndpointSchema = z.object({
+const _modelProviderCatalogEndpointSchema = z.object({
   baseURL: z.string(),
   paths: modelProviderEndpointPathsSchema,
 });
 
-export const modelProviderCatalogModelSchema = z.object({
+const modelProviderCatalogModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
   kinds: z.array(modelProviderKindSchema),
@@ -221,22 +191,7 @@ export const modelProviderCatalogModelSchema = z.object({
   maxOutputTokens: z.number().int().positive().optional(),
   reasoning: modelProviderReasoningSpecSchema.optional(),
   priority: z.number().finite().optional(),
-});
-
-export const modelProviderCatalogProviderSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  endpoints: modelProviderCatalogEndpointSchema,
-  defaultKind: modelProviderKindSchema.optional(),
-  models: z.array(modelProviderCatalogModelSchema),
-});
-
-export const modelProviderCatalogFileSchema = z.object({
-  schemaVersion: z.literal("zcode.model-providers.v1"),
-  providers: z.array(modelProviderCatalogProviderSchema),
-});
-
-export const modelProviderModelConfigSchema = modelProviderCatalogModelSchema.extend({
+});const modelProviderModelConfigSchema = modelProviderCatalogModelSchema.extend({
   disabledReason: z.string().optional(),
   supportsTools: z.boolean().optional(),
   supportsStructuredOutput: z.boolean().optional(),
@@ -268,7 +223,7 @@ export const modelProviderEndpointsSchema = legacyModelProviderEndpointsSchema.e
   paths: modelProviderEndpointPathsSchema.optional(),
 });
 
-export const legacyModelProviderConfigSchema = z.object({
+const legacyModelProviderConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   enabled: z.boolean().optional(),
@@ -292,7 +247,7 @@ export const legacyModelProviderConfigSchema = z.object({
 
 export const legacyModelProviderListSchema = z.array(legacyModelProviderConfigSchema);
 
-export const modelProviderConfigSchema = z.object({
+const _modelProviderConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   enabled: z.boolean().optional(),
@@ -315,21 +270,7 @@ export const modelProviderConfigSchema = z.object({
   providerMappings: providerModelMappingsSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
-});
-
-export const modelProviderListSchema = z.array(modelProviderConfigSchema);
-
-export const modelProviderStoreFileSchema = z.object({
-  schemaVersion: z.literal("zcode.model-providers.v2"),
-  providers: modelProviderListSchema,
-});
-
-export const modelProviderDisplayOrderStateSchema = z.object({
-  providerIds: z.array(z.string().min(1)),
-  updatedAt: z.number().int().nonnegative(),
-});
-
-export function stripLegacyClaudeProviderMappings(
+});export function stripLegacyClaudeProviderMappings(
   providerMappings: ProviderModelMappings | undefined,
 ): ProviderModelMappings | undefined {
   if (!providerMappings) {
@@ -344,10 +285,7 @@ export function stripLegacyClaudeProviderMappings(
 export const MODEL_PROVIDER_NEW_MODEL_CONTEXT_WINDOW = 200_000;
 // 老配置和缺 metadata 的模型没有可靠 catalog 事实时，应和设置页新增模型
 // 使用同一个保守默认值，避免 agent registry 与 UI 新增模型出现 128k/200k 分歧。
-const LEGACY_MODEL_CONTEXT_WINDOW = MODEL_PROVIDER_NEW_MODEL_CONTEXT_WINDOW;
-export const MODEL_ONE_MILLION_CONTEXT_WINDOW = 1_000_000;
-
-export function resolveModelProviderContextWindow(contextWindow: number | undefined): number {
+const LEGACY_MODEL_CONTEXT_WINDOW = MODEL_PROVIDER_NEW_MODEL_CONTEXT_WINDOW;export function resolveModelProviderContextWindow(contextWindow: number | undefined): number {
   if (typeof contextWindow !== "number" || !Number.isFinite(contextWindow)) {
     return LEGACY_MODEL_CONTEXT_WINDOW;
   }
@@ -488,7 +426,7 @@ export function resolveModelProviderKindApiFormat(kind: ModelProviderKind): Mode
   }
 }
 
-export function mapModelProviderApiFormatToKind(
+function mapModelProviderApiFormatToKind(
   apiFormat: ModelProviderApiFormat,
 ): ModelProviderKind {
   switch (apiFormat) {
@@ -620,29 +558,7 @@ export function resolveModelProviderRuntimeBaseUrl(
   // runtime SDK 接收的是 API base URL，会自行追加 /chat/completions、/responses 或 /messages。
   // 若直接透传完整请求地址，真实发送会拼成 .../chat/completions/chat/completions。
   return normalizeModelProviderBaseUrlForKind(joinBaseUrlAndPath(baseURL, paths[kind] ?? ""), kind);
-}
-
-export function getModelProviderEndpointKinds(
-  endpoints: ModelProviderEndpoints,
-): ModelProviderKind[] {
-  const kinds: ModelProviderKind[] = [];
-  const paths = endpoints.paths;
-  if (endpoints.baseURL?.trim() || paths) {
-    if (paths?.anthropic !== undefined) {
-      kinds.push("anthropic");
-    }
-    if (paths?.openai !== undefined) {
-      kinds.push("openai");
-    }
-    if (paths?.["openai-compatible"] !== undefined) {
-      kinds.push("openai-compatible");
-    }
-    return kinds;
-  }
-  return [];
-}
-
-function pathFromModelProviderEndpointUrl(url: URL): string {
+}function pathFromModelProviderEndpointUrl(url: URL): string {
   const path = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "");
   return `${path}${url.search}`;
 }
@@ -780,17 +696,7 @@ export function migrateLegacyModelProviderConfig(
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt,
   };
-}
-
-export function migrateLegacyModelProviderListToStoreFile(raw: unknown): ModelProviderStoreFile {
-  const providers = legacyModelProviderListSchema.parse(raw);
-  return {
-    schemaVersion: "zcode.model-providers.v2",
-    providers: providers.map(migrateLegacyModelProviderConfig),
-  };
-}
-
-export function getDefaultModelSupportedFormatsFromEndpoints(
+}export function getDefaultModelSupportedFormatsFromEndpoints(
   endpoints: Partial<
     Pick<ModelProviderEndpoints, "anthropic" | "openai" | "gemini" | "baseURL" | "paths">
   >,
@@ -856,26 +762,4 @@ export function resolveModelProviderApiFormat(
   }
 
   return "anthropic-messages";
-}
-
-export function resolveModelProviderBaseUrl(
-  provider: Pick<ModelProviderConfig, "apiFormat" | "endpoints"> &
-    Partial<Pick<ModelProviderConfig, "defaultKind">>,
-): string {
-  const kind = mapModelProviderApiFormatToKind(resolveModelProviderApiFormat(provider));
-  const runtimeBaseURL = resolveModelProviderRuntimeBaseUrl(provider, kind);
-  if (runtimeBaseURL) {
-    // 修复原因：设置页输入框展示的是 SDK/runtime baseURL。
-    // 内部 endpoints.baseURL 只是公共前缀时，必须结合固定 operation path 还原展示值。
-    return runtimeBaseURL;
-  }
-  const baseURL = provider.endpoints.baseURL?.trim();
-  if (baseURL) {
-    // Bugfix: 早期设置页会把 Chat Completions 的完整请求地址保存进 baseURL。
-    // Base URL 输入框应展示 SDK 的 API base URL，避免用户再次保存时延续错误形态。
-    return normalizeModelProviderBaseUrlForKind(baseURL, kind);
-  }
-  return resolveModelProviderRuntimeBaseUrl(provider, kind);
-}
-
-/** 连通性测试错误分类 */
+}/** 连通性测试错误分类 */

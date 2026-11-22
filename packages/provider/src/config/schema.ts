@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
-import { providerConfigDataSchema, zhipuAccountAccessDataSchema } from "./provider-data-schema.js";
+import {
+  providerConfigDataObjectSchema,
+  providerConfigDataSchema,
+  zhipuAccountAccessDataSchema,
+} from "./provider-data-schema.js";
 import { ModelConfig, ModelConfigRules } from "./model-config.js";
 import {
   ApiKeyAccessConfig,
+  LocalAuthAccessConfig,
   ProviderApiConfig,
   ProviderConfig,
   ProviderConfigMap,
@@ -23,7 +28,7 @@ import {
   type ProviderTemplateConfigRuleData,
 } from "./rule-data-schema.js";
 
-const accountProviderConfigSchema = providerConfigDataSchema
+const accountProviderConfigSchema = providerConfigDataObjectSchema
   .pick({ builtinModelIds: true })
   .extend({
     access: zhipuAccountAccessDataSchema.pick({ type: true, entitled: true }).nullable().optional(),
@@ -149,7 +154,9 @@ function createProviderConfig(config: z.infer<typeof providerConfigDataSchema>):
       config.access == null
         ? config.access
         : config.access.type !== "zhipu-account"
-          ? new ApiKeyAccessConfig(config.access)
+          ? config.access.type === "local-auth"
+            ? new LocalAuthAccessConfig()
+            : new ApiKeyAccessConfig(config.access)
           : new ZhipuAccountAccessConfig(config.access),
     api: config.api == null ? config.api : new ProviderApiConfig(config.api),
   });

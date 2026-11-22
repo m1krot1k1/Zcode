@@ -653,6 +653,51 @@ describe("cold conversation three-source merge", () => {
     );
   });
 
+  // MAXTURN-08：cold merge 只有在 transcript 覆盖时才压制 transcript-derived
+  // TurnComplete。durable 标记必须压过过期的 memory 事件（修复前该 turn 以 success
+  // 收口），否则重启后上限又会被伪装成成功。
+  it("MAXTURN-08: durable metadata.turnResult перекрывает memory TurnComplete(success)", () => {
+    const durableAssistant = assistantMessage(
+      "a1",
+      "u1",
+      "partial answer",
+      1_100,
+      "runtime-turn-1",
+    );
+    durableAssistant.info.metadata = { turnResult: "error_max_turns" };
+    const messages = [userMessage("u1", "run to limit", 1_000, "runtime-turn-1"), durableAssistant];
+    const memoryEvents = [
+      event(
+        1,
+        SessionEventType.TurnStarted,
+        { turnNumber: 1, input: "run to limit", messageId: "u1" },
+        "runtime-turn-1",
+      ),
+      event(
+        2,
+        SessionEventType.TurnComplete,
+        {
+          response: "partial answer",
+          tokenCount: 0,
+          toolCallCount: 0,
+          duration: 1,
+          resultType: "success",
+        },
+        "runtime-turn-1",
+      ),
+    ];
+
+    const merged = mergeColdConversationEvents({ memoryEvents, messages, sessionId: "s1" });
+    const completions = merged.events.filter((item) => item.type === SessionEventType.TurnComplete);
+    expect(completions).toHaveLength(1);
+    expect(completions[0]?.payload).toMatchObject({ resultType: "error_max_turns" });
+    expect(merged.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "cold_merge.durable_event_suppressed" }),
+      ]),
+    );
+  });
+
   it("keeps the whole unfinished memory turn after durable completed history", () => {
     const messages = [
       userMessage("u1", "question", 1_000, "turn-1"),

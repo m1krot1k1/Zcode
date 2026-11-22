@@ -16,7 +16,7 @@ import {
 const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
 
 /** uuid v7（RFC 9562）：48-bit Unix ms 时间戳 + 74-bit 随机；与 renderer 工厂同构。 */
-export function uuidv7(now: number = Date.now()): string {
+function uuidv7(now: number = Date.now()): string {
   const bytes = randomBytes(16);
   const ts = BigInt(now);
   bytes[0] = Number((ts >> 40n) & 0xffn);
@@ -33,13 +33,7 @@ export function uuidv7(now: number = Date.now()): string {
 }
 
 /** host services 进程稳定 clientId；pendingCommands 展示与幂等表以它区分提交端。 */
-const hostV4ClientId = `host-services-${uuidv7()}`;
-
-export function getHostV4ClientId(): string {
-  return hostV4ClientId;
-}
-
-export interface CreateHostCommandEnvelopeInput<T extends CommandType> {
+const hostV4ClientId = `host-services-${uuidv7()}`;interface CreateHostCommandEnvelopeInput<T extends CommandType> {
   type: T;
   payload: CommandPayloadMap[T];
   /** createSession 时为 null。 */
@@ -67,17 +61,13 @@ export function createHostCommandEnvelope<T extends CommandType>(
     );
   }
   if (ROW_TARGETING_COMMANDS.has(input.type) && !input.baseLogEpoch) {
-    throw new Error(
-      `command ${input.type} 是 row target 命令，必须携带 baseLogEpoch`,
-    );
+    throw new Error(`command ${input.type} 是 row target 命令，必须携带 baseLogEpoch`);
   }
   return {
     commandId: input.commandId ?? uuidv7(),
     clientId: input.clientId ?? hostV4ClientId,
     sessionId: input.sessionId,
-    ...(input.baseRevision !== undefined
-      ? { baseRevision: input.baseRevision }
-      : {}),
+    ...(input.baseRevision !== undefined ? { baseRevision: input.baseRevision } : {}),
     ...(input.baseLogEpoch ? { baseLogEpoch: input.baseLogEpoch } : {}),
     type: input.type,
     payload: input.payload,
@@ -86,7 +76,7 @@ export function createHostCommandEnvelope<T extends CommandType>(
 }
 
 /** v4 命令被服务端否决（rejected/stale/failed）。code 供调用方结构化分流，不匹配错误文案。 */
-export class ZCodeV4CommandRejectedError extends Error {
+class ZCodeV4CommandRejectedError extends Error {
   readonly code = "ZCODE_V4_COMMAND_REJECTED";
 
   constructor(

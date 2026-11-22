@@ -6,8 +6,8 @@ import type { SkillLoadOutcome, SkillMetadata } from "@zcode/contracts";
 import type { ContextSection } from "../types.js";
 import { estimateTokens } from "../utils.js";
 
-const DEFAULT_SKILL_METADATA_BUDGET = 20_000;
-const MAX_DESCRIPTION_CHARS = 250;
+const DEFAULT_SKILL_METADATA_BUDGET = 12_000;
+const MAX_DESCRIPTION_CHARS = 160;
 
 interface SkillsSectionOptions {
   outcome: SkillLoadOutcome;
@@ -38,23 +38,31 @@ export function buildSkillsSection(options: SkillsSectionOptions): ContextSectio
 
 function buildSkillsContent(skills: SkillMetadata[], budget: number): string {
   const lines = [
-    "The following skills are available for use with the Skill tool:",
+    "Installed skills currently available for this workspace:",
+    "",
+    "Choose an exact listed skill name when it matches the task, and load it with Skill if that tool is available to your role.",
+    "If no available skill matches the task, use SkillSearch to search the public skills.sh marketplace; install a relevant, reputable result with SkillInstall, then load it with Skill.",
     "",
   ];
 
   const sortedSkills = [...skills].sort((a, b) =>
     skillDisplayName(a).localeCompare(skillDisplayName(b)),
   );
-  const skillLines = sortedSkills.map((skill) => formatSkillLine(skill, MAX_DESCRIPTION_CHARS));
-  const full = [...lines, ...skillLines].join("\n");
-  if (full.length <= budget) {
-    return full;
+  // Progressive disclosure: keep full descriptions for the skills that fit, then fall
+  // back to names only for the tail. This preserves useful routing hints instead of
+  // dropping every description as soon as the catalog crosses the budget.
+  let content = lines.join("\n");
+  for (const skill of sortedSkills) {
+    const line = formatSkillLine(skill, MAX_DESCRIPTION_CHARS);
+    const nameLine = formatSkillNameLine(skill);
+    const next = content.length + 1 + line.length <= budget ? line : nameLine;
+    content += `\n${next}`;
   }
+  return content;
+}
 
-  const namesOnly = sortedSkills.map(
-    (skill) => `- ${skillDisplayName(skill)}${bareAliasSuffix(skill)} (file: ${skill.path})`,
-  );
-  return [...lines, ...namesOnly].join("\n");
+function formatSkillNameLine(skill: SkillMetadata): string {
+  return `- ${skillDisplayName(skill)}${bareAliasSuffix(skill)} (file: ${skill.path})`;
 }
 
 function formatSkillLine(skill: SkillMetadata, maxDescriptionChars: number): string {

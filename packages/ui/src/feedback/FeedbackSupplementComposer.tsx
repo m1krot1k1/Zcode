@@ -8,8 +8,8 @@ import { FeedbackErrorTip } from "@/feedback/feedbackBadges.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-export const MAX_SUPPLEMENT_ATTACHMENTS = 6;
-export const MAX_SUPPLEMENT_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const MAX_SUPPLEMENT_ATTACHMENTS = 6;
+const MAX_SUPPLEMENT_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
 export interface SupplementAttachmentDraft {
   id: string;
@@ -106,9 +106,7 @@ export function FeedbackSupplementComposer({
       }
       try {
         const next = await Promise.all(accepted.map((file) => readSupplementAttachment(file)));
-        setAttachments((current) =>
-          [...current, ...next].slice(0, MAX_SUPPLEMENT_ATTACHMENTS),
-        );
+        setAttachments((current) => [...current, ...next].slice(0, MAX_SUPPLEMENT_ATTACHMENTS));
         if (files.length > remaining) {
           setError(
             formatMessage(
@@ -172,9 +170,7 @@ export function FeedbackSupplementComposer({
           <h3 className="text-ui-base font-semibold tracking-wide text-foreground-subtle">
             {displayTitle}
           </h3>
-          <p className="mt-1 text-ui-base leading-5 text-foreground-subtle">
-            {displayDescription}
-          </p>
+          <p className="mt-1 text-ui-base leading-5 text-foreground-subtle">{displayDescription}</p>
         </div>
         <Button
           type="button"

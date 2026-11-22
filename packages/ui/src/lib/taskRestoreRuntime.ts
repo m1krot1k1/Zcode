@@ -1,11 +1,4 @@
-import type { ZCodeTaskPersistStatus, ZCodeTaskRuntimeStatus } from "@zcode/shared";
-
-interface TaskRestoreTimestampedMessageLike {
-  role: "user" | "assistant";
-  timestamp: number;
-}
-
-interface ResolveTaskRuntimeStatusAfterRestoreOptions {
+import type { ZCodeTaskPersistStatus, ZCodeTaskRuntimeStatus } from "@zcode/shared";interface ResolveTaskRuntimeStatusAfterRestoreOptions {
   persistedStatus?: ZCodeTaskPersistStatus;
   persistedUpdatedAt?: number;
   latestUserMessageTimestamp?: number | null;
@@ -17,9 +10,7 @@ interface ShouldShowTaskConfigLoadingOnSwitchParams {
   nextTaskId: string | null;
 }
 
-export function shouldKeepTaskStreamingDuringRestore(
-  taskStatus: ZCodeTaskRuntimeStatus,
-): boolean {
+export function shouldKeepTaskStreamingDuringRestore(taskStatus: ZCodeTaskRuntimeStatus): boolean {
   // Bugfix: 任务切到后台后再切回来时，如果这条 task 其实还在持续输出，
   // 恢复链路不能把它先打回 restoring/ready。
   // 否则 ChatView 会误以为生成已经结束，"思考中" 动画会在切回来后直接消失。
@@ -39,23 +30,7 @@ export function shouldShowTaskConfigLoadingOnSwitch(
   // 工具栏会短暂显示旧模型，直到 resume/config_option_update 回包才纠正。
   // 这里按 taskId 切换判定先进入 loading，占位期不再暴露上一个 task 的模型回显。
   return previousTaskId !== nextTaskId;
-}
-
-export function getLatestTaskUserMessageTimestamp(
-  messages: readonly TaskRestoreTimestampedMessageLike[],
-): number | null {
-  let latestTimestamp: number | null = null;
-  for (const message of messages) {
-    if (message.role !== "user") {
-      continue;
-    }
-    latestTimestamp =
-      latestTimestamp === null ? message.timestamp : Math.max(latestTimestamp, message.timestamp);
-  }
-  return latestTimestamp;
-}
-
-function toTerminalRuntimeStatus(status: ZCodeTaskPersistStatus): ZCodeTaskRuntimeStatus {
+}function toTerminalRuntimeStatus(status: ZCodeTaskPersistStatus): ZCodeTaskRuntimeStatus {
   if (status === "running") {
     return "streaming";
   }
@@ -79,10 +54,7 @@ export function resolveTaskRuntimeStatusAfterRestore(
     persistedStatus &&
     persistedStatus !== "running" &&
     typeof persistedUpdatedAt === "number" &&
-    (
-      latestUserMessageTimestamp === null ||
-      persistedUpdatedAt >= latestUserMessageTimestamp
-    )
+    (latestUserMessageTimestamp === null || persistedUpdatedAt >= latestUserMessageTimestamp)
   ) {
     // Bugfix: 历史任务恢复时，store 里可能还残留上一帧的 streaming 运行态。
     // 如果宿主已经把这一轮真正收尾（completed/error）持久化到 meta.status，

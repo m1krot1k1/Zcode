@@ -47,7 +47,7 @@ const CLUSTER_MAX = 3;
  * 它：`below`（上一节的下半截）从透明淡入到七成警示色，`above`（运行那一节的上半截）从七成涨到满，
  * 一直亮进灯里，`full` 是平的七成。
  */
-export function SpineRail({
+function SpineRail({
   ink,
   overhang,
   pitch,

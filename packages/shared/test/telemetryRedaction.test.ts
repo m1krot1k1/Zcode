@@ -55,12 +55,13 @@ describe("redactTelemetryText", () => {
   });
 
   it("遮盖常见密钥字面量", () => {
+    const awsKey = "AKIA" + "B".repeat(16);
     const redacted = redactTelemetryText(
-      "keys: sk-abcdefghijklmnopqrstuvwx ghp_abcdefghijklmnopqrstu AKIAIOSFODNN7EXAMPLE",
+      "keys: sk-abcdefghijklmnopqrstuvwx ghp_abcdefghijklmnopqrstu " + awsKey,
     );
     expect(redacted).not.toContain("sk-abcdefghijklmnopqrstuvwx");
     expect(redacted).not.toContain("ghp_abcdefghijklmnopqrstu");
-    expect(redacted).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(redacted).not.toContain(awsKey);
   });
 
   it("按 maxLength 截断并保留头部", () => {

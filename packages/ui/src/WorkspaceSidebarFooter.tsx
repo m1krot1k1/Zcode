@@ -1,5 +1,4 @@
 import { SidebarNativeTooltip, ControlHintTooltip } from "@/ControlHintTooltip.js";
-/* oxlint-disable eslint(max-lines) -- footer 聚合账户、主题、模式和快捷键菜单。 */
 import type { Locale, UserInfo } from "@zcode/shared";
 import { memo, useCallback, useEffect, useState, type ReactNode } from "react";
 import { DesktopCommandIds } from "@zcode/shared";
@@ -340,6 +339,11 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                   <DropdownMenuRadioItem value="zh-CN">
                     {intl.formatMessage({
                       id: "sidebar.settings.locale.zh-CN",
+                    })}
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="ru-RU">
+                    {intl.formatMessage({
+                      id: "sidebar.settings.locale.ru-RU",
                     })}
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>

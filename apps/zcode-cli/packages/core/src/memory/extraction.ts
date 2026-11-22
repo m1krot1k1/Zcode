@@ -15,7 +15,7 @@ export interface MemoryExtractionSnapshot {
   workspaceRoot: string;
 }
 
-export type MemoryExtractionDecision =
+type MemoryExtractionDecision =
   | { decision: "run"; messageCount: number }
   | {
       decision: "skip";
@@ -23,7 +23,7 @@ export type MemoryExtractionDecision =
       reason: "direct-memory-write" | "no-user-prose";
     };
 
-export interface MemoryExtractionExecutionInput {
+interface MemoryExtractionExecutionInput {
   abortSignal: AbortSignal;
   messageCount: number;
   snapshot: MemoryExtractionSnapshot;

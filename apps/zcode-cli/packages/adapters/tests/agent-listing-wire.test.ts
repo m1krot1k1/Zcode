@@ -16,7 +16,7 @@ import { AiSdkModelAdapter } from "../src/model/runner.js";
 // 首次与完整工具批次后的 listing 在 MCS 分支都为 system string，
 // 不能只验证 formatter 的 meta user 中间态。
 const EXPECTED_LISTING = [
-  "Available agent types for the Agent tool:",
+  "Available named agent types for Agent/Task tools:",
   "- A: Description A (Tools: Read)",
   "",
   "When you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.",
@@ -95,7 +95,9 @@ describe("agent listing final Anthropic wire", () => {
           ],
         },
         entries: [],
-        tools: [{ name: "Agent" }],
+        // 8cd57114 起 listing 按 provider-visible tool surface 过滤 profile tools；
+        // fixture 必须像真实 runtime 一样同时暴露 Agent 与被声明的 Read，否则 Read 被正确裁掉。
+        tools: [{ name: "Agent" }, { name: "Read" }],
       })!;
       const entries: RuntimeMessageEntry[] = [
         { message: { role: "system", content: "prefix" } },
@@ -133,7 +135,7 @@ describe("agent listing final Anthropic wire", () => {
       expect(bodies).toHaveLength(1);
       const { messages, system } = bodies[0]!;
       const notices = messages.filter((message) =>
-        JSON.stringify(message.content).includes("Available agent types for the Agent tool:"),
+        JSON.stringify(message.content).includes("Available named agent types for Agent/Task tools:"),
       );
       expect(notices).toHaveLength(1);
       expect(notices[0]!.role).toBe(mcs ? "system" : "user");

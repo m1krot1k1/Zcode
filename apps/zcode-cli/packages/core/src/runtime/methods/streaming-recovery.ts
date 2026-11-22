@@ -44,6 +44,38 @@ interface StreamRecoveryAttempt {
   retryNumber: number;
 }
 
+const OPENCODE_PROVIDER_ID = "opencode";
+
+/**
+ * OpenCode 的 429 必须留在这次请求上。
+ * 依据 OCP-06：限流不能通过 stream recovery 重开，也不能退到另一个 provider/model。
+ */
+export function isOpenCodeRateLimitFailure(input: {
+  error: unknown;
+  providerId: string;
+}): boolean {
+  if (input.providerId !== OPENCODE_PROVIDER_ID) return false;
+  for (const record of walkErrorRecords(input.error)) {
+    if (isRateLimitRecord(record)) return true;
+  }
+  return false;
+}
+
+/**
+ * OpenCode 的登录失败必须留在这次请求上。
+ * 依据 OCP-05：ZCode 不读取 CLI credentials，也不退到另一个 provider/model。
+ */
+export function isOpenCodeSignInFailure(input: {
+  error: unknown;
+  providerId: string;
+}): boolean {
+  if (input.providerId !== OPENCODE_PROVIDER_ID) return false;
+  for (const record of walkErrorRecords(input.error)) {
+    if (isSignInRecord(record)) return true;
+  }
+  return false;
+}
+
 export function hasStreamRecoveryBudget(state: RegularTurnLoopState): boolean {
   return state.streamRecoveryRetryCount < STREAM_RECOVERY_MAX_RETRIES;
 }
@@ -292,6 +324,36 @@ function findStartPlanBusyProviderCode(error: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+function isSignInRecord(record: Record<string, unknown>): boolean {
+  const context = asRecord(record.context);
+  const status =
+    record.statusCode ?? record.responseStatus ?? context?.statusCode ?? context?.responseStatus;
+  if (status === 401 || status === 403) return true;
+  const reason = stringValue(record.reason) ?? stringValue(context?.reason);
+  if (reason === "auth_failed") return true;
+  const code =
+    stringValue(record.code) ??
+    stringValue(context?.code) ??
+    stringValue(record.providerCode) ??
+    stringValue(context?.providerCode);
+  return (
+    code === "AUTH_REQUIRED" ||
+    code === "provider_not_configured" ||
+    code === "PROVIDER_NOT_CONFIGURED"
+  );
+}
+
+function isRateLimitRecord(record: Record<string, unknown>): boolean {
+  const context = asRecord(record.context);
+  const status =
+    record.statusCode ?? record.responseStatus ?? context?.statusCode ?? context?.responseStatus;
+  if (status === 429) return true;
+  const code = stringValue(record.code) ?? stringValue(context?.code);
+  if (code === "model_rate_limited" || code === "MODEL_RATE_LIMITED") return true;
+  const reason = stringValue(record.reason) ?? stringValue(context?.reason);
+  return reason === "rate_limited";
 }
 
 function isRetryableStreamRecoveryFailure(error: unknown): boolean {

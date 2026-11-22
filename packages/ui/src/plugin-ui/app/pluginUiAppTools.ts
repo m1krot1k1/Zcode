@@ -17,10 +17,10 @@ const MAX_TOOL_LIST_PAGES = 10;
  * 认领与回传按 callId 幂等：传输失败重试；`accepted: false` 是 agent 的明确裁决，不重试。
  * 总等待（0.5 s + 1 s）留在 5 s 认领期限内。
  */
-export const PLUGIN_UI_APP_TOOL_RPC_ATTEMPTS = 3;
-export const PLUGIN_UI_APP_TOOL_RPC_RETRY_DELAY_MS = 500;
+const PLUGIN_UI_APP_TOOL_RPC_ATTEMPTS = 3;
+const PLUGIN_UI_APP_TOOL_RPC_RETRY_DELAY_MS = 500;
 
-export interface PluginUiAppTools {
+interface PluginUiAppTools {
   isBusy(): boolean;
   /** 新端口到达：注销上一个页面实例的登记（新实例握手后按自己的能力重新登记）。 */
   resetForAttach(): void;

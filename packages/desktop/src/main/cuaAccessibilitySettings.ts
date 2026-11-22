@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- 安装验签、main 级权限会话和拖拽 TOCTOU 共同维护同一 Helper identity */
 // 授权引导不触发任何 macOS 原生权限弹窗。若每个 TCC stage 先经 LaunchServices
 // 拉起 Helper 到一次性权限请求模式，由 Helper 进程内命中 AXIsProcessTrustedWithOptions{prompt:true}
 // / CGRequestScreenCaptureAccess 来让自己“自动出现在权限列表里”，代价是一个打断用户的系统对话框。
@@ -21,12 +20,12 @@ import type {
 } from "@zcode/shared";
 import { createDesktopCuaHelperInstaller } from "./desktopCuaHelperInstaller.js";
 
-export const MACOS_ACCESSIBILITY_SETTINGS_URL =
+const MACOS_ACCESSIBILITY_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-export const MACOS_SCREEN_RECORDING_SETTINGS_URL =
+const MACOS_SCREEN_RECORDING_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
-export interface OpenCuaAccessibilitySettingsOptions {
+interface OpenCuaAccessibilitySettingsOptions {
   initialPermission?: CuaPermissionKind;
   requiredPermissions?: CuaPermissionKind[];
   env?: NodeJS.ProcessEnv;
@@ -79,7 +78,7 @@ function messageOf(error: unknown): string {
 // inode change time，用户态无法回拨），任何对 Mach-O / 签名清单 / Info.plist 的替换都会改变指纹。prepare
 // 时抓一次，dragstart 前同步比对，不符即拒拖 + 清缓存重新 prepare。残留仅剩比对与 startDrag 之间的
 // 微秒级窗口（与 launch 路径 verifyInstalled→launch 同源、同量级）。
-export type CuaHelperBundleFingerprint = string;
+type CuaHelperBundleFingerprint = string;
 
 function statSignature(path: string): string {
   try {
@@ -115,7 +114,7 @@ function bundleTreeFingerprint(root: string, maxEntries = 512): string {
   return parts.join(",");
 }
 
-export function captureCuaHelperBundleFingerprint(appPath: string): CuaHelperBundleFingerprint {
+function captureCuaHelperBundleFingerprint(appPath: string): CuaHelperBundleFingerprint {
   const parts = [
     `app=${statSignature(appPath)}`,
     `sig=${statSignature(join(appPath, "Contents", "_CodeSignature", "CodeResources"))}`,
@@ -563,7 +562,7 @@ export async function openCuaPermissionOnboarding(
 // 自动进入 TCC 列表）。弹窗被摘除后，拖拽重新成为 Helper 进入权限列表的**唯一**途径，
 // 故恢复本函数。openCuaAccessibilitySettings（旧确认弹窗频道）不恢复，它已被 onboarding 取代。
 
-export interface PrepareCuaHelperPermissionDragOptions {
+interface PrepareCuaHelperPermissionDragOptions {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   logger?: OpenCuaAccessibilitySettingsOptions["logger"];
@@ -574,7 +573,7 @@ export interface PrepareCuaHelperPermissionDragOptions {
   resolveHelperIdentity?: (appPath: string) => Promise<HelperPermissionSubjectIdentity>;
 }
 
-export interface PrepareCuaHelperPermissionDragMainResult extends PrepareCuaHelperPermissionDragResult {
+interface PrepareCuaHelperPermissionDragMainResult extends PrepareCuaHelperPermissionDragResult {
   /**
    * 与本次完整验签前后绑定的同步 bundle 指纹。只允许 main 内存缓存消费 —— IPC handler 必须在
    * 返回 renderer 前剥掉此字段（跨进程暴露既无用又扩大攻击面）。

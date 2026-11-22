@@ -1,4 +1,3 @@
-import { getTurnTools } from "./turn-tool-visibility.js";
 import { refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 import { appendRuntimeAgentListing } from "../helpers/agent-listing.js";
 import { beginLocalTurnPreparation } from "@zcode/contracts";
@@ -18,6 +17,7 @@ import {
   buildRuntimeProviderRequestMessages,
   prepareRuntimeProviderRequest,
   createCompactRapidRefillError,
+  resolveMaxTurnsWrapUpReminder,
   throwIfTurnAborted,
   shouldBuildTodoReminder,
 } from "../helpers/index.js";
@@ -31,6 +31,7 @@ import { persistRuntimeReminderMessage } from "./runtime-reminder-persistence.js
 import { buildProjectionAnchor } from "./projection-anchor.js";
 import {
   evaluateRapidRefill,
+  getTurnTools,
   MAX_CONSECUTIVE_RAPID_REFILLS,
   RAPID_REFILL_TOOL_TURN_THRESHOLD,
   recordCompactHistoryRound,
@@ -46,13 +47,83 @@ import {
   filterOutputTokenContinuationEntries,
 } from "./turn-output-token-continuation.js";
 
+/**
+ * maxTurns 的生效条件只有显式正整数；undefined、0、负数、NaN、非整数都表示无限制
+ * （docs/specs/max-turns-limit.md「Контракт」）。这里不接受任何静默 default。
+ */
+function resolveMaxTurnsLimit(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+/**
+ * 达到显式 maxTurns 且模型仍要求继续时，由唯一 turn loop 收口本轮：
+ * 不再发起新的 model step，已提交的 assistant 文本/工具结果保留，terminal 事实由
+ * turn.ts 根据 turnMachine.resultType 发布 TurnComplete(error_max_turns)。
+ */
+async function finishTurnAtMaxTurns(
+  runtime: AgentRuntimeInternal,
+  state: RegularTurnLoopState,
+  limit: number,
+): Promise<void> {
+  if (state.activeTurn) {
+    // 与其它 no-tool 边界一致：不能把尚未合并的 guide 吞掉，也不能让 Router 继续 steer。
+    await runtime.fallbackPendingGuidesToQueue({
+      activeTurn: state.activeTurn,
+      events: state.events,
+      reasonCode: "guide.noToolBoundary",
+      traceContext: state.turnTraceContext,
+    });
+    state.activeTurn.steerable = false;
+  }
+  // 修复原因：guide 回退是 async 边界，用户 Stop 可能恰好落在这里；取消必须优先于 maxTurns，
+  // 不能被误报成受限完成（docs/specs/max-turns-limit.md「Контракт」）。
+  throwIfTurnAborted(state.turnAbortSignal);
+  // 修复原因：cold hydration 从 transcript 反向合成 TurnComplete，看不到 live 事件；
+  // 没有 durable 标记时它会把最终步骤当成普通 success，重启后受限 turn 会显示为成功
+  // （docs/specs/max-turns-limit.md「Контракт」）。标记必须先于终态事件落盘：即使进程在
+  // TurnComplete 之后退出，冷恢复也已经能看到 error_max_turns。
+  // 修复原因：旧实现用 runtime 全局 latestAssistantMessageId；空 length 步骤回滚后它仍指向
+  // 上一个 turn 的 assistant，会把标记写进别人的 turn。现在由 persistTurnResultMarker
+  // 按 turnId 在本 turn 内查找锚点，缺失时创建技术锚点；这里不再传递全局指针。
+  await runtime.persistTurnResultMarker({
+    parentMessageId: state.currentUserMessageId,
+    resultType: "error_max_turns",
+    traceContext: state.turnTraceContext,
+    turnId: state.turnId,
+    historyRoundCount: state.historyRoundCount,
+    model: state.model,
+  });
+  runtime.logger?.info("Turn reached max turns limit", {
+    ...traceContextToLogContext(state.turnTraceContext),
+    event: "turn.max_turns.reached",
+    module: "core.runtime",
+    maxTurns: limit,
+    modelStepCount: state.modelStepCount,
+    // 受限结束不是普通 completed：诊断状态必须反映失败语义，否则监控会把
+    // 达到上限当成成功收口。
+    status: "failed",
+  });
+  state.turnMachine = new TurnMachineImpl(
+    state.turnMachine.complete(state.modelResponse, "error_max_turns"),
+  );
+}
+
 export async function runRegularTurnLoop(
   this: AgentRuntimeInternal,
   state: RegularTurnLoopState,
 ): Promise<void> {
+  // maxTurns 只在显式正整数时生效；undefined/0/负数/非整数都表示无限制
+  // （docs/specs/max-turns-limit.md「Контракт」）。
+  const maxTurnsLimit = resolveMaxTurnsLimit(this.config.maxTurns);
   while (true) {
     throwIfTurnAborted(state.turnAbortSignal);
     refreshOffPeakTurnAfterTakeover(this, state);
+    // 检查只发生在新 model step 的边界：已完成 maxTurns 步后，模型若仍要求继续，
+    // 不再发起下一次请求，也不影响当前步内已开始的工具执行与权限交互。
+    if (maxTurnsLimit !== undefined && state.modelStepCount >= maxTurnsLimit) {
+      await finishTurnAtMaxTurns(this, state, maxTurnsLimit);
+      break;
+    }
     const outputTokenRecoveryActive = state.turnRequestState.outputTokenContinuationCount > 0;
     // guide 只允许由完整 tool result batch 设置这个一次性诊断；普通 queue 不在
     // model roundtrip 起点消费，避免把未来 turn 错并入当前 product turn。
@@ -122,6 +193,8 @@ export async function runRegularTurnLoop(
 
     const finishMcp = beginLocalTurnPreparation(state.turnTraceContext, "mcp");
     await this.initializeMcp(state.turnTraceContext);
+    // Lazy plugin servers pay their process cost only when this turn names their format.
+    await this.activateLazyMcpServersForInput(state.input, state.turnTraceContext);
     // tools/list_changed 只在回合开始前生效。
     await this.refreshMcpToolsIfChanged(state.turnTraceContext);
     finishMcp();
@@ -149,6 +222,19 @@ export async function runRegularTurnLoop(
       commitTurnRequestEntries(this, state.turnRequestState, [
         systemReminderAttachmentEntry("runtime_mode", runtimeModeReminderBody),
       ]);
+    }
+    if (!outputTokenRecoveryActive) {
+      const wrapUpReminder = resolveMaxTurnsWrapUpReminder({
+        modelStepCount: state.modelStepCount,
+        maxTurns: maxTurnsLimit,
+        alreadyInjected: state.maxTurnsWrapUpReminderInjected,
+      });
+      if (wrapUpReminder) {
+        state.maxTurnsWrapUpReminderInjected = true;
+        commitTurnRequestEntries(this, state.turnRequestState, [
+          systemReminderAttachmentEntry("model_anomaly", wrapUpReminder),
+        ]);
+      }
     }
     if (
       !outputTokenRecoveryActive &&

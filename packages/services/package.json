@@ -10,6 +10,7 @@
     ".": "./src/index.ts",
     "./cua-permission-broker": "./src/cua-permission-broker/index.ts",
     "./process/processTreeTerminator": "./src/process/processTreeTerminator.ts",
+    "./project": "./src/project/index.ts",
     "./node": "./src/node.ts"
   },
   "scripts": {
@@ -30,7 +31,10 @@
     "node-forge": "^1.4.0",
     "node-pty": "^1.0.0",
     "smol-toml": "^1.6.1",
+    "tree-sitter-wasms": "0.1.13",
+    "typescript": "^6.0.2",
     "undici": "^6.23.0",
+    "web-tree-sitter": "0.25.10",
     "yaml": "^2.9.0",
     "yauzl": "^3.3.0",
     "yazl": "^3.3.1",
@@ -40,7 +44,6 @@
     "@pierre/diffs": "^1.1.22",
     "@types/node": "^25.5.0",
     "@types/yauzl": "^2.10.3",
-    "esbuild": "^0.25.0",
-    "typescript": "^6.0.2"
+    "esbuild": "^0.25.0"
   }
 }
