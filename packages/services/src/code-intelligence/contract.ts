@@ -1,5 +1,6 @@
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
+import type { LocalEmbeddingPort } from "./localEmbeddingContract.js";
 
 export type CodeIndexState = "unindexed" | "indexing" | "ready" | "degraded";
 export type CodeIndexMatchKind = "lexical" | "semantic";
@@ -216,6 +217,9 @@ export interface CodeIntelligenceService {
       apiKey?: string;
     },
   ): Promise<EmbeddingTestResult>;
+
+  /** Managed local embedding runtime attached to this code index, when the Host supports it. */
+  readonly localEmbeddings?: LocalEmbeddingPort;
 
   /** Set/clear an embedding provider without returning or persisting API-key material in the index. */
   setEmbeddingConfig(

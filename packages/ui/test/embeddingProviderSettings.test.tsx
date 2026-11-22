@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodeIndexStatus, CodeIntelligenceService, CodeWorkspaceRef } from "@zcode/services";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { EmbeddingProviderSettings } from "@/agent-workbench/EmbeddingProviderSettings.js";
+
+afterEach(cleanup);
 
 const workspaceRef: CodeWorkspaceRef = {
   workspacePath: "/workspace/demo",
@@ -29,6 +31,64 @@ function status(apiKeyConfigured: boolean): CodeIndexStatus {
 }
 
 describe("Embedding provider settings", () => {
+  it("installs and selects the recommended local embedding model", async () => {
+    let installed = false;
+    let modelPresent = false;
+    const getStatus = vi.fn(async () => status(false));
+    const getLocalEmbeddingStatus = vi.fn(async () => ({
+      runtime: "ollama" as const,
+      installed,
+      running: installed,
+      models: modelPresent ? [{ id: "nomic-embed-text:latest", sizeBytes: 274_000_000 }] : [],
+      recommended: {
+        model: "nomic-embed-text",
+        dimensions: 768,
+        downloadBytes: 274_000_000,
+        reason: "Best quality/size trade-off.",
+      },
+    }));
+    const installLocalEmbedding = vi.fn(async () => {
+      installed = true;
+      return { status: "installed" as const, version: "0.40.17" };
+    });
+    const pullLocalEmbeddingModel = vi.fn(async () => {
+      modelPresent = true;
+      return { status: "installed" as const, model: "nomic-embed-text" };
+    });
+    const setEmbeddingConfig = vi.fn(async () => status(false));
+    const codeIndex = {
+      getStatus,
+      localEmbeddings: {
+        getStatus: getLocalEmbeddingStatus,
+        install: installLocalEmbedding,
+        pull: (model: string) => pullLocalEmbeddingModel({ model }),
+      },
+      setEmbeddingConfig,
+    } as unknown as CodeIntelligenceService;
+
+    render(
+      <ZCodeIntlProvider initialLocale="en-US">
+        <EmbeddingProviderSettings codeIndex={codeIndex} workspaceRef={workspaceRef} />
+      </ZCodeIntlProvider>,
+    );
+
+    fireEvent.click(await screen.findByText("Install local runtime"));
+    expect(await screen.findByText("Local runtime installed.")).toBeTruthy();
+    expect(installLocalEmbedding).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(await screen.findByText("Download nomic-embed-text (261 MB)"));
+    expect(
+      await screen.findByText("nomic-embed-text is installed and selected for this workspace."),
+    ).toBeTruthy();
+    expect(pullLocalEmbeddingModel).toHaveBeenCalledWith({ model: "nomic-embed-text" });
+    expect(setEmbeddingConfig).toHaveBeenCalledWith({
+      ...workspaceRef,
+      provider: "ollama",
+      endpoint: "http://127.0.0.1:11434/api/embed",
+      model: "nomic-embed-text",
+    });
+  });
+
   it("keeps a tested draft token until save and then tests with the saved credential", async () => {
     let savedToken = false;
     const getStatus = vi.fn(async () => status(savedToken));

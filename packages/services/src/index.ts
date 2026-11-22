@@ -309,6 +309,12 @@ export {
   type EmbeddingPhase,
   type EmbeddingTestResult,
 } from "./code-intelligence/contract.js";
+export type {
+  LocalEmbeddingInstallResult,
+  LocalEmbeddingPort,
+  LocalEmbeddingPullResult,
+  LocalEmbeddingRuntimeStatus,
+} from "./code-intelligence/localEmbeddingContract.js";
 export { IPromptEnhancerService, type PromptEnhancerService } from "./prompt-enhancer/contract.js";
 // Bug 原因: баррель реэкспортировал значения/типы через `./chat-autocomplete/index.js`,
 // а тот реэкспортирует `user-lexicon-store.ts` → `../paths.js` → `node:fs`. Renderer

@@ -26,6 +26,10 @@ import {
   type EmbeddingCredentialStore,
 } from "./embeddingSettings.js";
 import { validateEmbeddingConfig } from "./embeddings.js";
+import {
+  createLocalEmbeddingRuntime,
+  type LocalEmbeddingRuntime,
+} from "./localEmbeddingRuntime.js";
 
 /**
  * `CodeIntelligenceService` v2 — оркестратор на стороне Host.
@@ -57,6 +61,8 @@ interface CodeIntelligenceServiceOptions {
   workerFactory?: (indexRootDir: string) => IndexWorkerClient;
   /** Тестовый seam, вызывается после открытия воркера и до чтения прогресса. */
   beforeReadStatusProgress?: () => Promise<void>;
+  /** Тестовый seam для локального embedding runtime. */
+  localEmbeddingRuntime?: LocalEmbeddingRuntime;
 }
 
 interface WorkspaceProgress {
@@ -72,6 +78,8 @@ export function createCodeIntelligenceService(
   const indexRootDir = options.indexRootDir ?? join(getZCodeDataRootDir(), "code-intelligence");
   const fetchImpl = options.fetch ?? fetch;
   const credentialService = options.credentialService;
+  const localEmbedding =
+    options.localEmbeddingRuntime ?? createLocalEmbeddingRuntime({ fetch: fetchImpl });
   const progressByIdentity = new Map<string, WorkspaceProgress>();
   const diagnosticsByIdentity = new Map<string, string[]>();
   const activePasses = new Map<string, Promise<CodeIndexStatus>>();
@@ -469,6 +477,12 @@ export function createCodeIntelligenceService(
       return payload as Awaited<ReturnType<CodeIntelligenceService["trace"]>>;
     },
 
+    localEmbeddings: {
+      getStatus: () => localEmbedding.getStatus(),
+      install: () => localEmbedding.install(),
+      pull: (model) => localEmbedding.pull(model),
+    },
+
     async testEmbeddingConfig(params): Promise<EmbeddingTestResult> {
       const workspace = resolveWorkspace(params);
       return probeEmbeddingProvider(
@@ -521,11 +535,13 @@ export function createCodeIntelligenceService(
     },
 
     disposeAll() {
+      localEmbedding.dispose();
       watcherRegistry.disposeAll();
       void client.dispose().catch(() => undefined);
     },
 
     async disposeAllAndWait() {
+      localEmbedding.dispose();
       await watcherRegistry.disposeAllAndWait();
       await client.dispose().catch(() => undefined);
     },

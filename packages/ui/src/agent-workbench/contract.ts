@@ -12,6 +12,10 @@ export type {
   CodeTraceResult,
   CodeWorkspaceRef,
   EmbeddingProvider,
+  LocalEmbeddingRuntimeStatus,
+  LocalEmbeddingInstallResult,
+  LocalEmbeddingPullResult,
+  LocalEmbeddingPort,
 } from "@zcode/services";
 
 export interface AgentWorkbenchViewProps {
