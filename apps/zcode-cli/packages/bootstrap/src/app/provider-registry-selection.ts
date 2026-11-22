@@ -1,5 +1,6 @@
 import { ModelErrorCode, ModelProtocolError } from "@zcode/contracts";
 import {
+  migrateLegacyModelSelection,
   normalizeModelSelection,
   type ModelSelection,
   type Provider,
@@ -44,14 +45,15 @@ export function completeAuxiliaryRegistryModelSelection(
   registry: ProviderRegistryModelSource,
   selection: ModelSelection,
 ): ModelSelection {
-  const model = registry.getModel(selection.providerId, selection.modelId);
+  const normalized = migrateLegacyModelSelection(registry.getView(), selection);
+  const model = registry.getModel(normalized.providerId, normalized.modelId);
   const reasoningLevel = model?.config.optionSpecs.reasoningLevel.values[0];
-  if (!reasoningLevel) return selection;
+  if (!reasoningLevel) return normalized;
   return {
-    providerId: selection.providerId,
-    modelId: selection.modelId,
+    providerId: normalized.providerId,
+    modelId: normalized.modelId,
     options: {
-      ...selection.options,
+      ...normalized.options,
       reasoningLevel,
     },
   };
@@ -102,15 +104,16 @@ export function resolveRegistryOwnedModelSelection(
   selection: ModelSelection,
   options?: { allowMissingReasoning?: boolean },
 ): ResolvedRegistrySelection | undefined {
-  const validation = registry.validateSelection(selection);
+  const effective = migrateLegacyModelSelection(registry.getView(), selection);
+  const validation = registry.validateSelection(effective);
   if (!validation.ok) {
     if (validation.code === "provider-not-found") return undefined;
     if (validation.code === "reasoning-level-missing" && options?.allowMissingReasoning) {
-      return resolveRegistryModelSelection(registry, selection);
+      return resolveRegistryModelSelection(registry, effective);
     }
     throw createRegistrySelectionProtocolError(validation);
   }
-  const resolved = resolveRegistryModelSelection(registry, selection);
+  const resolved = resolveRegistryModelSelection(registry, effective);
   if (!resolved) throw new Error("Registry Selection 校验与索引结果不一致");
   return resolved;
 }
@@ -185,9 +188,10 @@ function toModelOption(provider: Provider, model: ProviderModel): ZCodeModelOpti
   const properties = model.config.properties;
   const optionSpecs = model.config.optionSpecs;
   const reasoning = optionSpecs.reasoningLevel;
+  const displayName = properties.displayName?.trim();
   return {
     ref: { providerId: provider.providerId, modelId: model.modelId },
-    label: model.modelId,
+    label: displayName && displayName.length > 0 ? displayName : model.modelId,
     providerLabel: provider.providerName ?? provider.providerId,
     contextWindow: properties.contextWindow,
     maxOutputTokens: optionSpecs.maxOutputTokens.max,

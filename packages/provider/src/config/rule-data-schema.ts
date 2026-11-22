@@ -4,6 +4,7 @@ import { manualModelConfigSchema } from "./manual-model-config.js";
 export {manualModelConfigSchema} from "./manual-model-config.js";
 import {
   apiKeyAccessDataSchema,
+  isLocalCliApiType,
   personalProviderApiDataSchema,
   providerConfigDataSchema,
   providerConfigDataObjectSchema,
@@ -120,7 +121,7 @@ export const personalProviderConfigRuleSchema = providerConfigRuleSchema
     }),
   })
   .superRefine((rule, context) => {
-    if (rule.config.access?.type === "local-auth" || rule.config.api?.type === "opencode-sdk") {
+    if (rule.config.access?.type === "local-auth" || isLocalCliApiType(rule.config.api?.type)) {
       context.addIssue({
         code: "custom",
         path: ["config"],

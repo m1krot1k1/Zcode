@@ -30,6 +30,8 @@ export type {
   OpenCodeModelProvider,
   OpenCodeModelProviderRuntime,
 } from "./model-execution/opencode-provider.js";
+export { createCursorProvider } from "./model-execution/cursor-provider.js";
+export type { CursorProvider, CursorProviderOptions } from "./model-execution/cursor-provider.js";
 export type {
   AiSdkBoundModelResolution,
   AiSdkModelExecutionConfig,

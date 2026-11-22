@@ -154,6 +154,7 @@ function modelConfigFromSeed(
 function maxOutputTokensMap(apiFormat: ProviderApiType): string {
   switch (apiFormat) {
     case "opencode-sdk":
+    case "cursor-cli":
       return "{}";
     case "anthropic-messages":
       return '{"max_tokens":maxOutputTokens}';

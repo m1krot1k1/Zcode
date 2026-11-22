@@ -4126,6 +4126,33 @@ const enUS: Record<string, string> = {
   "settings.modelProviderDescription":
     "Choose an API provider or enable OpenCode CLI. OpenCode CLI models are selected directly in the conversation and use OpenCode's own sign-in and usage limits.",
   "settings.modelProvider.credentialModeApiKey": "API key",
+  "settings.cursor.title": "Cursor CLI",
+  "settings.cursor.enable": "Enable Cursor CLI",
+  "settings.cursor.checking": "Checking the Cursor CLI…",
+  "settings.cursor.available": "Cursor CLI detected ({version})",
+  "settings.cursor.missing": "Cursor CLI is not installed",
+  "settings.cursor.unavailable": "Cursor CLI could not be checked",
+  "settings.cursor.timed-out": "Cursor CLI check timed out",
+  "settings.cursor.hostUnavailable":
+    "Cursor CLI is unavailable on the Host that owns this workspace",
+  "settings.cursor.recheck": "Check again",
+  "settings.cursor.installHint": "Install Cursor CLI from the official instructions:",
+  "settings.cursor.modelsTitle": "Models reported by the local Cursor CLI",
+  "settings.cursor.modelsCount": "{count} models available",
+  "settings.cursor.modelsBaseline":
+    "Some entries come from the documented reference list until the CLI reports its own models.",
+  "settings.cursor.noModels": "The Cursor CLI did not report any models.",
+  "settings.cursor.modelsUnavailable": "Could not read the Cursor model list.",
+  "settings.cursor.setting-save-failed":
+    "Could not save Cursor CLI. The provider was left disabled; try again.",
+  "settings.cursor.install": "Install Cursor CLI",
+  "settings.cursor.installing": "Installing Cursor CLI…",
+  "settings.cursor.installFailed":
+    "Cursor CLI installation failed. Check the network and try again.",
+  "settings.cursor.installTimeout": "Cursor CLI installation timed out. Try again.",
+  "settings.cursor.installVerificationFailed":
+    "The installer finished, but cursor-agent is still not available. Restart the app or install manually.",
+  "settings.cursor.installUnsupported": "One-click installation is not available on this platform.",
   "settings.openCode.title": "OpenCode CLI",
   "settings.openCode.enable": "Enable OpenCode CLI",
   "settings.openCode.setting-save-failed":
@@ -5261,6 +5288,7 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.workspaceIntelligenceTitle": "Workspace intelligence",
   "settings.modelProvider.legacyOpenCodeTitle": "Older OpenCode API configurations",
   "settings.modelProvider.openCodeCli": "OpenCode CLI",
+  "settings.modelProvider.cursorCli": "Cursor CLI",
   "settings.modelProvider.refresh": "Refresh",
   "settings.modelProvider.reorderProvider": "Drag to reorder provider",
   "settings.modelProvider.reorderModel": "Drag to reorder model",

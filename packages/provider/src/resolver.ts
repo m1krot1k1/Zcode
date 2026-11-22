@@ -6,6 +6,7 @@ import type {
   localAuthAccessDataSchema,
   completeProviderConfigDataSchema,
 } from "./config/provider-data-schema.js";
+import { isLocalCliApiType } from "./config/provider-data-schema.js";
 import type { ConfigValidationIssue } from "./config-overlay.js";
 import {
   type ApiKeyAccessConfig,
@@ -62,7 +63,7 @@ export function serializeRegistryProviderConfig(
                 : { apiKeyManagementUrl: config.access.apiKeyManagementUrl }),
             },
     api:
-      config.api.type === "opencode-sdk"
+      isLocalCliApiType(config.api.type)
         ? { type: config.api.type }
         : {
             type: config.api.type,

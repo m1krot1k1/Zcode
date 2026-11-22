@@ -17,7 +17,7 @@ export interface AiSdkToolTransformOptions {
   toolSearchEnabled?: boolean;
   requiresMfjsToolSchema?: boolean;
   supportsNativeWebSearch?: boolean;
-  providerKind?: "openai" | "anthropic" | "openai-compatible" | "opencode-sdk" | "gateway" | "custom";
+  providerKind?: "openai" | "anthropic" | "openai-compatible" | "opencode-sdk" | "cursor-cli" | "gateway" | "custom";
 
   /** 本次请求的模型 id，仅用于首方 strict 资格判定；缺席即不启用 strict。 */
   modelId?: string;

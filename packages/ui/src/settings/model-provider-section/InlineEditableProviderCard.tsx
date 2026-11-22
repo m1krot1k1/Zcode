@@ -184,7 +184,7 @@ export function InlineEditableProviderCard({
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(getProviderFormLabel(provider));
   const [apiFormat, setApiFormat] = useState<ProviderConnectionApiFormat>(
-    provider.config.api?.type === "opencode-sdk"
+    provider.config.api?.type === "opencode-sdk" || provider.config.api?.type === "cursor-cli"
       ? "openai-chat-completions"
       : (provider.config.api?.type ?? "anthropic-messages"),
   );
@@ -260,7 +260,9 @@ export function InlineEditableProviderCard({
     };
     syncField("nameValue", resolvedLabel, setNameValue);
     syncField("apiFormat", resolvedApiFormat, (value) =>
-      setApiFormat(value === "opencode-sdk" ? "openai-chat-completions" : value),
+      setApiFormat(
+        value === "opencode-sdk" || value === "cursor-cli" ? "openai-chat-completions" : value,
+      ),
     );
     syncField("baseUrlValue", resolvedBaseUrl, setBaseUrlValue);
     syncField("apiKeyValue", resolvedApiKey, setApiKeyValue);

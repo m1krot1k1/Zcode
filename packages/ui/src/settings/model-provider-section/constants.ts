@@ -200,7 +200,7 @@ export type ModelProviderNavItem =
   | {
       key: string;
       type: "agentIntegration";
-      integrationId: "opencode-cli";
+      integrationId: "opencode-cli" | "cursor-cli";
       label: string;
     }
   | {

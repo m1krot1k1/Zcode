@@ -409,6 +409,8 @@ export type {
   ZCodeWorkspaceBoundaryMode,
 } from "./schema-session-commands.js";
 export {
+  cursorRuntimeModelIdSchema,
+  localCliRuntimeProviderSchema,
   opencodeRuntimeModelIdSchema,
   zcodeInteractionPreferencesSchema,
   zcodeModelIoPreferencesSchema,

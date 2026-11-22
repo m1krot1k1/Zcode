@@ -2,6 +2,7 @@ import { ConfigOverlay, type ConfigValidationIssue } from "../config-overlay.js"
 import type { z } from "zod";
 import {
   completeApiKeyAccessDataSchema,
+  isLocalCliApiType,
   localAuthAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
   completeProviderApiDataSchema,
@@ -172,7 +173,7 @@ export class ProviderApiConfig extends ConfigOverlay<ProviderApiConfig> {
 
   overlay(next: ProviderApiConfig): ProviderApiConfig {
     const type = this.overlayValue(this.type, next.type);
-    if (type === "opencode-sdk") return new ProviderApiConfig({ type });
+    if (isLocalCliApiType(type)) return new ProviderApiConfig({ type });
     return new ProviderApiConfig({
       type,
       baseUrl: this.overlayValue(this.baseUrl, next.baseUrl),

@@ -207,6 +207,11 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
       access,
       api: new ProviderApiConfig({ type: "opencode-sdk" }),
     },
+    {
+      name: "cursor-cli requires local-auth",
+      access,
+      api: new ProviderApiConfig({ type: "cursor-cli" }),
+    },
   ])(
     "rejects mismatched local provider pair: $name",
     ({ access: accessConfig, api: apiConfig }) => {
@@ -219,6 +224,65 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
       expect(() => parseProviderConfig(config.toJSON())).toThrow();
     },
   );
+
+  it("cursor-cli + local-auth 是完整配置且不携带凭据或 endpoint", () => {
+    const config = parseProviderConfig({
+      group: "standard-personal",
+      access: new LocalAuthAccessConfig().toJSON(),
+      api: { type: "cursor-cli" },
+    });
+    const result = createRegistryProviderConfig(config);
+    expect(result.ok).toBe(true);
+    expect(config.toJSON()).toMatchObject({
+      access: { type: "local-auth" },
+      api: { type: "cursor-cli" },
+    });
+    expect(config.toJSON().access).not.toHaveProperty("apiKey");
+    expect(config.toJSON().api).not.toHaveProperty("baseUrl");
+    if (!result.ok) throw new Error("cursor-cli fixture 应为完整配置");
+    const serialized = serializeRegistryProviderConfig(result.config);
+    expect(completeProviderConfigDataSchema.parse(serialized)).toEqual(serialized);
+    expect(
+      personalProviderConfigRuleSchema.safeParse({
+        providerId: "cursor",
+        config: { access: { type: "local-auth" }, api: { type: "cursor-cli" } },
+      }).success,
+    ).toBe(false);
+    expect(
+      completeProviderConfigDataSchema.safeParse({
+        ...serialized,
+        api: { type: "cursor-cli", baseUrl: "https://fake.invalid" },
+      }).success,
+    ).toBe(false);
+    expect(
+      completeProviderConfigDataSchema.safeParse({
+        ...serialized,
+        access: { type: "api-key", apiKey: "test-key" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("overlaying an API provider with Cursor drops stale URL, headers, and API key", () => {
+    const current = parseProviderConfig({
+      group: "standard-personal",
+      access: access.toJSON(),
+      api: {
+        type: "openai-chat-completions",
+        baseUrl: "https://api.example/v1",
+        headers: { Authorization: "Bearer test-key" },
+      },
+    });
+    const next = parseProviderConfig({
+      access: { type: "local-auth" },
+      api: { type: "cursor-cli" },
+    });
+    const overlaid = current.overlay(next);
+    expect(overlaid.toJSON()).toEqual({
+      group: "standard-personal",
+      access: { type: "local-auth" },
+      api: { type: "cursor-cli" },
+    });
+  });
 
   it("overlaying an API provider with OpenCode drops stale URL, headers, and API key", () => {
     const current = parseProviderConfig({

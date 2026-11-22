@@ -2,7 +2,8 @@
 // фазы получают его целиком. Так зависимости остаются однонаправленными и без циклов.
 import type { ServiceCollection } from "../collection.js";
 import type { IOpenCodeAcpRuntime } from "../opencode-acp-runtime/contract.js";
-import type { OpenCodeCliProviderCatalogSource } from "../model-provider/providerRuntime.js";
+import type { ICursorCliRuntime } from "../cursor-cli-runtime/contract.js";
+import type { LocalCliProviderCatalogSource } from "../model-provider/providerRuntime.js";
 import type { IBotsService } from "../bots/bots.js";
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { OffPeakTaskService } from "../session/offPeakTaskService.js";
@@ -27,7 +28,8 @@ export interface BuildContext {
   localSettings: ReturnType<typeof createSettingServiceWithMigrations> | null;
   settingService: ReturnType<typeof createObservableSettingService>;
   openCodeAcpRuntime: IOpenCodeAcpRuntime | undefined;
-  openCodeCliProviderCatalogSource: OpenCodeCliProviderCatalogSource | undefined;
+  cursorCliRuntime: ICursorCliRuntime | undefined;
+  localCliProviderCatalogSource: LocalCliProviderCatalogSource | undefined;
   desktopContextPromptEnabled: boolean | undefined;
   resolveCurrentZCodeEndpointOrigin: () => Promise<string>;
   /** Инвалидация plugin UI аккаунтов: пишет feature-фаза, читает credential-фаза. */

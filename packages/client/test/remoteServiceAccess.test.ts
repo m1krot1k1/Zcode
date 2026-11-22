@@ -5,7 +5,7 @@ import {
   IProactiveSuggestionService,
   ISourceServerManagementService,
 } from "@zcode/services";
-import { IOpenCodeAcpRuntime } from "@zcode/services";
+import { ICursorCliRuntime, IOpenCodeAcpRuntime } from "@zcode/services";
 import { RemoteServiceAccess } from "../src/remoteServiceAccess.js";
 
 const channel: IChannel = {
@@ -94,6 +94,36 @@ describe("RemoteServiceAccess optional channels", () => {
       executablePath: "/srv/.opencode/bin/opencode",
     });
     expect(requested).toContain(IOpenCodeAcpRuntime.channelName);
+  });
+
+  it("constructs the explicitly requested Cursor CLI discovery proxy", async () => {
+    const requested: string[] = [];
+    const getChannel = vi.fn((name: string) => {
+      requested.push(name);
+      return {
+        call: vi.fn(async () => ({
+          status: "available",
+          version: "2025.09.25",
+          executablePath: "/Users/me/.local/bin/cursor-agent",
+        })),
+        listen: vi.fn(),
+      } as IChannel;
+    });
+    const services = new RemoteServiceAccess({ getChannel } as IChannelClient, {
+      cursorCliRuntime: true,
+    });
+
+    expect(services.cursorCliRuntime).toBeDefined();
+    await expect(services.cursorCliRuntime!.getCliStatus()).resolves.toMatchObject({
+      status: "available",
+      executablePath: "/Users/me/.local/bin/cursor-agent",
+    });
+    expect(requested).toContain(ICursorCliRuntime.channelName);
+  });
+
+  it("does not expose Cursor CLI when the channel was not requested", () => {
+    const services = new RemoteServiceAccess({ getChannel: vi.fn() } as unknown as IChannelClient);
+    expect(services.cursorCliRuntime).toBeUndefined();
   });
 
   it("keeps parameterized ACP subscriptions as callable dynamic RPC events", () => {

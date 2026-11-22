@@ -205,7 +205,7 @@ export function ProviderConnectionSection({
   const showApiFormat = shouldShowProviderApiFormat(provider);
   const readOnlyBaseUrl = provider.config.api?.baseUrl ?? "";
   const resolvedApiFormat =
-    provider.config.api?.type === "opencode-sdk"
+    provider.config.api?.type === "opencode-sdk" || provider.config.api?.type === "cursor-cli"
       ? "openai-chat-completions"
       : (provider.config.api?.type ?? "anthropic-messages");
 

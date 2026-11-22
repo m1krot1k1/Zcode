@@ -121,6 +121,114 @@ describe("process provider registry runtime", () => {
       process.env.PATH = originalPath;
     }
   });
+  it("принимает Cursor runtime snapshot рядом с OpenCode и инжектит оба executable-каталога", async () => {
+    const originalPath = process.env.PATH;
+    try {
+      const snapshot = parseProcessRuntimeProviderCatalogSnapshot({
+        revision: "cursor-catalog:1",
+        cliExecutablePaths: {
+          cursor: "/Users/me/.local/bin/cursor-agent",
+        },
+        providers: [
+          {
+            providerId: "cursor",
+            providerName: "Cursor CLI",
+            config: {
+              group: "standard-personal",
+              access: { type: "local-auth" },
+              api: { type: "cursor-cli" },
+            },
+            models: [{ modelId: "composer-1", config: completeZCodeBuiltinModelConfig() }],
+          },
+        ],
+      });
+      expect(snapshot.providers.map((provider) => provider.providerId)).toEqual(["cursor"]);
+      expect(snapshot.cliExecutablePaths).toEqual({
+        cursor: "/Users/me/.local/bin/cursor-agent",
+      });
+      expect(snapshot.cliExecutablePath).toBeUndefined();
+      // Оба CLI делят один snapshot и не затирают путь друг друга.
+      const mixed = parseProcessRuntimeProviderCatalogSnapshot({
+        revision: "mixed-catalog:2",
+        cliExecutablePaths: {
+          opencode: "/opt/opencode/bin/opencode",
+          cursor: "/Users/me/.local/bin/cursor-agent",
+        },
+        providers: [
+          {
+            providerId: "opencode",
+            providerName: "OpenCode CLI",
+            config: {
+              group: "standard-personal",
+              access: { type: "local-auth" },
+              api: { type: "opencode-sdk" },
+            },
+            models: [
+              {
+                modelId: "anthropic/claude-sonnet-4-5",
+                config: completeZCodeBuiltinModelConfig(),
+              },
+            ],
+          },
+          {
+            providerId: "cursor",
+            providerName: "Cursor CLI",
+            config: {
+              group: "standard-personal",
+              access: { type: "local-auth" },
+              api: { type: "cursor-cli" },
+            },
+            models: [{ modelId: "composer-1", config: completeZCodeBuiltinModelConfig() }],
+          },
+        ],
+      });
+      expect(mixed.providers).toHaveLength(2);
+      expect(mixed.cliExecutablePath).toBe("/opt/opencode/bin/opencode");
+      expect(mixed.cliExecutablePaths).toEqual({
+        opencode: "/opt/opencode/bin/opencode",
+        cursor: "/Users/me/.local/bin/cursor-agent",
+      });
+      // Несовпадение providerId и api.type отвергается.
+      expect(() =>
+        parseProcessRuntimeProviderCatalogSnapshot({
+          revision: "cursor-bad-api:1",
+          cliExecutablePaths: { cursor: "/Users/me/.local/bin/cursor-agent" },
+          providers: [
+            {
+              providerId: "cursor",
+              providerName: "Cursor CLI",
+              config: {
+                group: "standard-personal",
+                access: { type: "local-auth" },
+                api: { type: "opencode-sdk" },
+              },
+              models: [],
+            },
+          ],
+        }),
+      ).toThrow();
+      // Включённый Cursor без пути отвергается.
+      expect(() =>
+        parseProcessRuntimeProviderCatalogSnapshot({
+          revision: "cursor-no-path:1",
+          providers: [
+            {
+              providerId: "cursor",
+              providerName: "Cursor CLI",
+              config: {
+                group: "standard-personal",
+                access: { type: "local-auth" },
+                api: { type: "cursor-cli" },
+              },
+              models: [],
+            },
+          ],
+        }),
+      ).toThrow();
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
   it("Standalone 长生命周期下载 URL Release 后跟进 Registry；Managed Worker 不下载", async () => {
     const root = await temporaryDirectory();
     const builtin = JSON.parse(

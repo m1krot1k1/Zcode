@@ -92,6 +92,100 @@ describe("resolveInitialModelSelection", () => {
 });
 
 describe("normalizeModelSelection", () => {
+  it("migrates legacy flat Cursor reasoning ids to the grouped model + level", () => {
+    const registry = cursorRegistryView();
+    expect(
+      normalizeModelSelection(registry, {
+        providerId: "cursor",
+        modelId: "grok-4.7-xhigh-fast",
+        options: { reasoningLevel: "disabled" },
+      }),
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "grok-4.7-fast",
+      options: { reasoningLevel: "xhigh" },
+    });
+    expect(
+      normalizeModelSelection(registry, {
+        providerId: "cursor",
+        modelId: "claude-haiku-5-5-low-no-thinking",
+      }),
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "claude-haiku-5-5-no-thinking",
+      options: { reasoningLevel: "low" },
+    });
+    expect(
+      normalizeModelSelection(registry, {
+        providerId: "cursor",
+        modelId: "gpt-5.3-codex-high-fast",
+      }),
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "gpt-5.3-codex-fast",
+      options: { reasoningLevel: "high" },
+    });
+  });
+
+  it("keeps an explicit level when the persisted id is already the grouped selector", () => {
+    const registry = cursorRegistryView();
+    // `-fast` / `-no-thinking` 是 grouped selector 的后缀，不是旧 reasoning id；
+    // 再迁移一次会把用户显式选择的 low 覆盖成最高档。
+    expect(
+      normalizeModelSelection(registry, {
+        providerId: "cursor",
+        modelId: "grok-4.7-fast",
+        options: { reasoningLevel: "low" },
+      }),
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "grok-4.7-fast",
+      options: { reasoningLevel: "low" },
+    });
+    expect(
+      normalizeModelSelection(registry, {
+        providerId: "cursor",
+        modelId: "claude-haiku-5-5-no-thinking",
+        options: { reasoningLevel: "low" },
+      }),
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "claude-haiku-5-5-no-thinking",
+      options: { reasoningLevel: "low" },
+    });
+    expect(
+      normalizeModelSelection(registry, {
+        providerId: "cursor",
+        modelId: "gpt-5.3-codex-fast",
+        options: { reasoningLevel: "high" },
+      }),
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "gpt-5.3-codex-fast",
+      options: { reasoningLevel: "high" },
+    });
+  });
+
+  it("migrates a legacy flat Cursor id in the configured default", () => {
+    expect(
+      resolveInitialModelSelection({
+        configuredDefault: {
+          providerId: "cursor",
+          modelId: "gpt-5.3-codex-high",
+          options: { reasoningLevel: "disabled" },
+        },
+        registry: cursorRegistryView(),
+      }),
+    ).toEqual({
+      source: "configured-default",
+      selection: {
+        providerId: "cursor",
+        modelId: "gpt-5.3-codex",
+        options: { reasoningLevel: "high" },
+      },
+    });
+  });
+
   it("主动选择目标模型取其最高档，不继承来源模型的档位", () => {
     expect(
       completeNewModelSelection(registryView(), {
@@ -130,6 +224,33 @@ describe("normalizeModelSelection", () => {
     });
   });
 });
+
+function cursorRegistryView(): ProviderRegistryView {
+  const model = (modelId: string, values: readonly string[]) => ({
+    modelId,
+    config: new ModelConfig({
+      optionSpecs: new ModelOptionSpecsConfig({
+        reasoningLevel: { values, map: "{}" },
+        maxOutputTokens: { max: 8_000, map: "{}" },
+      }),
+    }),
+  });
+  return {
+    revision: 1,
+    providers: [
+      {
+        providerId: "cursor",
+        config: { visibility: "visible" },
+        models: [
+          model("grok-4.7-fast", ["default", "low", "high", "xhigh"]),
+          model("gpt-5.3-codex", ["default", "low", "high"]),
+          model("gpt-5.3-codex-fast", ["default", "low", "high"]),
+          model("claude-haiku-5-5-no-thinking", ["low", "high"]),
+        ],
+      },
+    ],
+  } as unknown as ProviderRegistryView;
+}
 
 function registryView(): ProviderRegistryView {
   return {

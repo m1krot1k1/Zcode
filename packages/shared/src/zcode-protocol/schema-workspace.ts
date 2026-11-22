@@ -265,11 +265,65 @@ const opencodeRuntimeProviderSchema = z
   })
   .strict();
 
+/** 保留 Cursor CLI 原始模型 ID（`composer-1`、`claude-4.5-sonnet`），同时拦截不安全协议 ID。 */
+export const cursorRuntimeModelIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9._:/-]+$/);
+
+const cursorRuntimeProviderConfigSchema = z
+  .object({
+    group: z.enum(["standard-personal", "zai-family", "bigmodel-family"]),
+    logo: z
+      .object({ type: z.literal("builtin"), key: z.string().min(1).max(128) })
+      .strict()
+      .nullable()
+      .optional(),
+    access: z.object({ type: z.literal("local-auth") }).strict(),
+    api: z.object({ type: z.literal("cursor-cli") }).strict(),
+    builtinModelIds: z.array(z.string().min(1).max(256)).max(4096).nullable().optional(),
+    personalModelIds: z.array(z.string().min(1).max(256)).max(4096).nullable().optional(),
+    modelOrder: z.array(z.string().min(1).max(256)).max(4096).nullable().optional(),
+    visibility: z.enum(["visible", "hidden"]).nullable().optional(),
+  })
+  .strict();
+
+const cursorRuntimeProviderSchema = z
+  .object({
+    providerId: z.string().min(1).max(128),
+    providerName: z.string().min(1).max(256),
+    templateId: z.string().min(1).max(128).optional(),
+    config: cursorRuntimeProviderConfigSchema,
+    models: z
+      .array(
+        z
+          .object({
+            modelId: cursorRuntimeModelIdSchema,
+            config: completeModelConfigDataSchema.extend({
+              api: z.null().optional(),
+            }),
+          })
+          .strict(),
+      )
+      .max(4096),
+  })
+  .strict();
+
+/** 本地 CLI Provider：OpenCode 与 Cursor 共用同一 snapshot，按 api.type 判别。 */
+export const localCliRuntimeProviderSchema = z.union([
+  opencodeRuntimeProviderSchema,
+  cursorRuntimeProviderSchema,
+]);
+
 export const zcodeProviderUpdateRuntimeCatalogParamsSchema = z
   .object({
     revision: nonEmptyString,
-    providers: z.array(opencodeRuntimeProviderSchema).max(8),
+    providers: z.array(localCliRuntimeProviderSchema).max(8),
     cliExecutablePath: z.string().min(1).max(4096).optional(),
+    cliExecutablePaths: z
+      .record(z.string().min(1).max(128), z.string().min(1).max(4096))
+      .optional(),
   })
   .strict();
 

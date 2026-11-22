@@ -346,6 +346,9 @@ function freezeRuntimeProviderSnapshot(
   return Object.freeze({
     revision: snapshot.revision,
     ...(snapshot.cliExecutablePath ? { cliExecutablePath: snapshot.cliExecutablePath } : {}),
+    ...(snapshot.cliExecutablePaths
+      ? { cliExecutablePaths: Object.freeze({ ...snapshot.cliExecutablePaths }) }
+      : {}),
     providers: Object.freeze(
       snapshot.providers.map((provider) =>
         Object.freeze({

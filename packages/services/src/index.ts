@@ -348,6 +348,13 @@ export type {
   OpenCodeCliStatus,
   OpenCodeInstallResult,
 } from "./opencode-acp-runtime/index.js";
+export { ICursorCliRuntime } from "./cursor-cli-runtime/index.js";
+export type {
+  CursorCliInstallResult,
+  CursorCliModelCatalog,
+  CursorCliModelDescriptor,
+  CursorCliStatus,
+} from "./cursor-cli-runtime/index.js";
 
 // Commands service — ICommandsService is both a type (interface) and value (descriptor)
 export { ICommandsService } from "./commands/commands.js";

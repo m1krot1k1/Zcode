@@ -108,6 +108,7 @@ describe("model provider navigation i18n", () => {
         "settings.modelProvider.customTitle": "Composer 自定义 API 供应商",
         "settings.modelProvider.agentIntegrationsTitle": "独立智能体运行时",
         "settings.modelProvider.openCodeCli": "OpenCode CLI · 无需 API Key",
+        "settings.modelProvider.cursorCli": "Cursor CLI · 无需 API Key",
         "settings.modelProvider.legacyOpenCodeTitle": "旧版 OpenCode API 配置",
         "settings.modelProvider.createCustomProvider": "创建自定义供应商",
       }),
@@ -120,6 +121,7 @@ describe("model provider navigation i18n", () => {
         "settings.modelProvider.customTitle": "Custom API providers for Composer",
         "settings.modelProvider.agentIntegrationsTitle": "Separate agent runtimes",
         "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
+        "settings.modelProvider.cursorCli": "Cursor CLI · no API key",
         "settings.modelProvider.legacyOpenCodeTitle": "Older OpenCode API configurations",
         "settings.modelProvider.createCustomProvider": "Create Custom Provider",
       }),
@@ -135,6 +137,7 @@ describe("model provider navigation i18n", () => {
         "settings.modelProvider.agentIntegrationsTitle": "Local CLI providers",
         "settings.modelProvider.workspaceIntelligenceTitle": "Workspace intelligence",
         "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
+        "settings.modelProvider.cursorCli": "Cursor CLI · no API key",
         "settings.embedding.navigationLabel": "Embeddings",
       }),
     });
@@ -157,11 +160,16 @@ describe("model provider navigation i18n", () => {
       enResult.navigationGroups.find((group) => group.id === "agent-integrations"),
     ).toMatchObject({
       title: "Separate agent runtimes",
-      items: [{ type: "agentIntegration", integrationId: "opencode-cli" }],
+      items: [
+        { type: "agentIntegration", integrationId: "opencode-cli" },
+        { type: "agentIntegration", integrationId: "cursor-cli" },
+      ],
     });
-    expect(
-      enResult.navigationGroups.find((group) => group.id === "agent-integrations")?.items[0]?.label,
-    ).toBe("OpenCode CLI · no API key");
+    const agentItems = enResult.navigationGroups.find(
+      (group) => group.id === "agent-integrations",
+    )?.items;
+    expect(agentItems?.[0]?.label).toBe("OpenCode CLI · no API key");
+    expect(agentItems?.[1]?.label).toBe("Cursor CLI · no API key");
     expect(
       embeddingsResult.navigationGroups.find((group) => group.id === "workspace-intelligence"),
     ).toMatchObject({

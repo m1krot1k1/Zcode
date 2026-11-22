@@ -33,7 +33,7 @@ export function createProviderServices(args: BuildContext & CoreServices) {
     options,
     settingService,
     oauthLogout,
-    openCodeCliProviderCatalogSource,
+    localCliProviderCatalogSource,
     apiClient,
     credentialService,
     oauthCredentialRepo,
@@ -165,8 +165,8 @@ export function createProviderServices(args: BuildContext & CoreServices) {
   const providerRuntime = createProviderRuntimeFromConfigRuntime({
     configRuntime: providerConfigRuntime,
     accountSource: accountProviderConfigSource,
-    ...(openCodeCliProviderCatalogSource
-      ? { runtimeProviderSource: openCodeCliProviderCatalogSource }
+    ...(localCliProviderCatalogSource
+      ? { runtimeProviderSource: localCliProviderCatalogSource }
       : {}),
     modelSelectionConfiguredDefaultSource,
     disposeModelSelectionConfiguredDefaultSource: () =>

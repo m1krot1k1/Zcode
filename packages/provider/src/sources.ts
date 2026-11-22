@@ -13,6 +13,8 @@ export interface ProviderSource<TSnapshot> {
   onDidChange(listener: (reason: string) => void): () => void;
 }
 
+export type CliProviderFamily = "opencode" | "cursor";
+
 /**
  * Runtime-discovered Providers that are not backed by personal/account config.
  * The revision and models are published together so ModelSelection never sees a
@@ -23,6 +25,8 @@ export interface RuntimeProviderCatalogSnapshot {
   readonly providers: readonly Provider[];
   /** Host-local executable needed by a CLI-backed SDK that spawns the bare command name. */
   readonly cliExecutablePath?: string;
+  /** Per-CLI-provider executables; preferred over the legacy single path. */
+  readonly cliExecutablePaths?: Readonly<Partial<Record<CliProviderFamily, string>>>;
 }
 
 export interface ProviderConfigSnapshot {

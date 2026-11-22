@@ -1,4 +1,4 @@
-import { createOpenCodeModelProvider } from "@zcode/adapters/model";
+import { createCursorProvider, createOpenCodeModelProvider } from "@zcode/adapters/model";
 
 import { createRuntimeAiSdkModelExecutionConfig } from "../model-config.js";
 import { createModelAdapter } from "../model-factory.js";
@@ -43,6 +43,8 @@ export async function prepareAppModels(
       streamIdleTimeoutMs: configResult.config.modelStream.idleTimeoutMs,
       firstTokenTimeoutMs: configResult.config.modelStream.firstTokenTimeoutMs,
       opencodeProvider: state.ownedOpenCodeModelRuntime.provider,
+      // Cursor не держит долгоживущий сервер: провайдер-stateless, процесс на запрос.
+      cursorProvider: createCursorProvider(),
     });
   }
   const modelAdapter = options.modelAdapter ?? state.ownedModelAdapter!;

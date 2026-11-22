@@ -237,6 +237,9 @@ export function createAccountHelpers(ctx: ZCodeAgentServiceState) {
         const paramsEnvelope = zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
           revision: snapshot.revision,
           ...(snapshot.cliExecutablePath ? { cliExecutablePath: snapshot.cliExecutablePath } : {}),
+          ...(snapshot.cliExecutablePaths
+            ? { cliExecutablePaths: { ...snapshot.cliExecutablePaths } }
+            : {}),
           providers: snapshot.providers.map((provider) => ({
             providerId: provider.providerId,
             providerName: provider.providerName,

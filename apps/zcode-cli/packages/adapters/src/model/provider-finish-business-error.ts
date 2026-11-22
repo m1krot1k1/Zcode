@@ -131,7 +131,8 @@ function normalizeProviderKind(value: AiSdkProviderKind | string | undefined): A
   return value === "openai" ||
     value === "anthropic" ||
     value === "openai-compatible" ||
-    value === "opencode-sdk"
+    value === "opencode-sdk" ||
+    value === "cursor-cli"
     ? value
     : "openai-compatible";
 }

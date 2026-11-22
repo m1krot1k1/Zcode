@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.js";
 import { logger } from "@/logger.js";
 import { sanitizeProxyRouteForDisplay } from "@/settingsPageHelpers.js";
 import { EmbeddingProviderSettings } from "@/agent-workbench/index.js";
+import { CursorAgentSettingsPanel } from "@/cursor-agent-settings/index.js";
 import { OpenCodeAgentSettingsPanel } from "@/opencode-agent-settings/index.js";
 import { BIGMODEL_REGISTRATION_URL } from "../constants.js";
 import { ModelProviderSectionDetail } from "../Detail.js";
@@ -124,7 +125,8 @@ export function ModelProviderSectionView({
           codeIndex={codeIntelligenceService}
           workspaceRef={codeIndexWorkspaceRef}
         />
-      ) : selectedNavItem?.type === "agentIntegration" ? (
+      ) : selectedNavItem?.type === "agentIntegration" &&
+        selectedNavItem.integrationId === "opencode-cli" ? (
         <OpenCodeAgentSettingsPanel
           enabled={sharedSettings?.openCodeCliEnabled === true}
           activeProxy={sanitizeProxyRouteForDisplay(sharedSettings?.httpProxy)}
@@ -137,6 +139,31 @@ export function ModelProviderSectionView({
               await modelSelectionService.getView();
             } catch (error) {
               logger.warn("[settings] OpenCode CLI setting update failed", {
+                error: error instanceof Error ? error.message : String(error),
+              });
+              throw error;
+            }
+          }}
+        />
+      ) : selectedNavItem?.type === "agentIntegration" &&
+        selectedNavItem.integrationId === "cursor-cli" ? (
+        <CursorAgentSettingsPanel
+          enabled={sharedSettings?.cursorCliEnabled === true}
+          onInstalled={async () => {
+            // Установка меняет доступность бинаря, но не настройку: каталог нужно перечитать,
+            // иначе Composer увидит Cursor только после ручного переключения.
+            await refresh();
+            await modelSelectionService.getView();
+          }}
+          onEnabledChange={async (enabled) => {
+            try {
+              await updateSharedSettings({ cursorCliEnabled: enabled });
+              // Тот же контракт, что и для OpenCode: Host публикует cursor provider сам,
+              // поэтому Renderer перечитывает Provider Settings и ModelSelection.
+              await refresh();
+              await modelSelectionService.getView();
+            } catch (error) {
+              logger.warn("[settings] Cursor CLI setting update failed", {
                 error: error instanceof Error ? error.message : String(error),
               });
               throw error;

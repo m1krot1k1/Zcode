@@ -224,9 +224,15 @@ export function parseProcessRuntimeProviderCatalogSnapshot(
   input: unknown,
 ): RuntimeProviderCatalogSnapshot {
   const envelope = zcodeProviderUpdateRuntimeCatalogParamsSchema.parse(input);
+  const executablePaths: Partial<Record<"opencode" | "cursor", string>> = {};
   const providers: Provider[] = envelope.providers.map((candidate) => {
-    if (candidate.providerId !== "opencode") {
+    const family = candidate.providerId;
+    if (family !== "opencode" && family !== "cursor") {
       throw new Error(`Недопустимый runtime provider ID: ${candidate.providerId}`);
+    }
+    const expectedApiType = family === "opencode" ? "opencode-sdk" : "cursor-cli";
+    if (candidate.config.api.type !== expectedApiType) {
+      throw new Error(`Runtime provider ${family} требует api.type ${expectedApiType}`);
     }
     const models = candidate.models.map(({ modelId, config }) => {
       const result = createRegistryModelConfig(ModelConfig.fromData(config), [
@@ -236,7 +242,7 @@ export function parseProcessRuntimeProviderCatalogSnapshot(
         modelId,
       ]);
       if (!result.ok) {
-        throw new Error(`Неполная конфигурация OpenCode model ${modelId}`);
+        throw new Error(`Неполная конфигурация ${family} model ${modelId}`);
       }
       return Object.freeze({ modelId, config: result.config });
     });
@@ -244,7 +250,7 @@ export function parseProcessRuntimeProviderCatalogSnapshot(
       group: candidate.config.group,
       ...(candidate.config.logo === undefined ? {} : { logo: candidate.config.logo }),
       access: new LocalAuthAccessConfig(),
-      api: new ProviderApiConfig({ type: "opencode-sdk" }),
+      api: new ProviderApiConfig({ type: expectedApiType }),
       ...(candidate.config.builtinModelIds === undefined
         ? {}
         : { builtinModelIds: candidate.config.builtinModelIds }),
@@ -263,8 +269,21 @@ export function parseProcessRuntimeProviderCatalogSnapshot(
       candidate.providerId,
     ]);
     if (!providerConfig.ok) {
-      throw new Error("OpenCode runtime provider config не прошёл полную валидацию");
+      throw new Error(`${family} runtime provider config не прошёл полную валидацию`);
     }
+    // Legacy single path applies to OpenCode only; per-family map wins when present.
+    const executablePath =
+      envelope.cliExecutablePaths?.[family] ??
+      (family === "opencode" ? envelope.cliExecutablePath : undefined);
+    if (!executablePath) {
+      throw new Error(
+        `Для включённого ${family} CLI требуется абсолютный путь к executable`,
+      );
+    }
+    if (!isAbsolute(executablePath)) {
+      throw new Error(`${family} CLI executable path должен быть абсолютным`);
+    }
+    executablePaths[family] = executablePath;
     return Object.freeze({
       providerId: candidate.providerId,
       providerName: candidate.providerName,
@@ -276,17 +295,13 @@ export function parseProcessRuntimeProviderCatalogSnapshot(
   if (new Set(providers.map((provider) => provider.providerId)).size !== providers.length) {
     throw new Error("Runtime Provider Catalog содержит повторяющийся provider ID");
   }
-  if (providers.length > 0 && !envelope.cliExecutablePath) {
-    throw new Error("Для включённого OpenCode CLI требуется абсолютный путь к executable");
-  }
-  if (envelope.cliExecutablePath && !isAbsolute(envelope.cliExecutablePath)) {
-    throw new Error("OpenCode CLI executable path должен быть абсолютным");
-  }
+  const opencodePath = executablePaths.opencode;
   return Object.freeze({
     revision: envelope.revision.trim(),
     providers: Object.freeze(providers),
-    ...(envelope.cliExecutablePath
-      ? { cliExecutablePath: envelope.cliExecutablePath }
+    ...(opencodePath ? { cliExecutablePath: opencodePath } : {}),
+    ...(Object.keys(executablePaths).length > 0
+      ? { cliExecutablePaths: Object.freeze({ ...executablePaths }) }
       : {}),
   });
 }
@@ -316,15 +331,28 @@ class MutableRuntimeProviderCatalogSource
     this.#restorePathIfOwned();
     // A resolver may retain the detected path while the user disables the provider.
     // Only an enabled catalog is allowed to alter this worker's PATH.
-    const activeCliExecutablePath = snapshot.providers.some(
-      (provider) => provider.providerId === "opencode",
-    )
-      ? snapshot.cliExecutablePath
-      : undefined;
-    if (activeCliExecutablePath) {
-      const executableDirectory = dirname(activeCliExecutablePath);
+    const activeExecutablePaths: Partial<Record<"opencode" | "cursor", string>> = {};
+    for (const provider of snapshot.providers) {
+      const family = provider.providerId;
+      if (family !== "opencode" && family !== "cursor") continue;
+      const executablePath =
+        snapshot.cliExecutablePaths?.[family] ??
+        (family === "opencode" ? snapshot.cliExecutablePath : undefined);
+      if (executablePath) activeExecutablePaths[family] = executablePath;
+    }
+    const activeDirectories = [
+      ...new Set(
+        Object.values(activeExecutablePaths)
+          .filter((value): value is string => Boolean(value))
+          .map((value) => dirname(value)),
+      ),
+    ];
+    if (activeDirectories.length > 0) {
       const existing = (this.#originalPath ?? "").split(delimiter);
-      const nextPath = [executableDirectory, ...existing.filter((entry) => entry !== executableDirectory)]
+      const nextPath = [
+        ...activeDirectories,
+        ...existing.filter((entry) => !activeDirectories.includes(entry)),
+      ]
         .filter(Boolean)
         .join(delimiter);
       process.env.PATH = nextPath;
@@ -333,8 +361,11 @@ class MutableRuntimeProviderCatalogSource
     this.#snapshot = Object.freeze({
       revision: snapshot.revision,
       providers: Object.freeze([...snapshot.providers]),
-      ...(activeCliExecutablePath
-        ? { cliExecutablePath: activeCliExecutablePath }
+      ...(activeExecutablePaths.opencode
+        ? { cliExecutablePath: activeExecutablePaths.opencode }
+        : {}),
+      ...(Object.keys(activeExecutablePaths).length > 0
+        ? { cliExecutablePaths: Object.freeze({ ...activeExecutablePaths }) }
         : {}),
     });
     for (const listener of this.#listeners) listener(reason);

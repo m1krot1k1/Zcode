@@ -85,6 +85,7 @@ import {
 import { IOAuthService } from "../oauth/oauth.js";
 import { IOnboardingRecordService } from "../onboarding/onboardingRecord.js";
 import { IOpenCodeAcpRuntime } from "../opencode-acp-runtime/contract.js";
+import { ICursorCliRuntime } from "../cursor-cli-runtime/contract.js";
 import { IOutputStyleService } from "../output-style/outputStyle.js";
 import { createOutputStyleService } from "../output-style/outputStyleService.js";
 import { IPluginSyncService } from "../plugin-sync/pluginSync.js";
@@ -144,6 +145,7 @@ export function registerLocalServices(args: LocalServicesBundle): ServiceCollect
     options,
     isDesktopAttachedRemote,
     openCodeAcpRuntime,
+    cursorCliRuntime,
     settingService,
     resolveCurrentZCodeEndpointOrigin,
     credentialService,
@@ -544,6 +546,9 @@ export function registerLocalServices(args: LocalServicesBundle): ServiceCollect
 
   if (openCodeAcpRuntime) {
     services.register(IOpenCodeAcpRuntime, openCodeAcpRuntime);
+  }
+  if (cursorCliRuntime) {
+    services.register(ICursorCliRuntime, cursorCliRuntime);
   }
 
   // 即使初始配置关闭也必须登记 lifecycle disposer：terminal fence 需要早于任意延迟 setting/acquire

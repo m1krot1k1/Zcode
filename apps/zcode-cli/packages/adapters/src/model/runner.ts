@@ -1,4 +1,5 @@
 import type { ModelRequestSecurityState } from "./request-security.js";
+import type { CursorProvider } from "./model-execution/cursor-provider.js";
 // ============================================================
 // Vercel AI SDK model runner
 // ============================================================
@@ -63,6 +64,7 @@ export { normalizeUsage, toModelStreamEvent } from "./runner-normalization.js";
 export interface AiSdkModelAdapterOptions {
   /** 注入 process-owned OpenCode provider；adapter 不初始化包级 singleton。 */
   opencodeProvider?: OpencodeProvider;
+  cursorProvider?: CursorProvider;
   defaultHeaders?: AiSdkModelExecutionConfig["defaultHeaders"];
   requestSecurityState?: ModelRequestSecurityState;
   endpointRoutingPort?: import("@zcode/contracts").ProviderEndpointRoutingPort;
@@ -113,6 +115,7 @@ export class AiSdkModelAdapter {
       },
       {
         ...(options.opencodeProvider ? { opencodeProvider: options.opencodeProvider } : {}),
+        ...(options.cursorProvider ? { cursorProvider: options.cursorProvider } : {}),
         ...(options.requestSecurityState
           ? { requestSecurityState: options.requestSecurityState }
           : {}),

@@ -15,7 +15,8 @@ import {
 } from "./setting/settingService.js";
 import { createObservableSettingService } from "./setting/observableSettingService.js";
 import { createOpenCodeAcpRuntime } from "./opencode-acp-runtime/adapters/openCodeAcpRuntime.js";
-import { OpenCodeCliProviderCatalogSource } from "./model-provider/providerRuntime.js";
+import { createCursorCliRuntime } from "./cursor-cli-runtime/node.js";
+import { LocalCliProviderCatalogSource } from "./model-provider/providerRuntime.js";
 import { initializeRuntimeProcessEnv } from "./runtime-tools/runtimeCommandEnv.js";
 import { ensureAppCaCert } from "./runtime-tools/appCaCert.js";
 import {
@@ -108,10 +109,16 @@ export function createLocalServices(options: CreateLocalServicesOptions): Servic
   const settingService = createObservableSettingService(
     options?.settingService ?? localSettings!.service,
   );
-  const openCodeCliProviderCatalogSource = openCodeAcpRuntime
-    ? // `export { ... }` ниже только переэкспортирует символ и не создаёт локального binding.
-      new OpenCodeCliProviderCatalogSource(settingService, openCodeAcpRuntime)
-    : undefined;
+  const cursorCliRuntime = !isDesktopAttachedRemote ? createCursorCliRuntime() : undefined;
+  const localCliProviderCatalogSource =
+    openCodeAcpRuntime || cursorCliRuntime
+      ? // `export { ... }` ниже только переэкспортирует символ и не создаёт локального binding.
+        new LocalCliProviderCatalogSource(
+          settingService,
+          openCodeAcpRuntime,
+          cursorCliRuntime,
+        )
+      : undefined;
   const resolveCurrentZCodeEndpointOrigin = async () =>
     resolveRuntimeZCodeEndpointOrigin(process.env, {
       overrideOrigin: (await settingService.get()).zcodeEndpointOrigin,
@@ -130,7 +137,8 @@ export function createLocalServices(options: CreateLocalServicesOptions): Servic
     localSettings,
     settingService,
     openCodeAcpRuntime,
-    openCodeCliProviderCatalogSource,
+    cursorCliRuntime,
+    localCliProviderCatalogSource,
     desktopContextPromptEnabled,
     resolveCurrentZCodeEndpointOrigin,
     pluginUiInvalidation,

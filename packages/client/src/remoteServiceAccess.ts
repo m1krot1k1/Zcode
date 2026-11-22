@@ -50,6 +50,7 @@ import {
   IPluginManagementService,
   ISubagentsService,
   IOpenCodeAcpRuntime,
+  ICursorCliRuntime,
   ICommandsService,
   IHooksService,
   IMemoryService,
@@ -134,6 +135,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   /** Проактивная подсказка; Host без канала proactive-suggestion оставляет поле пустым. */
   readonly proactiveSuggestionService?: ProactiveSuggestionService;
   readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
+  readonly cursorCliRuntime?: ICursorCliRuntime;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
@@ -148,6 +150,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
       sourceServerManagementService?: boolean;
       windowProjectDirectory?: boolean;
       openCodeAcpRuntime?: boolean;
+      cursorCliRuntime?: boolean;
       codeIntelligenceService?: boolean;
     } = {},
   ) {
@@ -320,6 +323,11 @@ export class RemoteServiceAccess implements IServiceAccessor {
           channelClient.getChannel(ICodeIntelligenceService.channelName),
         )
       : undefined;
+    if (options.cursorCliRuntime) {
+      this.cursorCliRuntime = ProxyChannel.toService<ICursorCliRuntime>(
+        channelClient.getChannel(ICursorCliRuntime.channelName),
+      );
+    }
     if (options.openCodeAcpRuntime) {
       this.openCodeAcpRuntime = ProxyChannel.toService<IOpenCodeAcpRuntime>(
         channelClient.getChannel(IOpenCodeAcpRuntime.channelName),

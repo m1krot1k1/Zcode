@@ -27,6 +27,7 @@ export function createMessagePortServiceConnection(
   options: {
     sourceServerManagementService?: boolean;
     openCodeAcpRuntime?: boolean;
+    cursorCliRuntime?: boolean;
     codeIntelligenceService?: boolean;
   } = {},
 ): MessagePortServiceConnection {
@@ -64,6 +65,7 @@ export function connectViaMessagePort(
   options: {
     sourceServerManagementService?: boolean;
     openCodeAcpRuntime?: boolean;
+    cursorCliRuntime?: boolean;
     codeIntelligenceService?: boolean;
   } = {},
 ): IServiceAccessor {

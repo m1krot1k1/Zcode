@@ -285,10 +285,13 @@ export function useSessionPaneDraftGates(params: UseSessionPaneDraftGatesParams)
   });
 
   const { settings: sharedSettings } = useSettings();
-  // OpenCode CLI не требует ZCode API-провайдера, но новой переписке всё равно нужен
-  // обычный draft-session для идентичности, admission и журнала чата.
+  // Локальные CLI-провайдеры (OpenCode/Cursor) не требуют ZCode API-провайдера, но новой
+  // переписке всё равно нужен обычный draft-session для идентичности, admission и журнала чата.
   const draftAgentStartupAllowed =
-    (providerAgentStartupAllowed || sharedSettings?.openCodeCliEnabled === true) && remoteAvailable;
+    (providerAgentStartupAllowed ||
+      sharedSettings?.openCodeCliEnabled === true ||
+      sharedSettings?.cursorCliEnabled === true) &&
+    remoteAvailable;
 
   // Composer 保存下一次 Submission 的 renderer intent；prewarm session 仅承载草稿预热。
   const {

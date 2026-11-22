@@ -6,7 +6,14 @@ export const providerApiTypeDataSchema = z.enum([
   "openai-chat-completions",
   "openai-responses",
   "opencode-sdk",
+  "cursor-cli",
 ]);
+
+/** CLI-провайдеры работают только через локальный бинарь: без endpoint и headers. */
+const localCliApiTypes = new Set<string>(["opencode-sdk", "cursor-cli"]);
+export function isLocalCliApiType(type: string | null | undefined): boolean {
+  return type != null && localCliApiTypes.has(type);
+}
 export const providerGroupDataSchema = z.enum([
   "standard-personal",
   "zai-family",
@@ -101,19 +108,19 @@ function validateProviderApiShape(
   context: z.RefinementCtx,
   requireEndpoint: boolean,
 ): void {
-  if (api.type === "opencode-sdk") {
+  if (isLocalCliApiType(api.type)) {
     if (api.baseUrl !== undefined) {
       context.addIssue({
         code: "custom",
         path: ["baseUrl"],
-        message: "opencode-sdk 不使用 endpoint",
+        message: `${api.type} 不使用 endpoint`,
       });
     }
     if (api.headers !== undefined) {
       context.addIssue({
         code: "custom",
         path: ["headers"],
-        message: "opencode-sdk не использует headers",
+        message: `${api.type} 不使用 headers`,
       });
     }
     return;
@@ -167,12 +174,12 @@ export function validateLocalAuthRuntimePair(
   pathPrefix: readonly (string | number)[] = [],
 ): void {
   const localAuth = config.access?.type === "local-auth";
-  const openCodeSdk = config.api?.type === "opencode-sdk";
-  if (localAuth === openCodeSdk) return;
+  const localCliApi = isLocalCliApiType(config.api?.type);
+  if (localAuth === localCliApi) return;
   context.addIssue({
     code: "custom",
     path: [...pathPrefix, localAuth ? "api" : "access"],
-    message: "local-auth и opencode-sdk должны использоваться только парой",
+    message: "local-auth 与 opencode-sdk/cursor-cli 必须成对使用",
   });
 }
 

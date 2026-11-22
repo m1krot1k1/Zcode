@@ -268,6 +268,12 @@ export function useModelProviderNavigation({
             integrationId: "opencode-cli" as const,
             label: intl.formatMessage({ id: "settings.modelProvider.openCodeCli" }),
           },
+          {
+            key: "agent-integration:cursor-cli",
+            type: "agentIntegration" as const,
+            integrationId: "cursor-cli" as const,
+            label: intl.formatMessage({ id: "settings.modelProvider.cursorCli" }),
+          },
         ],
       },
       ...(codeIntelligenceAvailable

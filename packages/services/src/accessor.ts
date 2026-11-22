@@ -45,6 +45,7 @@ import type { CodeIntelligenceService } from "./code-intelligence/contract.js";
 import type { ChatAutocompleteService } from "./chat-autocomplete/contract.js";
 import type { PromptEnhancerService } from "./prompt-enhancer/contract.js";
 import type { IOpenCodeAcpRuntime } from "./opencode-acp-runtime/contract.js";
+import type { ICursorCliRuntime } from "./cursor-cli-runtime/contract.js";
 import type { ICommandsService } from "./commands/commands.js";
 import type { IHooksService } from "./hooks/hooks.js";
 import type { IMemoryService } from "./memory/memory.js";
@@ -128,6 +129,8 @@ export interface IServiceAccessor {
   readonly promptEnhancerService?: PromptEnhancerService;
   /** Available only on the explicitly opted-in window-scoped local Desktop Host. */
   readonly openCodeAcpRuntime?: IOpenCodeAcpRuntime;
+  /** Cursor CLI discovery/catalog; present only when the Host advertises the channel. */
+  readonly cursorCliRuntime?: ICursorCliRuntime;
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;

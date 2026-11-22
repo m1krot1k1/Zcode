@@ -60,7 +60,7 @@ export function createAgentServices(
     options,
     isDesktopAttachedRemote,
     openCodeAcpRuntime,
-    openCodeCliProviderCatalogSource,
+    localCliProviderCatalogSource,
     desktopContextPromptEnabled,
     settingService,
     oauthCredentialRepo,
@@ -86,8 +86,8 @@ export function createAgentServices(
   const zcodeAgentService = createZCodeAgentService({
     codeIntelligenceService,
     ...(openCodeAcpRuntime ? { openCodeAcpRuntime } : {}),
-    ...(openCodeCliProviderCatalogSource
-      ? { runtimeProviderCatalogSource: openCodeCliProviderCatalogSource }
+    ...(localCliProviderCatalogSource
+      ? { runtimeProviderCatalogSource: localCliProviderCatalogSource }
       : {}),
     prepareProjectExecution,
     prepareSessionCreation: async (target) =>

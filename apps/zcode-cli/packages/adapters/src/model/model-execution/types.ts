@@ -4,6 +4,7 @@
 
 import type { LanguageModel } from "ai";
 import type { OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
+import type { CursorProvider } from "./cursor-provider.js";
 import type { ModelOptionValues } from "@zcode/model-option-map";
 import type {
   Logger,
@@ -16,7 +17,12 @@ import type { RegistryProviderConfig } from "@zcode/provider";
 import type { RawRequestBodyCapture } from "../model-option-map-fetch.js";
 import type { ModelRequestSecurityPort, ModelRequestSecurityState } from "../request-security.js";
 
-export type AiSdkProviderKind = "openai" | "anthropic" | "openai-compatible" | "opencode-sdk";
+export type AiSdkProviderKind =
+  | "openai"
+  | "anthropic"
+  | "openai-compatible"
+  | "opencode-sdk"
+  | "cursor-cli";
 type AiSdkModelExecutionKind = AiSdkProviderKind;
 
 export type EnvRecord = Record<string, string | undefined>;
@@ -42,6 +48,8 @@ export interface AiSdkModelExecutionConfig {
 export interface AiSdkModelExecutionOptions {
   /** 由 owning process 创建并注入；执行适配器不导入包级 singleton。 */
   opencodeProvider?: OpencodeProvider;
+  /** Cursor CLI print-mode adapter, injected by the owning process. */
+  cursorProvider?: CursorProvider;
   requestSecurityState?: ModelRequestSecurityState;
   logger?: Logger;
   transport?: ProviderFetch;

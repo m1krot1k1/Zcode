@@ -175,6 +175,8 @@ export const ServiceChannels = {
   ProactiveSuggestion: "proactive-suggestion",
   /** 当前 workspace 的进程所属 Host 承载的显式 OpenCode ACP delegated agent */
   OpenCodeAcp: "open-code-acp",
+  /** Host-side Cursor CLI discovery and model catalog */
+  CursorCli: "cursor-cli",
   /** Commands 管理服务 */
   Commands: "commands",
   /** Hooks 管理服务 */

@@ -205,6 +205,69 @@ describe("model selection groups", () => {
     ]);
   });
 
+  it("把 Cursor CLI 的 local-auth + cursor-cli Provider 加入普通 Composer 模型列表并标记 CLI", () => {
+    const modelId = "composer-1";
+    const selectionView: ModelSelectionView = {
+      revision: 11,
+      providers: [
+        {
+          providerId: "cursor",
+          providerName: "Cursor CLI",
+          config: {
+            access: { type: "local-auth" },
+            api: { type: "cursor-cli" },
+          },
+          models: [{ modelId, config: {} }],
+        },
+      ],
+    };
+
+    expect(buildRegistryModelSelectGroups("glm", selectionView)).toEqual([
+      {
+        key: "registry-provider:cursor",
+        label: "Cursor CLI",
+        labelBadge: "CLI",
+        items: [
+          {
+            key: `registry-provider:cursor:${modelId}`,
+            value: `custom:cursor:${encodeURIComponent(modelId)}`,
+            name: modelId,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("拒绝 cursor 的非 Cursor CLI 协议组合，不把凭据型 Provider 误当本地 CLI", () => {
+    const build = (
+      access: ModelSelectionView["providers"][number]["config"]["access"],
+      api: ModelSelectionView["providers"][number]["config"]["api"],
+    ): ModelSelectionView => ({
+      revision: 12,
+      providers: [
+        {
+          providerId: "cursor",
+          providerName: "Cursor CLI",
+          config: { access, api },
+          models: [{ modelId: "composer-1", config: {} }],
+        },
+      ],
+    });
+
+    expect(
+      buildRegistryModelSelectGroups(
+        "glm",
+        build({ type: "api-key", apiKey: "sk-demo" }, { type: "cursor-cli" }),
+      ),
+    ).toEqual([]);
+    expect(
+      buildRegistryModelSelectGroups(
+        "glm",
+        build({ type: "local-auth" }, { type: "opencode-sdk" }),
+      ),
+    ).toEqual([]);
+  });
+
   it("直接把 Registry Account Provider 投影为已选连接，不重新裁决 Family", () => {
     const providerId = BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan;
     const selectionView: ModelSelectionView = {

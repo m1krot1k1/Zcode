@@ -767,6 +767,36 @@ modules:
     layers:
       ui: .
     owner: agent
+  # cursor-cli-runtime：Cursor CLI 本地 Provider（与 opencode-acp-runtime 对称）
+  - id: cursor-cli-runtime
+    roots:
+      - packages/services/src/cursor-cli-runtime
+    managed: true
+    requires:
+      - services
+      - shared
+      - rpc
+    publicEntrypoints:
+      - packages/services/src/cursor-cli-runtime/index.ts
+      - packages/services/src/cursor-cli-runtime/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # cursor-agent-settings：Cursor CLI 设置面板（与 opencode-agent-settings 对称）
+  - id: cursor-agent-settings
+    roots:
+      - packages/ui/src/cursor-agent-settings
+    managed: true
+    requires:
+      - provider
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/cursor-agent-settings/index.ts
+      - packages/ui/src/cursor-agent-settings/contract.ts
+    layers:
+      ui: .
+    owner: agent
   # cli-subagent-observation：由 architecture:adopt 登记
   - id: cli-subagent-observation
     roots:
@@ -1478,6 +1508,7 @@ modules:
     requires:
       - agent-workbench
       - opencode-agent-settings
+      - cursor-agent-settings
       - shared
       - ui
     publicEntrypoints:

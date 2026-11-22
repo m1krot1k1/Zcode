@@ -53,6 +53,9 @@ function supportsRegistryApiFormat(
   // 根因：旧 OpenCode 目录在 Composer 之外单独拼组并走 ACP，模型选择没有写入标准 ModelSelection。
   // local-auth + SDK 类型现在由 Host 注册为普通 Provider，因此只按明确协议组合纳入公共目录。
   if (providerId === "opencode") return accessType === "local-auth" && apiFormat === "opencode-sdk";
+  // Cursor CLI публикуется Host-ом как обычный local-auth Provider с api.type "cursor-cli";
+  // других комбинаций у него нет, поэтому допускаем только эту пару.
+  if (providerId === "cursor") return accessType === "local-auth" && apiFormat === "cursor-cli";
   // 仅剩 glm（ZCode Agent）provider；三方 CLI 的 api format 差异已随 provider 下线。
   return isZCodeAgentProvider(selectedProvider);
 }
@@ -80,7 +83,8 @@ export function buildRegistryModelSelectGroups(
       : null;
 
     // 合并菜单仍需区分同名供应商的接入方式；API 标识直接来自 access，不能从名称猜测。
-    const localCliProvider = provider.providerId === "opencode";
+    const localCliProvider =
+      provider.providerId === "opencode" || provider.providerId === "cursor";
     const labelBadge =
       (localCliProvider ? "CLI" : undefined) ??
       accountPresentation?.labelBadge ??

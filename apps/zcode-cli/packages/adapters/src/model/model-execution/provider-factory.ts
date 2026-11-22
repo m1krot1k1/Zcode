@@ -9,6 +9,8 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
 import type { LanguageModel } from "ai";
 import type { OpencodeProvider } from "ai-sdk-provider-opencode-sdk";
+import type { CursorProvider } from "./cursor-provider.js";
+import type { AiSdkProviderKind } from "./types.js";
 import {
   compileModelOptionMaps,
   type CompiledModelOptionMaps,
@@ -78,6 +80,7 @@ export class AiSdkModelExecution {
   private readonly logger?: Logger;
   private readonly baseTransport?: ProviderFetch;
   private readonly opencodeProvider?: OpencodeProvider;
+  private readonly cursorProvider?: CursorProvider;
   private readonly providerTransports = new Map<string, ProviderFetch>();
   private readonly requestSecurity: ModelRequestSecurityPort;
 
@@ -89,6 +92,7 @@ export class AiSdkModelExecution {
     this.logger = options.logger;
     this.baseTransport = options.transport;
     this.opencodeProvider = options.opencodeProvider;
+    this.cursorProvider = options.cursorProvider;
     this.requestSecurity = (
       options.requestSecurityState ?? createModelRequestSecurityState()
     ).createExecution({ logger: options.logger });
@@ -135,7 +139,7 @@ export class AiSdkModelExecution {
     );
     // 重构后模型 SDK 曾只接到用户 Header，漏掉版本和站点归因；在公共绑定边界恢复，
     // 不依赖签名成功，不给各业务重复补头，也不修改 Provider 或已绑定 Model 的配置。
-    if (configuredProvider.kind !== "opencode-sdk") {
+    if (!isLocalCliProviderKind(configuredProvider.kind)) {
       configuredProvider.headers = mergeModelRequestHeaders(
         withOpenRouterAttributionHeaders(this.defaultHeaders, configuredProvider.baseURL),
         configuredProvider.headers,
@@ -198,6 +202,31 @@ export class AiSdkModelExecution {
     supportsJsonSchemaOutput: boolean,
     apiKeyId?: string,
   ): LanguageModelFactory {
+    if (providerConfig.kind === "cursor-cli") {
+      if (!this.cursorProvider) {
+        throw new Error("Cursor CLI provider is not initialized by the owning process");
+      }
+      // Cursor's model catalog encodes reasoning in the model id. The grouped model config
+      // stores `level -> actual cursor id` in the reasoning option map; resolve it once per
+      // request instead of spawning the CLI with the selector id.
+      let mappedModelId: string | undefined;
+      if (optionMaps && optionValues) {
+        try {
+          const mapped = optionMaps.apply({}, optionValues);
+          if (typeof mapped.modelId === "string" && mapped.modelId.trim().length > 0) {
+            mappedModelId = mapped.modelId;
+          }
+        } catch (error) {
+          this.logger?.debug("cursor model option map failed", {
+            providerId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      // Cursor выполняет свои инструменты внутри процесса; поток модели проходит через
+      // providerExecuted-части, поэтому ZCode tool runner их повторно не запускает.
+      return (modelId) => this.cursorProvider!.languageModel(mappedModelId ?? modelId);
+    }
     if (providerConfig.kind === "opencode-sdk") {
       if (!this.opencodeProvider) {
         throw new Error("OpenCode SDK provider is not initialized by the owning process");
@@ -459,6 +488,10 @@ interface AiSdkModelSnapshot {
   readonly modelId: ModelId;
 }
 
+function isLocalCliProviderKind(kind: AiSdkProviderKind): boolean {
+  return kind === "opencode-sdk" || kind === "cursor-cli";
+}
+
 function toAiSdkProviderConfig(
   providerId: string,
   config: RegistryProviderConfig,
@@ -468,6 +501,12 @@ function toAiSdkProviderConfig(
   if (api.type === "opencode-sdk") {
     return {
       kind: "opencode-sdk",
+      access: config.access,
+    };
+  }
+  if (api.type === "cursor-cli") {
+    return {
+      kind: "cursor-cli",
       access: config.access,
     };
   }

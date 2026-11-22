@@ -14,6 +14,8 @@ import {
   ProviderRegistryService,
   ProviderSettingsFacade,
   createFailClosedAccountProviderConfigSnapshot,
+  buildCursorReasoningMap,
+  groupCursorModels,
   type AccountProviderConfigSnapshot,
   type ProviderConfigSnapshot,
   type ProviderSettingsMutationTarget,
@@ -21,7 +23,7 @@ import {
   type ProviderSource,
   type RuntimeProviderCatalogSnapshot,
 } from "@zcode/provider";
-import { opencodeRuntimeModelIdSchema } from "@zcode/shared";
+import { cursorRuntimeModelIdSchema, opencodeRuntimeModelIdSchema } from "@zcode/shared";
 import {
   createProviderConfigRuntime,
   type ProviderConfigRuntime,
@@ -40,11 +42,16 @@ import type {
   IOpenCodeAcpRuntime,
   OpenCodeCliModelDescriptor,
 } from "../opencode-acp-runtime/contract.js";
+import type {
+  ICursorCliRuntime,
+  CursorCliModelDescriptor,
+} from "../cursor-cli-runtime/contract.js";
 import type { ObservableSettingService } from "../setting/observableSettingService.js";
 
 const log = createServiceLogger("provider-runtime");
 
 const OPENCODE_CLI_PROVIDER_ID = "opencode" as const;
+const CURSOR_CLI_PROVIDER_ID = "cursor" as const;
 
 /** Host-owned projection of the local OpenCode CLI into the shared model catalog. */
 export class OpenCodeCliProviderCatalogSource implements ProviderSource<RuntimeProviderCatalogSnapshot> {
@@ -178,6 +185,200 @@ function emptyOpenCodeSnapshot(revision: string): RuntimeProviderCatalogSnapshot
   return Object.freeze({
     revision: `opencode:${revision}`,
     providers: Object.freeze([]),
+  });
+}
+
+interface CliProviderEntry {
+  readonly provider: Provider;
+  readonly executablePath: string;
+  readonly revision: string;
+}
+
+/**
+ * Публикует оба локальных CLI-провайдера в один snapshot. Каждый CLI проверяется независимо:
+ * сбой или отключение одного не скрывает второй. Настройка `*CliEnabled` — единственный
+ * владелец видимости провайдера в Composer.
+ */
+export class LocalCliProviderCatalogSource implements ProviderSource<RuntimeProviderCatalogSnapshot> {
+  readonly #listeners = new Set<(reason: string) => void>();
+  readonly #disposeSettings: () => void;
+
+  constructor(
+    private readonly settings: ObservableSettingService,
+    private readonly openCodeRuntime:
+      | Pick<IOpenCodeAcpRuntime, "getCliStatus" | "listModels">
+      | undefined,
+    private readonly cursorRuntime:
+      | Pick<ICursorCliRuntime, "getCliStatus" | "listModels">
+      | undefined,
+  ) {
+    this.#disposeSettings = settings.onDidUpdate((event) => {
+      if (event.keys.includes("openCodeCliEnabled") || event.keys.includes("cursorCliEnabled")) {
+        this.#emit("setting-updated");
+      }
+    });
+  }
+
+  async read(): Promise<RuntimeProviderCatalogSnapshot> {
+    const settings = await this.settings.get();
+    const openCodeEnabled = settings.openCodeCliEnabled === true && this.openCodeRuntime != null;
+    const cursorEnabled = settings.cursorCliEnabled === true && this.cursorRuntime != null;
+    const [openCode, cursor] = await Promise.all([
+      openCodeEnabled ? this.#readOpenCode() : Promise.resolve(undefined),
+      cursorEnabled ? this.#readCursor() : Promise.resolve(undefined),
+    ]);
+    const entries = [openCode, cursor].filter((entry): entry is CliProviderEntry => entry != null);
+    const executablePaths: Partial<Record<"opencode" | "cursor", string>> = {};
+    for (const entry of entries) {
+      if (entry.provider.providerId === OPENCODE_CLI_PROVIDER_ID) {
+        executablePaths.opencode = entry.executablePath;
+      } else if (entry.provider.providerId === CURSOR_CLI_PROVIDER_ID) {
+        executablePaths.cursor = entry.executablePath;
+      }
+    }
+    return Object.freeze({
+      revision: `local-cli:${
+        entries.map((entry) => `${entry.provider.providerId}@${entry.revision}`).join("|") || "none"
+      }`,
+      providers: Object.freeze(entries.map((entry) => entry.provider)),
+      ...(executablePaths.opencode ? { cliExecutablePath: executablePaths.opencode } : {}),
+      ...(Object.keys(executablePaths).length > 0
+        ? { cliExecutablePaths: Object.freeze(executablePaths) }
+        : {}),
+    });
+  }
+
+  async #readOpenCode(): Promise<CliProviderEntry | undefined> {
+    // 根因：CLI/catalog 抛错会拒绝整次 Registry refresh，已配置的 API Provider 也无法发布。
+    // 修复：刷新失败是可重试的空结果；其它 Provider 照常合并。
+    try {
+      if (!this.openCodeRuntime) return undefined;
+      const status = await this.openCodeRuntime.getCliStatus();
+      if (status.status !== "available") return undefined;
+      const catalog = await this.openCodeRuntime.listModels();
+      if (catalog.status !== "available") return undefined;
+      const models = catalog.models.filter(
+        (model) => opencodeRuntimeModelIdSchema.safeParse(model.modelId).success,
+      );
+      if (models.length === 0) return undefined;
+      return {
+        provider: createOpenCodeProvider(models),
+        executablePath: status.executablePath,
+        revision: `${status.version}:${models.map((model) => model.modelId).join(",")}`,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  async #readCursor(): Promise<CliProviderEntry | undefined> {
+    try {
+      if (!this.cursorRuntime) return undefined;
+      const status = await this.cursorRuntime.getCliStatus();
+      if (status.status !== "available") return undefined;
+      const catalog = await this.cursorRuntime.listModels();
+      if (catalog.status !== "available") return undefined;
+      const models = catalog.models.filter(
+        (model) => cursorRuntimeModelIdSchema.safeParse(model.modelId).success,
+      );
+      if (models.length === 0) return undefined;
+      return {
+        provider: createCursorProvider(models),
+        executablePath: status.executablePath,
+        revision: `${status.version}:${models.map((model) => model.modelId).join(",")}`,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  onDidChange(listener: (reason: string) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  dispose(): void {
+    this.#disposeSettings();
+    this.#listeners.clear();
+  }
+
+  /** Установка CLI не меняет настройку; источник отдельно инвалидируется владельцем. */
+  async refresh(reason = "manual-refresh"): Promise<RuntimeProviderCatalogSnapshot> {
+    this.#emit(reason);
+    return this.read();
+  }
+
+  #emit(reason: string): void {
+    for (const listener of this.#listeners) listener(reason);
+  }
+}
+
+/**
+ * Cursor CLI не публикует context window и usage в `--list-models`, поэтому берём
+ * консервативный лимит, чтобы context assembly не превышал окно модели.
+ */
+const CURSOR_DEFAULT_CONTEXT_WINDOW = 128_000;
+const CURSOR_DEFAULT_MAX_OUTPUT_TOKENS = 32_000;
+
+function createCursorProvider(catalogModels: readonly CursorCliModelDescriptor[]): Provider {
+  const providerConfigResult = createRegistryProviderConfig(
+    new ProviderConfig({
+      group: "standard-personal",
+      access: new LocalAuthAccessConfig(),
+      api: new ProviderApiConfig({ type: "cursor-cli" }),
+    }),
+    [CURSOR_CLI_PROVIDER_ID],
+  );
+  if (!providerConfigResult.ok) {
+    throw new Error(
+      `Cursor CLI provider config is invalid: ${providerConfigResult.issues[0]?.message}`,
+    );
+  }
+
+  const models = groupCursorModels(catalogModels).map((model) => {
+    const modelConfigResult = createRegistryModelConfig(
+      new ModelConfig({
+        enabled: true,
+        properties: new ModelPropertiesConfig({
+          displayName: model.name,
+          requiresMfjsToolSchema: false,
+          contextWindow: CURSOR_DEFAULT_CONTEXT_WINDOW,
+          inputFormat: {
+            supportsText: true,
+            supportsImage: false,
+            supportsVideo: false,
+            supportsAudio: false,
+            supportsPdf: false,
+          },
+          outputFormat: { supportsText: true },
+          // Cursor agent исполняет свои инструменты сам; providerExecuted-части приходят из CLI.
+          supportsToolCall: true,
+          supportsJsonSchemaOutput: false,
+          supportsNativeWebSearch: false,
+          supportsMidConversationSystem: false,
+        }),
+        optionSpecs: new ModelOptionSpecsConfig({
+          reasoningLevel: {
+            values: model.reasoningLevels.map((entry) => entry.level),
+            map: buildCursorReasoningMap(model.reasoningLevels),
+          },
+          maxOutputTokens: { max: CURSOR_DEFAULT_MAX_OUTPUT_TOKENS, map: "{}" },
+        }),
+      }),
+      [CURSOR_CLI_PROVIDER_ID, model.modelId],
+    );
+    if (!modelConfigResult.ok) {
+      throw new Error(
+        `Cursor CLI model config is invalid: ${model.modelId}: ${modelConfigResult.issues[0]?.message}`,
+      );
+    }
+    return Object.freeze({ modelId: model.modelId, config: modelConfigResult.config });
+  });
+  return Object.freeze({
+    providerId: CURSOR_CLI_PROVIDER_ID,
+    providerName: "Cursor CLI",
+    config: providerConfigResult.config,
+    models: Object.freeze(models),
   });
 }
 

@@ -158,6 +158,120 @@ describe("ZCode Protocol", () => {
     ).toThrow();
   });
 
+  it("runtime Cursor catalog допускает local-auth + cursor-cli рядом с OpenCode", () => {
+    const modelConfig = {
+      enabled: true,
+      properties: {
+        requiresMfjsToolSchema: false,
+        contextWindow: 32_000,
+        inputFormat: {
+          supportsText: true,
+          supportsImage: false,
+          supportsVideo: false,
+          supportsAudio: false,
+          supportsPdf: false,
+        },
+        outputFormat: { supportsText: true },
+        supportsToolCall: false,
+        supportsJsonSchemaOutput: false,
+        supportsNativeWebSearch: false,
+        supportsMidConversationSystem: false,
+      },
+      optionSpecs: {
+        reasoningLevel: { values: ["disabled"], map: "{}" },
+        maxOutputTokens: { max: 4_000, map: "{}" },
+      },
+    };
+    const cursorProvider = {
+      providerId: "cursor",
+      providerName: "Cursor CLI",
+      config: {
+        group: "standard-personal",
+        access: { type: "local-auth" },
+        api: { type: "cursor-cli" },
+      },
+      models: [
+        { modelId: "composer-1", config: modelConfig },
+        { modelId: "claude-4.5-sonnet", config: modelConfig },
+      ],
+    };
+    const valid = {
+      revision: "cursor-catalog:1",
+      cliExecutablePaths: { cursor: "/Users/me/.local/bin/cursor-agent" },
+      providers: [cursorProvider],
+    };
+    expect(zcodeProviderUpdateRuntimeCatalogParamsSchema.parse(valid)).toEqual(valid);
+    // OpenCode и Cursor делят один snapshot.
+    expect(
+      zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+        revision: "mixed-catalog:2",
+        cliExecutablePaths: {
+          opencode: "/opt/opencode/bin/opencode",
+          cursor: "/Users/me/.local/bin/cursor-agent",
+        },
+        providers: [
+          {
+            providerId: "opencode",
+            providerName: "OpenCode CLI",
+            config: {
+              group: "standard-personal",
+              access: { type: "local-auth" },
+              api: { type: "opencode-sdk" },
+            },
+            models: [
+              {
+                modelId: "anthropic/claude-sonnet-4-5",
+                config: modelConfig,
+              },
+            ],
+          },
+          cursorProvider,
+        ],
+      }).providers,
+    ).toHaveLength(2);
+    // Небезопасный protocol-looking model id отвергается.
+    expect(() =>
+      zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+        ...valid,
+        providers: [
+          {
+            ...cursorProvider,
+            models: [{ modelId: "composer 1; rm -rf /", config: modelConfig }],
+          },
+        ],
+      }),
+    ).toThrow();
+    // cursor-cli не принимает endpoint и не сочетается с api-key.
+    expect(() =>
+      zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+        ...valid,
+        providers: [
+          {
+            ...cursorProvider,
+            config: {
+              ...cursorProvider.config,
+              api: { type: "cursor-cli", baseUrl: "https://example.invalid" },
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      zcodeProviderUpdateRuntimeCatalogParamsSchema.parse({
+        ...valid,
+        providers: [
+          {
+            ...cursorProvider,
+            config: {
+              ...cursorProvider.config,
+              access: { type: "api-key", apiKey: "secret" },
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("模型格式能力只接受完整的嵌套 properties 契约", () => {
     const properties = {
       inputFormat: {

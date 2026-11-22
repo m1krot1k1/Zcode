@@ -13,8 +13,8 @@ import {
   testId,
 } from "@zcode/shared/test-ids";
 
-/** API-коннектор принимает только HTTP форматы; локальный OpenCode SDK здесь не настраивается. */
-export type ProviderConnectionApiFormat = Exclude<ProviderApiType, "opencode-sdk">;
+/** API-коннектор принимает только HTTP форматы; локальные CLI SDK здесь не настраиваются. */
+export type ProviderConnectionApiFormat = Exclude<ProviderApiType, "opencode-sdk" | "cursor-cli">;
 
 export const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderConnectionApiFormat[] = [
   "anthropic-messages",

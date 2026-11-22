@@ -152,8 +152,8 @@ function convertPersonalProviderConfig(
   document: ProviderConfigLayerSnapshot,
 ): E2EModelProviderSnapshot[] {
   return document.providers.entries().flatMap(([providerId, provider]) => {
-    // E2E personal-provider fixture models HTTP endpoints only; local OpenCode SDK is runtime-owned.
-    if (provider.api?.type === "opencode-sdk") return [];
+    // E2E personal-provider fixture models HTTP endpoints only; local CLI SDKs are runtime-owned.
+    if (provider.api?.type === "opencode-sdk" || provider.api?.type === "cursor-cli") return [];
     const now = Date.now();
     const kind = mapPersonalProviderKind(provider);
     return {
@@ -214,6 +214,7 @@ function convertPersonalModelConfig(
 function mapPersonalProviderKind(provider: ProviderConfig): E2EProviderKind {
   switch (provider.api?.type) {
     case "opencode-sdk":
+    case "cursor-cli":
       return "openai-compatible";
     case "anthropic-messages":
       return "anthropic";
