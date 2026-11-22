@@ -1,0 +1,82 @@
+# Recommended local coding model: Qwen3.8-27B-pi-adapted
+
+Status: guidance (2026-11-22, release 3.17.153)
+
+The product already supports any OpenAI-compatible local server through the ordinary
+provider form. This note records the recommended open-weights coding model and the exact
+serving contract so the app does not hide a model-specific adapter behind a second
+runtime.
+
+## Recommendation
+
+- Base: `Qwen/Qwen3.8-27B`
+- Adapter: `harness-hub/Qwen3.8-27B-pi-adapted` (LoRA, Apache-2.0)
+- Recommended served model id: `qwen3.8-pi`
+- Provider API: `openai-chat-completions`
+- Local base URL: `http://127.0.0.1:8000/v1`
+- API key: any non-empty local placeholder (`local`)
+
+Why it is recommended: the pi adapter was trained with RL for tool-use efficiency. On
+Terminal-Bench 2.1 it reaches 56.6% with thinking off, and on SWE-bench Pro it solves
+64.7% with far fewer turns and tokens than the base model. The base model often hits the
+100-step budget; the adapter finishes the same class of task in a handful of tool calls.
+This is the same system-level principle used by `/start`: fewer, better-parallelized
+calls beat a longer single chain.
+
+The adapter needs the base weights (about 54 GB BF16; GGUF Q4 is about 17 GB) and a
+serving engine. The app does **not** auto-download these multi-gigabyte weights in this
+release; the user starts a local server and then adds it with the normal provider form.
+The UI already accepts the OpenAI-compatible endpoint and model, and the local embedding
+manager follows the same install-only-what-you-need rule.
+
+## vLLM
+
+```sh
+vllm serve Qwen/Qwen3.8-27B \
+  --enable-lora --max-lora-rank 32 \
+  --lora-modules qwen3.8-pi=harness-hub/Qwen3.8-27B-pi-adapted \
+  --language-model-only --enable-prefix-caching --mamba-cache-mode align \
+  --enable-auto-tool-choice --tool-call-parser qwen3_xml --reasoning-parser qwen3 \
+  --default-chat-template-kwargs '{"enable_thinking": false}' \
+  --max-model-len 131072
+```
+
+Then add a provider:
+
+- API format: `openai-chat-completions`
+- Base URL: `http://127.0.0.1:8000/v1`
+- Model id: `qwen3.8-pi`
+- API key: `local`
+
+## llama.cpp / GGUF
+
+```sh
+hf download ggml-org/Qwen3.8-27B-GGUF Qwen3.8-27B-Q8_0.gguf --local-dir .
+hf download harness-hub/Qwen3.8-27B-pi-adapted-GGUF Qwen3.8-27B-pi-lora-F16.gguf --local-dir .
+
+llama serve -m Qwen3.8-27B-Q8_0.gguf --lora Qwen3.8-27B-pi-lora-F16.gguf \
+  --chat-template-kwargs '{"enable_thinking": false}' -c 65536 --port 9931 --alias qwen3.8-pi
+```
+
+Base URL: `http://127.0.0.1:9931/v1`; model id: `qwen3.8-pi`.
+
+## Constraints
+
+- Thinking off is the trained default. Turning it on increases tokens roughly 4x for at
+  most a few additional solved tasks.
+- The model uses the Qwen XML tool-call parser and the Qwen reasoning parser; a plain
+  generic server that does not map tool calls will produce unusable tool blocks.
+- The vision tower is not served in the evaluation setup; use text-only models for image
+  inputs or a separate vision model.
+- Context is 131,072 tokens in the reference vLLM command; the app's context assembly
+  still enforces its own working-context ceiling.
+- The adapter is a LoRA for Qwen3.8-27B and does not work with other base models.
+
+## Acceptance
+
+- A local OpenAI-compatible provider accepts `http://127.0.0.1:8000/v1` and
+  `qwen3.8-pi` and appears in the Composer model list after a successful test request.
+- The model can call ZCode tools (the provider uses the existing
+  `openai-chat-completions` tool protocol); tool calls are not re-executed by ZCode.
+- The app does not claim the model is installed or downloaded unless the user's server
+  responds.
