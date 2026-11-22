@@ -131,7 +131,8 @@ The Host now groups the flat catalog:
 
 - `parseCursorModelId` recognizes trailing `fast`, `no-thinking` and reasoning tokens
   (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) while preserving
-  `thinking` as part of the base identity;
+  `thinking` as part of the base identity; the two-token `extra-high` spelling is
+  normalized to `xhigh` so `gpt-5.5-extra-high` stays in the `gpt-5.5` family;
 - `groupCursorModels` emits one selector per base model (+ `-fast`), with ordered
   reasoning levels and the exact Cursor id for each level;
 - the model config stores `optionSpecs.reasoningLevel.map` as restricted CEL that returns

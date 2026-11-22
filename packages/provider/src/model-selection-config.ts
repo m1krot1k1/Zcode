@@ -217,7 +217,13 @@ export function parseCursorModelId(modelId: string): {
   }
   let level = "default";
   const last = tokens.at(-1);
-  if (last && LEVEL_TOKENS.has(last)) {
+  // Cursor печатает уровень `extra-high` двумя токенами; без этой ветки
+  // `gpt-5.5-extra-high` превращался в отдельную базовую модель `gpt-5.5-extra`.
+  if (last === "high" && tokens.at(-2) === "extra") {
+    level = "xhigh";
+    tokens.pop();
+    tokens.pop();
+  } else if (last && LEVEL_TOKENS.has(last)) {
     level = last;
     tokens.pop();
   }

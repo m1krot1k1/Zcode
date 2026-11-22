@@ -37,6 +37,25 @@ describe("groupCursorModels", () => {
     expect(fast?.name).toBe("Codex 5.3 Fast");
   });
 
+  it("collapses Cursor's two-token extra-high level into xhigh on the same base", () => {
+    const groups = groupCursorModels([
+      model("gpt-5.5-none", "GPT 5.5 None"),
+      model("gpt-5.5-high", "GPT 5.5 High"),
+      model("gpt-5.5-extra-high", "GPT 5.5 Extra High"),
+      model("gpt-5.5-extra-high-fast", "GPT 5.5 Extra High Fast"),
+    ]);
+
+    expect(groups.map((group) => group.modelId)).toEqual(["gpt-5.5", "gpt-5.5-fast"]);
+    expect(groups.find((group) => group.modelId === "gpt-5.5")?.reasoningLevels).toEqual([
+      { level: "none", modelId: "gpt-5.5-none" },
+      { level: "high", modelId: "gpt-5.5-high" },
+      { level: "xhigh", modelId: "gpt-5.5-extra-high" },
+    ]);
+    expect(groups.find((group) => group.modelId === "gpt-5.5-fast")?.reasoningLevels).toEqual([
+      { level: "xhigh", modelId: "gpt-5.5-extra-high-fast" },
+    ]);
+  });
+
   it("keeps thinking/no-thinking and single-variant models distinct", () => {
     const groups = groupCursorModels([
       model("claude-opus-4-7-thinking-high", "Claude Opus 4.7 High Thinking"),
