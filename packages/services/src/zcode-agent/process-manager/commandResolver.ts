@@ -5,6 +5,7 @@
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { ZCODE_AGENT_RUNTIME } from "@zcode/shared";
+import { getAppConfigDir } from "#src/paths.js";
 import { resolveZCodeAgentSpawnCwd } from "#src/zcode-agent/zcodeAgentSpawnCwd.js";
 import { readZCodeStdioTapDevState } from "#src/zcode-agent/zcodeStdioTapDevConfig.js";
 import { debugLog } from "./logging.js";
@@ -28,6 +29,16 @@ function parseArgsJson(raw: string | undefined): string[] | undefined {
     throw new Error("ZCODE_AGENT_SERVER_ARGS_JSON must be a JSON string array");
   }
   return parsed;
+}
+
+/**
+ * Agent 与存储准备 Worker 每次都重新解析 20 MB 的 zcode.cjs。Node 的编译缓存按文件
+ * 复用 V8 bytecode，冷启动实测从约 800 ms 降到约 610 ms；目录属于本机可重建缓存，
+ * 丢失只会退回原启动成本，不影响协议或数据库事实。
+ */
+function agentNodeCompileCacheEnv(): Record<string, string> {
+  const configured = process.env.NODE_COMPILE_CACHE?.trim();
+  return { NODE_COMPILE_CACHE: configured || join(getAppConfigDir(), "cache", "node-compile") };
 }
 
 function findUpward(relativePath: string): string | null {
@@ -97,7 +108,7 @@ function resolveBundledWorkspaceZCodeAgentCommand(
       cwd: context.workspacePath,
       // 桌面端 host 运行在 Electron utility process 中，process.execPath 指向 Electron Helper。
       // 这里显式启用 Node 运行模式，避免内置 zcode-agent 被当成 Electron/Chromium 子进程启动并卡在 GPU 初始化。
-      env: { ELECTRON_RUN_AS_NODE: "1" },
+      env: { ELECTRON_RUN_AS_NODE: "1", ...agentNodeCompileCacheEnv() },
     };
   }
 
@@ -156,7 +167,7 @@ function resolveElectronRuntimeZCodeAgentCommand(
     storagePreparationEntry: bundlePath,
     cwd: context.workspacePath,
     // 关键：必须以纯 Node 模式启动，否则子进程会被当成 Electron/Chromium 子进程卡在 GPU 初始化。
-    env: { ELECTRON_RUN_AS_NODE: "1" },
+    env: { ELECTRON_RUN_AS_NODE: "1", ...agentNodeCompileCacheEnv() },
   };
 }
 

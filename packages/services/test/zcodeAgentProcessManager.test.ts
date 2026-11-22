@@ -189,7 +189,10 @@ describe("resolveDefaultZCodeAgentCommand", () => {
       command: process.execPath,
       args: [expect.any(String), "app-server", "--stdio"],
       cwd: "/repo/workspace",
-      env: { ELECTRON_RUN_AS_NODE: "1" },
+      env: {
+        ELECTRON_RUN_AS_NODE: "1",
+        NODE_COMPILE_CACHE: expect.stringContaining("node-compile"),
+      },
     });
     expect(realpathSync(command!.args![0]!)).toBe(realpathSync(distEntrypoint));
     expect(realpathSync(command!.storagePreparationEntry!)).toBe(realpathSync(distEntrypoint));

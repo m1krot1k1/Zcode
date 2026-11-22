@@ -89,6 +89,14 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   } finally {
     await waitForPendingWarnings();
+    // Bug 原因：--prepare-storage 在 Host Worker 中运行，完成帧写完后进程仍持有
+    // stdin 的 readable handle，只能等 scheduleCliExitWatchdog 的 1s 超时退出。
+    // Host 以 exit 事件判断准备完成，于是每次启动都多等约 1 秒。存储已经 close，
+    // 完成帧也用 write 回调确认 flush，此处直接结束；不要再等 stdin EOF/看门狗。
+    if (isProtocol && argv.includes("--prepare-storage")) {
+      restoreConsole?.();
+      process.exit(normalizeProcessExitCode(process.exitCode));
+    }
     // 生命周期和 stderr guard 一直保留到实际退出，迟到的错误不能恢复递归写坏流。
     if (lifecycle) {
       await lifecycle.complete(normalizeProcessExitCode(process.exitCode));

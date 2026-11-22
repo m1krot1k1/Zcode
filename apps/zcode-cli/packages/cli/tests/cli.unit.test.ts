@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -6884,6 +6885,64 @@ test("storage-migrate real entrypoint honors an isolated custom database and rej
     assert.equal(failed.stdout, "");
     assert.match(failed.stderr, /checksum mismatch/i);
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("prepare-storage exits immediately after storagePrepared without waiting for the exit watchdog", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "zcode-cli-prepare-storage-"));
+  const cliEntry = fileURLToPath(new URL("../src/main.ts", import.meta.url));
+  const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      tsxLoader,
+      cliEntry,
+      "app-server",
+      "--stdio",
+      "--prepare-storage",
+      "--cwd",
+      directory,
+    ],
+    {
+      cwd: directory,
+      env: {
+        ...process.env,
+        HOME: directory,
+        USERPROFILE: directory,
+        ZCODE_DATA_BASE_DIR: directory,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  let preparedAt: number | undefined;
+  let stderr = "";
+  const lines = createInterface({ input: child.stdout });
+  child.stderr.on("data", (data) => {
+    stderr += data;
+  });
+  lines.on("line", (line) => {
+    const frame = JSON.parse(line) as { method: string };
+    if (frame.method === "startup/storagePath") {
+      child.stdin.write(
+        `${JSON.stringify({ method: "startup/storagePathReady", reuse: false })}\n`,
+      );
+    }
+    if (frame.method === "startup/storagePrepared") preparedAt = Date.now();
+  });
+  try {
+    const [code] = await once(child, "close");
+    assert.equal(code, 0, stderr);
+    assert.ok(preparedAt !== undefined, "storagePrepared frame was not received");
+    // Bug 原因：prepare-storage Worker 持有 stdin 的 readable handle，旧实现只能等
+    // 1s exit watchdog，Host 每次启动都被多算约 1 秒。完成帧后应直接退出。
+    assert.ok(
+      Date.now() - preparedAt! < 900,
+      `prepare-storage waited ${Date.now() - preparedAt}ms after storagePrepared`,
+    );
+  } finally {
+    child.kill();
     await rm(directory, { recursive: true, force: true });
   }
 });

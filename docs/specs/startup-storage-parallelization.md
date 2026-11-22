@@ -25,6 +25,21 @@ for both before initializing services.
 - `onTiming(phase, durationMs)` reports `tasks_storage`, `session_storage`,
   `storage_total`, and `services_ready`. The Host logs them as
   `database startup phase { phase, durationMs }` for before/after measurement.
+- The session preparation Worker must exit as soon as it writes
+  `startup/storagePrepared`. It must not depend on stdin EOF or the generic 1 s CLI exit
+  watchdog: the Worker keeps the stdin readable handle alive, so waiting added a fixed
+  ~1 s to every reopen. The completion frame is written with an output-write callback and
+  the database is already closed before exit.
+- The bundled CLI/agent process runs with `NODE_COMPILE_CACHE` under
+  `{appConfigDir}/cache/node-compile`. Node reuses V8 bytecode for the 20 MB bundle;
+  measured cold start dropped from ~800 ms to ~610 ms on the same machine. The cache is
+  rebuildable and has no protocol or database semantics.
+
+## Measured effect (macOS arm64, release 3.17.155 code + this fix)
+
+Before: `storage_total` 1778 ms, of which `session_storage` 1777 ms.
+After (isolated Worker measurement): work completes at ~740 ms; with a warm compile
+cache the first frame arrives at ~545 ms. The Host no longer waits for the watchdog.
 
 ## Acceptance
 
