@@ -49,6 +49,18 @@ describe("code index scanner (schema v2)", () => {
     expect(scan.files.every((file) => file.pathTier === 0)).toBe(true);
   });
 
+  it("includes source files up to 8 MiB and reports only the larger ones", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-code-scanner-size-"));
+    tempRoots.push(root);
+    await writeFile(join(root, "large.ts"), "x".repeat(2 * 1024 * 1024), "utf8");
+    await writeFile(join(root, "huge.ts"), "x".repeat(9 * 1024 * 1024), "utf8");
+
+    const scan = await scanWorkspaceFiles(root);
+
+    expect(scan.files.map((file) => file.relPath)).toEqual(["large.ts"]);
+    expect(scan.skippedLarge).toBe(1);
+  });
+
   it("skips secret-looking files and reports them instead of indexing silently", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-code-scanner-secret-"));
     tempRoots.push(root);

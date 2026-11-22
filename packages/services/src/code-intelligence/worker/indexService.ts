@@ -108,6 +108,15 @@ export class CodeIndexService {
   private statusOf(workspace: OpenWorkspace): Record<string, unknown> {
     const { db } = workspace;
     const storedState = readMeta(db, "index_state");
+    const diagnostics = this.diagnosticsOf(db);
+    // Policy skips used to set index_partial. Treat a completed pass whose only
+    // diagnostics are secret/size coverage gaps as ready (green), so an index built by
+    // an older build does not stay yellow until the next full reindex.
+    const coverageOnly =
+      diagnostics.length > 0 &&
+      diagnostics.every(
+        (line) => line.includes("secret patterns") || line.includes("MiB indexing limit"),
+      );
     return {
       state:
         storedState === "ready" ? "ready" : storedState === "degraded" ? "degraded" : "unindexed",
@@ -120,14 +129,14 @@ export class CodeIndexService {
         edges: countOf(db, "edges"),
       },
       schemaVersion: Number(readMeta(db, "schema_version") ?? 0),
-      partial: readMeta(db, "index_partial") === "true",
+      partial: readMeta(db, "index_partial") === "true" && !coverageOnly,
       // Фаза эмбеддингов хранится в meta: статус должен переживать рестарт воркера.
       embeddingPhase: readMeta(db, "embedding_phase") ?? "not-configured",
       embeddingErrorCode: readMeta(db, "embedding_error_code"),
       embeddingErrorStatus: readMeta(db, "embedding_error_status"),
       migratedFromV1: workspace.migratedFromV1,
       legacySizeBytes: workspace.legacySizeBytes,
-      diagnostics: this.diagnosticsOf(db),
+      diagnostics,
     };
   }
 

@@ -15,7 +15,7 @@ import { INDEXED_EXTENSIONS, pathTierOf } from "../ast/languageRegistry.js";
  *  - игнор-правила применяются до `stat`, поэтому `node_modules` не даёт тысяч syscall'ов.
  */
 
-const MAX_FILE_BYTES = 1024 * 1024;
+export const MAX_INDEXED_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_FILES = 60_000;
 
 const SECRET_FILE_NAME =
@@ -170,7 +170,7 @@ export async function scanWorkspaceFiles(workspacePath: string): Promise<ScanRes
       } catch {
         continue;
       }
-      if (info.size > MAX_FILE_BYTES) {
+      if (info.size > MAX_INDEXED_FILE_BYTES) {
         skippedLarge += 1;
         continue;
       }

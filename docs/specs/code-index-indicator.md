@@ -20,7 +20,10 @@ cannot disagree about the same status.
 ## Tone mapping
 
 `state` is the authoritative service field. `partial` refines only `ready`; it does
-not create a fifth service state. Order of precedence:
+not create a fifth service state. The service sets `partial: true` only when the index
+pass was interrupted or truncated. Policy skips (secret-looking files, files above the
+8 MiB limit) remain visible as coverage diagnostics but do not make a completed pass
+partial. Order of precedence:
 
 1. `state` selects the base category.
 2. `ready && partial === true` becomes `partial`.
@@ -100,15 +103,14 @@ message is `codeIndex.triggerWithStatus` with a `{status}` placeholder, present 
 - `indexing`: warning dot with pulse plus the existing progress text. The pulse is
   additive motion, not the only signal.
 - `ready`: success tone; the popover shows counts, embedding readiness, and the last
-  update time.
-- `partial`: warning tone. Coverage details stay in the existing neutral disclosure.
-  The disclosure also lists localized skip reasons derived from known diagnostic
-  sentences (`codeIndex.skip.secret`, `codeIndex.skip.size`, `codeIndex.skip.limit`,
-  and `codeIndex.skip.other` with a count). Raw diagnostic text is never rendered.
-  The dot, pill, popover badge, trigger name, and live region all read as partial
-  rather than plain ready, while `data-code-index-state` keeps the authoritative
-  `"ready"` value. A solid warning dot is a finished partial index, not an
-  indexing pass that failed to clear.
+  update time. A completed pass with policy skips stays green; the existing neutral
+  disclosure lists localized skip reasons derived from known diagnostic sentences
+  (`codeIndex.skip.secret`, `codeIndex.skip.size`, `codeIndex.skip.limit`, and
+  `codeIndex.skip.other` with a count). Raw diagnostic text is never rendered.
+- `partial`: warning tone. It means the pass itself was interrupted or truncated, not
+  that a few files were deliberately excluded. The dot, pill, popover badge, trigger
+  name, and live region all read as partial rather than plain ready, while
+  `data-code-index-state` keeps the authoritative `"ready"` value.
 - `degraded`: destructive tone; the popover keeps the existing retry action and the
   last committed generation remains visible.
 - Unknown or still-loading status: neutral tone with the localized `codeIndex.loadingStatus`
@@ -125,8 +127,10 @@ message is `codeIndex.triggerWithStatus` with a `{status}` placeholder, present 
 - The Workbench pill renders the same tone and the same text through the shared helper
   while preserving `data-code-index-state` as the authoritative `state` value.
 - `ready && partial === true` renders the partial text in both the popover badge and
-  the Workbench pill, never "Ready". A secret/size/limit diagnostic renders the
-  matching localized skip reason and never the raw diagnostic sentence.
+  the Workbench pill, never "Ready".
+- A completed `ready && partial !== true` pass with secret/size/limit diagnostics
+  renders the green ready tone and still shows the matching localized skip reason in
+  the disclosure; raw diagnostic sentences are never rendered.
 - While `state === "indexing"`, the composer indicator and the Workbench pill keep
   requesting status even when the popover is closed and the Build button is idle.
   A slower status response that started earlier must not replace a newer one.

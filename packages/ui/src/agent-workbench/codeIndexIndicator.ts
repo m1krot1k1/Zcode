@@ -81,7 +81,7 @@ type CodeIndexSkipReason = { key: string; count?: number };
 
 const SKIP_DEFAULTS: Record<string, string> = {
   "codeIndex.skip.secret": "A file was left out because it looks like a secret.",
-  "codeIndex.skip.size": "A file was left out because it is larger than 1 MiB.",
+  "codeIndex.skip.size": "A file was left out because it is larger than 8 MiB.",
   "codeIndex.skip.limit": "Indexing stopped at the file safety limit.",
   "codeIndex.skip.other": "{count} other files were left out of the index.",
 };
@@ -92,7 +92,7 @@ export function codeIndexSkipDefault(key: string): string {
 
 // 扫描器写入的是稳定英文诊断句。这里只映射已知的覆盖缺口，原始句子不进界面。
 const SECRET_DIAGNOSTIC = "secret patterns";
-const SIZE_DIAGNOSTIC = "1 MiB";
+const SIZE_DIAGNOSTIC = "8 MiB";
 const LIMIT_DIAGNOSTIC = "safety limit";
 
 export function codeIndexSkipReasons(diagnostics: readonly string[]): CodeIndexSkipReason[] {

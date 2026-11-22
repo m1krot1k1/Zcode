@@ -529,6 +529,23 @@ describe("code intelligence coverage", () => {
     expect(found.results.some((hit) => hit.path.endsWith("login.test.ts"))).toBe(true);
   });
 
+  it("migrates an old policy-only partial flag to green when the pass is complete", async () => {
+    const { workspacePath, indexRootDir, service } = await createTestService();
+    await writeFile(join(workspacePath, "a.ts"), "export const a = 1;\n", "utf8");
+    await service.indexWorkspace({ workspacePath });
+    const databasePath = databaseFileFor(indexRootDir, workspacePath);
+    await withIndexDatabase(databasePath, (db) => {
+      db.prepare("UPDATE meta SET value = 'true' WHERE key = 'index_partial'").run();
+      db.prepare("UPDATE meta SET value = ? WHERE key = 'diagnostics'").run(
+        JSON.stringify(["A source file matching secret patterns was excluded from the index."]),
+      );
+    });
+
+    const status = await service.getStatus({ workspacePath });
+    expect(status.partial).toBe(false);
+    expect(status.diagnostics.some((line) => line.includes("secret patterns"))).toBe(true);
+  });
+
   it("keeps a product credential and a private-key block out of the index", async () => {
     const { workspacePath, service } = await createTestService();
     await mkdir(join(workspacePath, "src", "test"), { recursive: true });
@@ -545,7 +562,7 @@ describe("code intelligence coverage", () => {
 
     const status = await service.indexWorkspace({ workspacePath });
 
-    expect(status.partial).toBe(true);
+    expect(status.partial).toBe(false);
     expect(status.diagnostics.some((line) => line.includes("secret patterns"))).toBe(true);
     const found = await service.search({
       workspacePath,

@@ -1,7 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parseFile } from "../ast/parseFile.js";
-import { isInsideWorkspace, looksLikeSecretContent, scanWorkspaceFiles } from "./workspaceScan.js";
+import {
+  isInsideWorkspace,
+  looksLikeSecretContent,
+  MAX_INDEXED_FILE_BYTES,
+  scanWorkspaceFiles,
+} from "./workspaceScan.js";
 import { pathTierOf } from "../ast/languageRegistry.js";
 import {
   clearUnresolved,
@@ -249,7 +254,7 @@ export async function runFullIndex(options: IndexRunOptions): Promise<IndexRunRe
   const scan = await scanWorkspaceFiles(options.workspacePath);
   if (scan.truncated) diagnostics.push("Indexing stopped at the file safety limit.");
   if (scan.skippedLarge > 0)
-    diagnostics.push("Some source files exceeded the 1 MiB indexing limit and were skipped.");
+    diagnostics.push("Some source files exceeded the 8 MiB indexing limit and were skipped.");
   if (scan.skippedSecret > 0)
     diagnostics.push("A source file matching secret patterns was excluded from the index.");
 
@@ -348,7 +353,10 @@ export async function runFullIndex(options: IndexRunOptions): Promise<IndexRunRe
     diagnostics.push("A source file matching secret patterns was excluded from the index.");
   }
   writeEmbeddingPhase(db, plan ? context.providerFailure : undefined);
-  writeMeta(db, "index_partial", String(scan.truncated || diagnostics.length > 0));
+  // Policy skips (secret patterns, oversized files) are reported in diagnostics but do not
+  // make the index "partial": every eligible file that can be indexed was indexed. `partial`
+  // stays reserved for an interrupted/truncated pass, so the UI can show green when done.
+  writeMeta(db, "index_partial", String(scan.truncated || cancelled));
   writeMeta(db, "diagnostics", JSON.stringify(diagnostics.slice(0, 12)));
   writeMeta(db, "last_index_duration_ms", String(Date.now() - context.startTime));
 
@@ -600,8 +608,8 @@ export async function runPartialIndex(options: PartialIndexOptions): Promise<Ind
     } catch {
       continue;
     }
-    if (info.size > 1024 * 1024) {
-      diagnostics.push("A source file exceeded the 1 MiB indexing limit and was skipped.");
+    if (info.size > MAX_INDEXED_FILE_BYTES) {
+      diagnostics.push("A source file exceeded the 8 MiB indexing limit and was skipped.");
       continue;
     }
     if (looksLikeSecretContent(content, pathTierOf(relPath))) {
@@ -674,7 +682,8 @@ export async function runPartialIndex(options: PartialIndexOptions): Promise<Ind
   writeMeta(db, "index_state", cancelled ? "degraded" : "ready");
   writeMeta(db, "updated_at", String(Date.now()));
   writeEmbeddingPhase(db, plan ? context.providerFailure : undefined);
-  writeMeta(db, "index_partial", String(diagnostics.length > 0));
+  // Secret/size skips are coverage diagnostics, not an interrupted pass.
+  writeMeta(db, "index_partial", String(cancelled));
   if (diagnostics.length > 0)
     writeMeta(db, "diagnostics", JSON.stringify(diagnostics.slice(0, 12)));
   writeMeta(db, "last_index_duration_ms", String(Date.now() - context.startTime));
