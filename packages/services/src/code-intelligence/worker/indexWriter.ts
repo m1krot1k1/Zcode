@@ -62,15 +62,22 @@ function symbolTokensOf(name: string, signature: string): string {
 }
 
 export function deleteFileFacts(db: IndexDatabase, fileId: number): void {
+  // Bug 原因：node:sqlite 的 run() 会读取连接级 lastInsertRowid；FTS5 删除内部事项可能把
+  // 它写成超过 Number.MAX_SAFE_INTEGER 的 docid，Node 在构造 RunResult 时抛
+  // ERR_OUT_OF_RANGE，即使 DELETE 已经成功，后续删除/写入也会连锁失败。
+  // 删除语句不需要返回值，用 all() 只执行 SQL，避免读取这个与业务无关的字段。
+  const runDelete = (sql: string): void => {
+    db.prepare(sql).all(fileId);
+  };
   // FTS-таблицы внешне-контентные и не удаляются каскадом, поэтому чистим их явно.
-  db.prepare(
+  runDelete(
     "DELETE FROM chunks_fts WHERE rowid IN (SELECT chunk_id FROM chunks WHERE file_id = ?)",
-  ).run(fileId);
-  db.prepare(
+  );
+  runDelete(
     "DELETE FROM sketch_postings WHERE chunk_id IN (SELECT chunk_id FROM chunks WHERE file_id = ?)",
-  ).run(fileId);
-  db.prepare("DELETE FROM refs WHERE src_file_id = ?").run(fileId);
-  db.prepare("DELETE FROM files WHERE file_id = ?").run(fileId);
+  );
+  runDelete("DELETE FROM refs WHERE src_file_id = ?");
+  runDelete("DELETE FROM files WHERE file_id = ?");
 }
 
 export function findFileId(db: IndexDatabase, relPath: string): number | undefined {
