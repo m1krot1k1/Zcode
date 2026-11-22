@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createConfig } from "@zcode/adapters/config";
 import {
+  LocalAuthAccessConfig,
   ModelConfig,
   ModelOptionSpecsConfig,
   ModelPropertiesConfig,
+  ProviderApiConfig,
+  ProviderConfig,
   ProviderRegistry,
 } from "@zcode/provider";
 import type { ModelSelection } from "@zcode/contracts";
@@ -63,6 +66,54 @@ function createRegistry() {
   ]);
 }
 
+function createCursorRegistry() {
+  return new ProviderRegistry([
+    {
+      providerId: "cursor",
+      config: new ProviderConfig({
+        group: "standard-personal",
+        access: new LocalAuthAccessConfig(),
+        api: new ProviderApiConfig({ type: "cursor-cli" }),
+        enabled: true,
+        id: "cursor",
+        name: "Cursor CLI",
+        visibility: "visible",
+      }),
+      models: [
+        {
+          modelId: "grok-4.7-fast",
+          config: new ModelConfig({
+            enabled: true,
+            properties: new ModelPropertiesConfig({
+              requiresMfjsToolSchema: false,
+              contextWindow: 128_000,
+              inputFormat: {
+                supportsText: true,
+                supportsImage: false,
+                supportsVideo: false,
+                supportsAudio: false,
+                supportsPdf: false,
+              },
+              outputFormat: { supportsText: true },
+              supportsToolCall: true,
+              supportsJsonSchemaOutput: false,
+              supportsNativeWebSearch: false,
+              supportsMidConversationSystem: false,
+            }),
+            optionSpecs: new ModelOptionSpecsConfig({
+              reasoningLevel: {
+                values: ["low", "high", "xhigh"],
+                map: "{}",
+              },
+              maxOutputTokens: { max: 32_000, map: "{}" },
+            }),
+          }),
+        },
+      ],
+    },
+  ]);
+}
+
 function resolve(resume: boolean, modelSelection?: ModelSelection, registry = createRegistry()) {
   return resolveAppRuntimeConfig({
     cliStorageRoot: "/test/cli",
@@ -107,5 +158,39 @@ describe("Runtime 创建与未绑定恢复的边界", () => {
   });
   it("新建会话仍正常使用 configured default", () => {
     expect(resolve(false).modelSelection).toEqual(complete);
+  });
+  it("恢复旧 Cursor flat id 时迁移到分组模型和档位，而不是当成失效选择", () => {
+    expect(
+      resolve(
+        true,
+        {
+          providerId: "cursor",
+          modelId: "grok-4.7-xhigh-fast",
+          options: { reasoningLevel: "disabled" },
+        },
+        createCursorRegistry(),
+      ).modelSelection,
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "grok-4.7-fast",
+      options: { reasoningLevel: "xhigh" },
+    });
+  });
+  it("恢复已分组的 Cursor 选择时保留用户显式档位", () => {
+    expect(
+      resolve(
+        true,
+        {
+          providerId: "cursor",
+          modelId: "grok-4.7-fast",
+          options: { reasoningLevel: "low" },
+        },
+        createCursorRegistry(),
+      ).modelSelection,
+    ).toEqual({
+      providerId: "cursor",
+      modelId: "grok-4.7-fast",
+      options: { reasoningLevel: "low" },
+    });
   });
 });

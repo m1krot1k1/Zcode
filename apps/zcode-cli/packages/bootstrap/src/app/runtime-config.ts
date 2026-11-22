@@ -3,7 +3,11 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { ConfigResult } from "@zcode/adapters/config";
 import { GEN_UI_OUTPUT_ROOT_ENV } from "@zcode/shared/node";
-import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode/provider";
+import {
+  migrateLegacyModelSelection,
+  resolveInitialModelSelection,
+  type ModelSelectionOptions,
+} from "@zcode/provider";
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
 import {
   isLazyPluginMcpServerConfig,
@@ -338,7 +342,12 @@ function resolveInitialRegistrySelection(
   if (!registry) return undefined;
 
   if (options.runtimeConfig?.modelSelection) {
-    const selection = options.runtimeConfig.modelSelection;
+    // 恢复会话时先做无损 legacy 迁移，再校验：Cursor 旧 flat id 在分组后已不在
+    // Registry 中，直接 validate 会把合法历史选择当成失效并回落到默认模型。
+    const selection = migrateLegacyModelSelection(
+      registry.getView(),
+      options.runtimeConfig.modelSelection,
+    );
     if (options.resume && !registry.validateSelection(selection).ok) return undefined;
     const resolved = resolveRegistryOwnedModelSelection(registry, selection);
     return resolved
