@@ -109,6 +109,23 @@ describe("CodeIndexPopover coverage messaging", () => {
     expect(screen.queryByText(diagnostic)).toBeNull();
     expect(document.querySelector(".text-amber-600, .text-amber-400")).toBeNull();
   });
+
+  it("keeps skip reasons visible under a complete green index", async () => {
+    const diagnostic = "A source file exceeded the 8 MiB indexing limit and was skipped.";
+    await renderWithStatus(
+      {
+        ...statusWith("ready", false),
+        diagnostics: [diagnostic],
+      },
+      "ready",
+    );
+
+    expect(screen.getByText("codeIndex.details")).toBeTruthy();
+    expect(screen.getByTestId("composer-code-index-skip-reason").textContent).toBe(
+      "codeIndex.skip.size",
+    );
+    expect(screen.queryByText(diagnostic)).toBeNull();
+  });
 });
 
 function statusWith(state: CodeIndexStatus["state"], partial?: boolean): CodeIndexStatus {
@@ -275,9 +292,7 @@ describe("CodeIndexPopover status indicator tones", () => {
     expect(scheduled.length).toBeGreaterThan(0);
     scheduled.at(-1)?.();
     await waitFor(() =>
-      expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe(
-        "ready",
-      ),
+      expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe("ready"),
     );
     setIntervalSpy.mockRestore();
     vi.spyOn(window, "clearInterval").mockRestore();
@@ -309,9 +324,7 @@ describe("CodeIndexPopover status indicator tones", () => {
     await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(1));
     resolveWatch();
     await waitFor(() =>
-      expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe(
-        "ready",
-      ),
+      expect(screen.getByTestId("composer-code-index-trigger").dataset.codeIndexTone).toBe("ready"),
     );
     resolveStale(statusWith("indexing"));
     await Promise.resolve();
@@ -430,9 +443,7 @@ describe("AgentWorkbench index state pill", () => {
     expect(scheduled.length).toBeGreaterThan(0);
     scheduled.at(-1)?.();
     await waitFor(() =>
-      expect(screen.getByTestId("agent-workbench-index-state").dataset.codeIndexTone).toBe(
-        "ready",
-      ),
+      expect(screen.getByTestId("agent-workbench-index-state").dataset.codeIndexTone).toBe("ready"),
     );
     setIntervalSpy.mockRestore();
     vi.spyOn(window, "clearInterval").mockRestore();

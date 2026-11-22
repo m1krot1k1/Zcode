@@ -290,20 +290,18 @@ export function CodeIndexPopover({
                   {copy(status?.partial ? "codeIndex.partial" : "codeIndex.details")}
                 </summary>
                 <p className="mt-1.5">{copy("codeIndex.coverageDetails")}</p>
-                {status?.partial
-                  ? codeIndexSkipReasons(status.diagnostics).map((reason) => (
-                      <p
-                        key={reason.key}
-                        className="mt-1"
-                        data-testid="composer-code-index-skip-reason"
-                      >
-                        {copy(
-                          reason.key,
-                          reason.count === undefined ? undefined : { count: reason.count },
-                        )}
-                      </p>
-                    ))
-                  : null}
+                {codeIndexSkipReasons(status?.diagnostics ?? []).map((reason) => (
+                  <p
+                    key={reason.key}
+                    className="mt-1"
+                    data-testid="composer-code-index-skip-reason"
+                  >
+                    {copy(
+                      reason.key,
+                      reason.count === undefined ? undefined : { count: reason.count },
+                    )}
+                  </p>
+                ))}
               </details>
             ) : null}
             {embeddingFailure ? (
