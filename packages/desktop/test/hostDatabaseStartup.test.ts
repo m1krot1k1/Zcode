@@ -107,7 +107,14 @@ it("only marks the last session database as eligible for global saving/finishing
   try {
     await startup.coordinator.start();
     const commits = states.filter((state) => state.databasePhase === "committing");
-    expect(commits.map((state) => state.finalDatabase)).toEqual([undefined, false, true]);
+    // Host and session storage are prepared concurrently; only the per-session order is a
+    // contract. The host database reports no finalDatabase marker.
+    expect(commits.some((state) => state.finalDatabase === undefined)).toBe(true);
+    expect(
+      commits
+        .filter((state) => state.finalDatabase !== undefined)
+        .map((state) => state.finalDatabase),
+    ).toEqual([false, true]);
     expect(states.at(-1)?.phase).toBe("ready");
   } finally {
     startup.dispose();

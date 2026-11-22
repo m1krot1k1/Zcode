@@ -106,6 +106,7 @@ export async function initializeLocalHost(
         `local database startup failed attempt=${hostState.databaseStartup?.coordinator.snapshot.attemptId}`,
         error,
       ),
+    onTiming: (phase, durationMs) => logger.info("database startup phase", { phase, durationMs }),
     initializeServices: async () => {
       logger.info("initializing local services");
       // 旧 Team 补组织必须与网络代理读取共用同一个 Setting 实例及写队列。
