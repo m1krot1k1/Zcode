@@ -75,3 +75,28 @@ Parallelism has three independent layers:
 - `/start` prompt contains the parallel fan-out and same-message tool-batch rules.
 - `built-in-profiles.ts` remains below 800 lines; `specialistProfiles.ts` is the only
   added data module.
+
+## Runtime verification (2026-11-23, 3.17.158)
+
+Deterministic OpenAI-compatible mock provider, desktop Preview 3.17.158, real workspace,
+`/start` with two independent read-only checks. The mock responds:
+
+1. root → `Task(start)`;
+2. `start` → `Task(orchestrator)`;
+3. `orchestrator` → two `Task(researcher)` calls in one assistant message;
+4. each researcher → two `Read` calls in one assistant message, then its result text.
+
+Observed in the Host log:
+
+- four `sess_subagent_agent_*` sessions received `turn-started` at
+  `01:35:44.035–44.098` (63 ms spread);
+- all four `turn-ended` events with `outcome=completed` at
+  `01:35:44.201–44.260` (59 ms spread);
+- the mock request log shows the beta researcher at `44.150` and alpha at `44.168`
+  (18 ms apart), each carrying two `Read` tool calls in the same message; their follow-up
+  requests (`44.182`, `44.213`) carry the tool results and return `BETA_RESULT`/`ALPHA_RESULT`;
+- orchestrator model IO contains both `Task(researcher)` tool calls, including full
+  prompts and `subagent_type`, in one assistant response.
+
+This exercises the real runtime scheduler, subagent admission, background policy and tool
+batch executor. It does not depend on a live model responding with tool calls.
