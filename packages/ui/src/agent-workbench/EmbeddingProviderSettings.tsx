@@ -255,14 +255,15 @@ export function EmbeddingProviderSettings({
   };
 
   const useInstalledLocalModel = async () => {
-    if (!codeIndex || !workspaceRef || !localStatus) return;
+    const localEmbeddings = codeIndex?.localEmbeddings;
+    if (!localEmbeddings || !workspaceRef || !localStatus) return;
     const modelId = localStatus.recommended.model;
     setLocalBusy("use");
     setLocalMessage(null);
     try {
       // Pull is idempotent for an installed model and also starts the local server,
       // so "Use" works after an app restart when the child server is no longer running.
-      const pulled = await codeIndex.localEmbeddings.pull(modelId);
+      const pulled = await localEmbeddings.pull(modelId);
       if (pulled.status === "failed") {
         setLocalMessage({
           text: `${copy("settings.embedding.local.downloadFailed")}: ${pulled.diagnostic}`,
