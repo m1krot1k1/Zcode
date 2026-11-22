@@ -124,7 +124,8 @@ print-режим Cursor не принимает AI SDK content parts.
 
 `cursor-agent models` returns a flat list where every reasoning/speed combination is a
 separate id (`gpt-5.3-codex-low`, `gpt-5.3-codex-low-fast`, `...-high`, `...-xhigh`).
-Publishing those ids directly produced 285 near-duplicate Composer entries and a
+Publishing those ids directly produced 285 near-duplicate Composer entries (including a
+spurious `Tip:` model parsed from the CLI's trailing hint line) and a
 `reasoningLevel: ["disabled"]` selector.
 
 The Host now groups the flat catalog:
