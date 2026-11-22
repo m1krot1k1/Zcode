@@ -205,7 +205,8 @@ provider независимо.
   в 77 селекторов без дублей, включая `gpt-5.5-extra-high` → `gpt-5.5` + `xhigh`.
 - `packages/shared`: парсинг snapshot с `cursor`, карта `cliExecutablePaths`, model id schema.
 - `packages/services`: композитный каталог публикует 0/1/2 провайдера по флагам; резолвер и
-  парсер `--list-models`; кэш статуса/каталога и last-good fallback.
+  парсер `--list-models` (заголовки, строка `Tip:` и дубликаты не становятся моделями);
+  кэш статуса/каталога и last-good fallback.
 - `apps/zcode-cli/.../bootstrap`: worker принимает `cursor`, инжектит путь в `PATH`;
   legacy flat selection мигрирует до валидации.
 - `apps/zcode-cli/.../adapters`: маппинг stream-json (дельты, дубликаты, tool_call, result error),
