@@ -32,7 +32,8 @@ const PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS: Record<ProviderConnectionApiForm
   "anthropic-messages": "settings.modelProvider.apiFormat.title.anthropicMessages",
   "openai-chat-completions": "settings.modelProvider.apiFormat.title.chatCompletions",
   "openai-responses": "settings.modelProvider.apiFormat.title.responses",
-};export function resolveProviderConnectionApiFormatDisplayLabel(
+};
+export function resolveProviderConnectionApiFormatDisplayLabel(
   intl: { formatMessage: (descriptor: { id: string }) => string },
   format: ProviderConnectionApiFormat,
 ): string {

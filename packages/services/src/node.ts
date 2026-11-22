@@ -113,11 +113,7 @@ export function createLocalServices(options: CreateLocalServicesOptions): Servic
   const localCliProviderCatalogSource =
     openCodeAcpRuntime || cursorCliRuntime
       ? // `export { ... }` ниже только переэкспортирует символ и не создаёт локального binding.
-        new LocalCliProviderCatalogSource(
-          settingService,
-          openCodeAcpRuntime,
-          cursorCliRuntime,
-        )
+        new LocalCliProviderCatalogSource(settingService, openCodeAcpRuntime, cursorCliRuntime)
       : undefined;
   const resolveCurrentZCodeEndpointOrigin = async () =>
     resolveRuntimeZCodeEndpointOrigin(process.env, {

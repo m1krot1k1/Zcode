@@ -73,7 +73,8 @@ const completeProviderAccessDataSchema = z.discriminatedUnion("type", [
   completeApiKeyAccessDataSchema,
   localAuthAccessDataSchema,
   completeZhipuAccountAccessDataSchema,
-]);export const completeProviderApiDataSchema = z
+]);
+export const completeProviderApiDataSchema = z
   .object({
     type: providerApiTypeDataSchema,
     baseUrl: z.string().url().nullable().optional(),

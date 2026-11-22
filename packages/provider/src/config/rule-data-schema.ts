@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { modelConfigDataSchema } from "@zcode/shared/model-config";
 import { manualModelConfigSchema } from "./manual-model-config.js";
-export {manualModelConfigSchema} from "./manual-model-config.js";
+export { manualModelConfigSchema } from "./manual-model-config.js";
 import {
   apiKeyAccessDataSchema,
   isLocalCliApiType,

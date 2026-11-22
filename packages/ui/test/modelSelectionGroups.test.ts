@@ -74,7 +74,6 @@ describe("model selection groups", () => {
   });
 
   it("保留带前缀和多段斜杠的精确模型 ID；不从名称推断视觉能力", () => {
-
     const modelId = "upstream/family/vision-preview";
     const view: ModelSelectionView = {
       revision: 1,

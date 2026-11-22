@@ -83,8 +83,7 @@ export function buildRegistryModelSelectGroups(
       : null;
 
     // 合并菜单仍需区分同名供应商的接入方式；API 标识直接来自 access，不能从名称猜测。
-    const localCliProvider =
-      provider.providerId === "opencode" || provider.providerId === "cursor";
+    const localCliProvider = provider.providerId === "opencode" || provider.providerId === "cursor";
     const labelBadge =
       (localCliProvider ? "CLI" : undefined) ??
       accountPresentation?.labelBadge ??

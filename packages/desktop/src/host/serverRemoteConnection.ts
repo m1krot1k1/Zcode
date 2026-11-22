@@ -206,7 +206,10 @@ function createNodeWebSocketServiceConnection(
   socket.once("error", dispose);
   // Source Server владеет OpenCode CLI рядом с workspace; запрашиваем его ACP канал
   // через ту же аутентифицированную RPC-сессию, что и остальные server-authoritative services.
-  return { services: new RemoteServiceAccess(client, { openCodeAcpRuntime: true, cursorCliRuntime: true }), dispose };
+  return {
+    services: new RemoteServiceAccess(client, { openCodeAcpRuntime: true, cursorCliRuntime: true }),
+    dispose,
+  };
 }
 
 async function fetchServerInfo(

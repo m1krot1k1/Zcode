@@ -62,14 +62,13 @@ export function serializeRegistryProviderConfig(
                 ? {}
                 : { apiKeyManagementUrl: config.access.apiKeyManagementUrl }),
             },
-    api:
-      isLocalCliApiType(config.api.type)
-        ? { type: config.api.type }
-        : {
-            type: config.api.type,
-            baseUrl: config.api.baseUrl,
-            ...(config.api.headers == null ? {} : { headers: config.api.headers }),
-          },
+    api: isLocalCliApiType(config.api.type)
+      ? { type: config.api.type }
+      : {
+          type: config.api.type,
+          baseUrl: config.api.baseUrl,
+          ...(config.api.headers == null ? {} : { headers: config.api.headers }),
+        },
     ...(config.builtinModelIds == null ? {} : { builtinModelIds: [...config.builtinModelIds] }),
     ...(config.personalModelIds == null ? {} : { personalModelIds: [...config.personalModelIds] }),
     ...(config.modelOrder == null ? {} : { modelOrder: [...config.modelOrder] }),
