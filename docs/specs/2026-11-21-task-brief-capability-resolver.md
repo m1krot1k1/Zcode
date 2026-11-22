@@ -20,9 +20,11 @@ not a questionnaire:
   - `feature`: user-visible goal, interface/data contract, non-goals, acceptance tests;
   - `review`: scope, base/diff, risk areas, severity, evidence.
 - Ambiguity becomes an `assumption` entry (`draft` / `repository` / `model`), never a
-  question. The preview shows framework, domain, task kind and assumptions.
-- The editor is unchanged until **Apply**. **Cancel** discards. **Undo** restores the exact
-  original draft for 30 seconds.
+  question. The result is applied straight into the editor; the composer does not show a
+  before/after preview dialog.
+- The enhanced text replaces the draft immediately. **Undo** restores the exact original
+  draft for 30 seconds. Suggested skills are installed automatically when
+  `autoInstallSuggestedSkills` is on.
 
 Owner: `packages/shared/src/prompt-enhancer/{classify,meta-prompts}.ts` and
 `packages/ui/src/prompt-enhancer-ui/useComposerPromptEnhance.ts`.

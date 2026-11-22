@@ -1,20 +1,9 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
-import { Button } from "@/components/ui/button.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { useSkillStore } from "@/store/skillStore.js";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useComposerPromptEnhance } from "./useComposerPromptEnhance.js";
 import { EnhancePromptButton } from "./EnhancePromptButton.js";
-import { EnhancePromptDetails } from "./EnhancePromptDetails.js";
 import { useSuggestedSkillAutoInstall } from "./useSuggestedSkillAutoInstall.js";
 
 /**
@@ -57,7 +46,6 @@ export const ComposerEnhancePrompt = forwardRef<
   },
   ref,
 ) {
-  const { intl } = useZCodeIntl();
   const services = useOptionalServices();
   const draftRef = useRef(draftText);
   draftRef.current = draftText;
@@ -94,7 +82,10 @@ export const ComposerEnhancePrompt = forwardRef<
     if (!skillsService) return;
     // 安装/删除后技能列表必须立即可见：复用 skillStore 的 refresh 入口，
     // 不为建议面板另建缓存。
-    void useSkillStore.getState().refresh(skillsService, workspaceIdentity).catch(() => {});
+    void useSkillStore
+      .getState()
+      .refresh(skillsService, workspaceIdentity)
+      .catch(() => {});
   }, [services, workspaceIdentity]);
 
   /**
@@ -102,8 +93,9 @@ export const ComposerEnhancePrompt = forwardRef<
    * 不等用户点击，也没有第二次确认。幂等、重试和错误隔离都在 hook 内。
    * 安装走与设置面板相同的 skills service，技能→agent 供给与审计保持单一路径。
    */
-  const suggestedSkills = useSuggestedSkillAutoInstall({
-    result: enhance.preview?.result ?? null,
+  // Автоустановка запускается сразу по результату; отдельный предпросмотр не нужен.
+  useSuggestedSkillAutoInstall({
+    result: enhance.lastResult?.result ?? null,
     workspacePath,
     ...(workspaceIdentity ? { workspaceIdentity } : {}),
     enabled: enhance.autoInstallSuggestedSkills,
@@ -135,74 +127,14 @@ export const ComposerEnhancePrompt = forwardRef<
   if (!enhance.available) return null;
 
   return (
-    <>
-      <EnhancePromptButton
-        draftText={draftText}
-        isRunning={enhance.isRunning}
-        disabled={disabled || !enhance.enabledBySettings}
-        canUndo={enhance.canUndo}
-        onEnhance={(text) => void enhance.enhance(text)}
-        onCancel={() => void enhance.cancel()}
-        onUndo={enhance.undo}
-      />
-      <Dialog
-        open={enhance.preview !== null}
-        onOpenChange={(open) => {
-          if (!open) enhance.discardPreview();
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              {intl.formatMessage({ id: "chat.composer.enhancePreviewTitle" })}
-            </DialogTitle>
-            <DialogDescription>
-              {intl.formatMessage({ id: "chat.composer.enhancePreviewDescription" })}
-            </DialogDescription>
-          </DialogHeader>
-          {enhance.preview ? (
-            <>
-              <div className="grid gap-3 md:grid-cols-2">
-                <section className="min-w-0">
-                  <h3 className="mb-1 text-ui-base font-semibold text-foreground">
-                    {intl.formatMessage({ id: "settings.systemPromptEnhanceBefore" })}
-                  </h3>
-                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-ui-sm text-foreground-subtle">
-                    {enhance.preview.before}
-                  </pre>
-                </section>
-                <section className="min-w-0">
-                  <h3 className="mb-1 text-ui-base font-semibold text-foreground">
-                    {intl.formatMessage({ id: "settings.systemPromptEnhanceAfter" })}
-                  </h3>
-                  <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-card p-3 text-ui-sm text-foreground">
-                    {enhance.preview.after}
-                  </pre>
-                </section>
-              </div>
-              <EnhancePromptDetails
-                result={enhance.preview.result}
-                skillStates={suggestedSkills.statuses}
-                installAvailable={Boolean(services?.skillsService)}
-                autoInstallEnabled={enhance.autoInstallSuggestedSkills}
-                onRetryInstallSkill={(suggestion) => suggestedSkills.retry(suggestion.name)}
-                onRemoveInstalledSkill={(suggestion) =>
-                  void suggestedSkills.remove(suggestion.name)
-                }
-                removingSkill={suggestedSkills.removingSkill}
-              />
-            </>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={enhance.discardPreview}>
-              {intl.formatMessage({ id: "common.cancel" })}
-            </Button>
-            <Button type="button" onClick={enhance.acceptPreview}>
-              {intl.formatMessage({ id: "chat.composer.enhanceApply" })}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <EnhancePromptButton
+      draftText={draftText}
+      isRunning={enhance.isRunning}
+      disabled={disabled || !enhance.enabledBySettings}
+      canUndo={enhance.canUndo}
+      onEnhance={(text) => void enhance.enhance(text)}
+      onCancel={() => void enhance.cancel()}
+      onUndo={enhance.undo}
+    />
   );
 });

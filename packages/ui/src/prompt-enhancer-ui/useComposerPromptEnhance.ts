@@ -44,13 +44,11 @@ export interface ComposerPromptEnhanceState {
   canEnhance: boolean;
   /** Исходный черновик доступен для отката. */
   canUndo: boolean;
-  /** Результат ждёт явного Apply; ничего не записывается в редактор до согласия. */
-  preview: ComposerPromptEnhancePreview | null;
+  /** Последний улучшенный текст; уже применён в редактор. */
+  lastResult: ComposerPromptEnhancePreview | null;
   errorCode: string | null;
   enhance: (draftText: string) => Promise<boolean>;
   cancel: () => Promise<void>;
-  acceptPreview: () => void;
-  discardPreview: () => void;
   undo: () => void;
 }
 
@@ -66,7 +64,9 @@ export function useComposerPromptEnhance(
   const enabledBySettings = enhancerSettings?.enabled ?? true;
   const autoInstallSuggestedSkills = enhancerSettings?.autoInstallSuggestedSkills ?? true;
   const [canUndo, setCanUndo] = useState(false);
-  const [preview, setPreview] = useState<ComposerPromptEnhancePreview | null>(null);
+  // Последний результат нужен автоустановке предложенных навыков и Undo. Это не
+  // consent-граница: улучшенный текст уже записан в редактор сразу после ответа модели.
+  const [lastResult, setLastResult] = useState<ComposerPromptEnhancePreview | null>(null);
   const [appliedOriginal, setAppliedOriginal] = useState<string | null>(null);
   const undoExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { onApply } = options;
@@ -76,6 +76,12 @@ export function useComposerPromptEnhance(
     undoExpiry.current = null;
     setCanUndo(false);
     setAppliedOriginal(null);
+  }, []);
+
+  const showUndo = useCallback(() => {
+    setCanUndo(true);
+    if (undoExpiry.current) clearTimeout(undoExpiry.current);
+    undoExpiry.current = setTimeout(() => setCanUndo(false), UNDO_VISIBLE_MS);
   }, []);
 
   useEffect(() => clearUndo, [clearUndo]);
@@ -99,12 +105,16 @@ export function useComposerPromptEnhance(
     async (draftText: string): Promise<boolean> => {
       if (!service || !enabledBySettings) return false;
       if (!isEnhancePromptEnabled(draftText, COMPOSER_ENHANCE_TARGET)) return false;
-      setPreview(null);
+      setLastResult(null);
       const result = await enhancer.enhance(draftText);
       if (!result) return false;
-      // Preview is the consent boundary: the editor is not mutated until Apply.
-      setPreview({ before: draftText, after: result.enhancedText, result });
-      logger.info("Prompt enhancement ready for review", {
+      // Пользователь не должен подтверждать «было/стало»: результат сразу заменяет
+      // текст в композере, а Undo оставляет исходный черновик доступным.
+      onApply(result.enhancedText);
+      setAppliedOriginal(draftText);
+      showUndo();
+      setLastResult({ before: draftText, after: result.enhancedText, result });
+      logger.info("Prompt enhancement applied", {
         target: COMPOSER_ENHANCE_TARGET.target,
         framework: result.framework,
         domain: result.domain,
@@ -114,27 +124,11 @@ export function useComposerPromptEnhance(
       });
       return true;
     },
-    [enabledBySettings, enhancer, service],
+    [enabledBySettings, enhancer, onApply, service, showUndo],
   );
 
   const cancel = useCallback(async () => {
     await enhancer.cancel();
-  }, [enhancer]);
-
-  const acceptPreview = useCallback(() => {
-    if (!preview) return;
-    onApply(preview.after);
-    setAppliedOriginal((previous) => previous ?? preview.before);
-    setCanUndo(true);
-    if (undoExpiry.current) clearTimeout(undoExpiry.current);
-    undoExpiry.current = setTimeout(() => setCanUndo(false), UNDO_VISIBLE_MS);
-    setPreview(null);
-    enhancer.reset();
-  }, [enhancer, onApply, preview]);
-
-  const discardPreview = useCallback(() => {
-    setPreview(null);
-    enhancer.reset();
   }, [enhancer]);
 
   const undo = useCallback(() => {
@@ -151,12 +145,10 @@ export function useComposerPromptEnhance(
     isRunning: enhancer.isRunning,
     canEnhance: enabledBySettings,
     canUndo,
-    preview,
+    lastResult,
     errorCode: enhancer.error?.code ?? null,
     enhance,
     cancel,
-    acceptPreview,
-    discardPreview,
     undo,
   };
 }

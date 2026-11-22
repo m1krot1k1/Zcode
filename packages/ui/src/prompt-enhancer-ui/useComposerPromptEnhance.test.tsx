@@ -51,12 +51,12 @@ function result(text: string): PromptEnhanceResult {
   };
 }
 
-describe("useComposerPromptEnhance preview", () => {
+describe("useComposerPromptEnhance applies results in place", () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it("does not mutate the draft before Apply and Undo restores the original", async () => {
+  it("applies the enhanced draft immediately and Undo restores the original", async () => {
     enhancer.enhance.mockResolvedValue(result("Better prompt"));
     const onApply = vi.fn();
     const { result: hook } = renderHook(() =>
@@ -67,24 +67,21 @@ describe("useComposerPromptEnhance preview", () => {
       await hook.current.enhance("Original prompt");
     });
 
-    expect(onApply).not.toHaveBeenCalled();
-    expect(hook.current.preview).toMatchObject({
+    expect(onApply).toHaveBeenCalledWith("Better prompt");
+    expect(hook.current.canUndo).toBe(true);
+    expect(hook.current.lastResult).toMatchObject({
       before: "Original prompt",
       after: "Better prompt",
       result: { framework: "rise", domain: "coding", taskKind: "feature" },
     });
-
-    act(() => hook.current.acceptPreview());
-    expect(onApply).toHaveBeenCalledWith("Better prompt");
-    expect(hook.current.canUndo).toBe(true);
 
     act(() => hook.current.undo());
     expect(onApply).toHaveBeenLastCalledWith("Original prompt");
     expect(hook.current.canUndo).toBe(false);
   });
 
-  it("discards a preview without touching the draft", async () => {
-    enhancer.enhance.mockResolvedValue(result("Better prompt"));
+  it("does not touch the draft when enhancement returns no result", async () => {
+    enhancer.enhance.mockResolvedValue(undefined);
     const onApply = vi.fn();
     const { result: hook } = renderHook(() =>
       useComposerPromptEnhance({ workspacePath: "/repo/zcode", onApply }),
@@ -93,10 +90,9 @@ describe("useComposerPromptEnhance preview", () => {
     await act(async () => {
       await hook.current.enhance("Original prompt");
     });
-    act(() => hook.current.discardPreview());
 
-    expect(hook.current.preview).toBeNull();
     expect(onApply).not.toHaveBeenCalled();
-    expect(enhancer.reset).toHaveBeenCalled();
+    expect(hook.current.lastResult).toBeNull();
+    expect(hook.current.canUndo).toBe(false);
   });
 });
