@@ -56,6 +56,19 @@ describe("groupCursorModels", () => {
     ]);
   });
 
+  it("strips a hyphenated id fallback without leaving a dangling dash", () => {
+    const groups = groupCursorModels([
+      model("grok-4.7-low"),
+      model("grok-4.7-low-fast"),
+      model("claude-haiku-5-5-low-no-thinking"),
+    ]);
+    expect(groups.map((group) => group.name)).toEqual([
+      "grok-4.7",
+      "grok-4.7 Fast",
+      "claude-haiku-5-5-no-thinking",
+    ]);
+  });
+
   it("keeps thinking/no-thinking and single-variant models distinct", () => {
     const groups = groupCursorModels([
       model("claude-opus-4-7-thinking-high", "Claude Opus 4.7 High Thinking"),

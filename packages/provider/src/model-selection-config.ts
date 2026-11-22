@@ -240,6 +240,9 @@ function baseName(name: string, modelId: string, fast: boolean): string {
     .replace(LEVEL_WORD_PATTERN, " ")
     .replace(FAST_WORD_PATTERN, " ")
     .replace(/\s+/gu, " ")
+    // 先 trim 再剥离尾部标点：CLI 目录解析失败时会退回 modelId，像
+    // `grok-4.7-low` 这样的名字去掉档位后还剩一个尾随空格，直接按 $ 匹配不到 `-`。
+    .trim()
     .replace(/[-:–—,]+$/u, "")
     .trim();
   const resolved = stripped.length > 0 ? stripped : modelId;
@@ -278,16 +281,20 @@ export function groupCursorModels(models: readonly CursorCatalogModel[]): Cursor
   for (const model of models) {
     const parsed = parseCursorModelId(model.modelId);
     const key = `${parsed.baseId}::${parsed.fast ? "fast" : "normal"}`;
+    const groupName =
+      model.name.trim().length === 0 || model.name.trim() === model.modelId
+        ? `${parsed.baseId}${parsed.fast ? " Fast" : ""}`
+        : baseName(model.name, parsed.baseId, parsed.fast);
     const group = groups.get(key) ?? {
       baseId: parsed.baseId,
       fast: parsed.fast,
-      name: baseName(model.name, parsed.baseId, parsed.fast),
+      name: groupName,
       source: model.source,
       levels: [],
     };
     if (group.source !== "cli" && model.source === "cli") group.source = "cli";
     if (model.name.trim().length > 0 && group.levels.length === 0) {
-      group.name = baseName(model.name, parsed.baseId, parsed.fast);
+      group.name = groupName;
     }
     group.levels.push({ level: parsed.level, modelId: model.modelId });
     groups.set(key, group);
