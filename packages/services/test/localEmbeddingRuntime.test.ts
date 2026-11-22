@@ -13,8 +13,8 @@ function runtime(totalMemoryBytes: number, platform: NodeJS.Platform = "darwin")
 }
 
 describe("local embedding runtime", () => {
-  it("recommends the compact model on a 16 GB machine", async () => {
-    const status = await runtime(16 * 1024 ** 3).getStatus();
+  it("recommends the compact model on an 8 GB machine", async () => {
+    const status = await runtime(8 * 1024 ** 3).getStatus();
     expect(status).toMatchObject({
       runtime: "ollama",
       installed: false,
@@ -22,8 +22,8 @@ describe("local embedding runtime", () => {
     });
   });
 
-  it("recommends the multilingual model when RAM is sufficient", async () => {
-    const status = await runtime(32 * 1024 ** 3).getStatus();
+  it("recommends the multilingual model on a 16 GB machine", async () => {
+    const status = await runtime(16 * 1024 ** 3).getStatus();
     expect(status.recommended.model).toBe("bge-m3");
     expect(status.recommended.dimensions).toBe(1024);
   });

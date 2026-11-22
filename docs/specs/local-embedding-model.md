@@ -31,10 +31,10 @@ the tools root removes both runtime and models.
 
 The recommendation is deterministic from total system RAM:
 
-- **< 24 GB RAM:** `nomic-embed-text` (768 dimensions, about 274 MB). Chosen for the best
-  quality/size trade-off on code and mixed documentation.
-- **>= 24 GB RAM:** `bge-m3` (1024 dimensions, about 1.2 GB). Chosen for multilingual
-  retrieval, including Russian.
+- **< 16 GB RAM:** `nomic-embed-text` (768 dimensions, about 274 MB). Chosen for the
+  best quality/size trade-off on code and mixed documentation.
+- **>= 16 GB RAM:** `bge-m3` (1024 dimensions, about 1.2 GB). Chosen for multilingual
+  retrieval, including Russian; 16 GB can run this model alongside the app.
 
 The UI shows the recommended model, dimensions, download size, and the reason. The user
 can still use a different Ollama model through the existing free-form fields.

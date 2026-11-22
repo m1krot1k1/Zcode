@@ -155,7 +155,7 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
   const toolsRoot = options.toolsRoot ?? join(getZCodeDataRootDir(), "tools", "local-embeddings");
   const fetchImpl = options.fetch ?? fetch;
   const recommended =
-    (options.totalMemoryBytes ?? totalmem)() >= 24 * 1024 ** 3
+    (options.totalMemoryBytes ?? totalmem)() >= 16 * 1024 ** 3
       ? RECOMMENDED_LARGE
       : RECOMMENDED_SMALL;
   let binaryPath: string | undefined;
