@@ -1,6 +1,6 @@
 # Startup storage preparation and reopen latency
 
-Status: active (2026-11-22, release 3.17.155)
+Status: active (2026-11-23, release 3.17.156)
 
 App startup previously prepared two independent SQLite stores one after another:
 
@@ -35,11 +35,13 @@ for both before initializing services.
   measured cold start dropped from ~800 ms to ~610 ms on the same machine. The cache is
   rebuildable and has no protocol or database semantics.
 
-## Measured effect (macOS arm64, release 3.17.155 code + this fix)
+## Measured effect (macOS arm64, release 3.17.156)
 
-Before: `storage_total` 1778 ms, of which `session_storage` 1777 ms.
-After (isolated Worker measurement): work completes at ~740 ms; with a warm compile
-cache the first frame arrives at ~545 ms. The Host no longer waits for the watchdog.
+Before: `storage_total` 1778 ms, of which `session_storage` 1777 ms; `services_ready`
+1808 ms. After on the built 3.17.156 app: first launch `storage_total` 836 ms,
+`services_ready` 852 ms; second (warm compile cache) launch 567 ms and 583 ms. The
+isolated Worker exits at ~740 ms instead of ~1755 ms. The Host no longer waits for the
+watchdog.
 
 ## Acceptance
 
