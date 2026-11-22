@@ -92,7 +92,7 @@ export function codeIndexSkipDefault(key: string): string {
 
 // 扫描器写入的是稳定英文诊断句。这里只映射已知的覆盖缺口，原始句子不进界面。
 const SECRET_DIAGNOSTIC = "secret patterns";
-const SIZE_DIAGNOSTIC = "8 MiB";
+const SIZE_DIAGNOSTIC = "MiB indexing limit";
 const LIMIT_DIAGNOSTIC = "safety limit";
 
 export function codeIndexSkipReasons(diagnostics: readonly string[]): CodeIndexSkipReason[] {
