@@ -4,46 +4,30 @@
 
 import { spawn } from "node:child_process";
 import type {
-  JSONValue,
   LanguageModelV3,
   LanguageModelV3CallOptions,
   LanguageModelV3Content,
   LanguageModelV3FinishReason,
   LanguageModelV3GenerateResult,
-  LanguageModelV3Prompt,
   LanguageModelV3StreamPart,
-  LanguageModelV3ToolResultOutput,
   LanguageModelV3Usage,
 } from "@ai-sdk/provider";
 import { APICallError } from "@ai-sdk/provider";
 import { getCurrentModelInvocationContext, type Logger } from "@zcode/contracts";
-import { asRecord } from "./record-utils.js";
+import {
+  buildCursorArgs,
+  createCursorResultError,
+  parseCursorLine,
+  projectPrompt,
+  type CursorParsedEvent,
+} from "./cursor-wire.js";
 
 const CURSOR_PROVIDER_ID = "cursor-cli";
 const CURSOR_DEFAULT_EXECUTABLE = "cursor-agent";
 const CURSOR_TEXT_PART_ID = "cursor-text-0";
+const CURSOR_REASONING_PART_PREFIX = "cursor-thinking-";
 const CURSOR_STDERR_LIMIT = 8_192;
 const CURSOR_KILL_GRACE_MS = 5_000;
-
-/** Cursor schema `result.subtype` — единственный авторитетный признак успеха. */
-interface CursorResultEvent {
-  readonly isError: boolean;
-  readonly subtype: string | undefined;
-  readonly text: string | undefined;
-}
-
-interface CursorToolCallEvent {
-  readonly callId: string;
-  readonly toolName: string;
-  readonly input: string;
-  readonly result: NonNullable<JSONValue> | undefined;
-}
-
-type CursorParsedEvent =
-  | { readonly type: "assistant-text"; readonly text: string }
-  | { readonly type: "tool-call-start"; readonly call: CursorToolCallEvent }
-  | { readonly type: "tool-call-complete"; readonly call: CursorToolCallEvent }
-  | { readonly type: "result"; readonly result: CursorResultEvent };
 
 /**
  * Минимальная поверхность дочернего процесса, необходимая провайдеру.
@@ -177,9 +161,22 @@ function createCursorLanguageModel(
       try {
         const content: Array<LanguageModelV3Content> = [];
         let text = "";
+        let reasoningText = "";
         let finishReason: LanguageModelV3FinishReason = { unified: "stop", raw: undefined };
+        const flushReasoning = () => {
+          if (reasoningText.length > 0) {
+            content.push({ type: "reasoning", text: reasoningText });
+            reasoningText = "";
+          }
+        };
         for await (const part of run(call, controller.signal)) {
           switch (part.type) {
+            case "reasoning-delta":
+              reasoningText += part.delta;
+              break;
+            case "reasoning-end":
+              flushReasoning();
+              break;
             case "text-delta":
               text += part.delta;
               break;
@@ -218,6 +215,7 @@ function createCursorLanguageModel(
               break;
           }
         }
+        flushReasoning();
         if (text.length > 0) content.push({ type: "text", text });
         return {
           content,
@@ -339,6 +337,10 @@ async function* streamCursorAgent(
   // отдельный текстовый блок на слово и ответ «сыпался» построчно. Держим один
   // открытый блок на весь ответ (устойчивый id), закрывая его только в конце.
   let textStarted = false;
+  // Cursor emits reasoning as top-level `thinking` deltas. Keep one open reasoning part
+  // per thinking phase; a completed phase closes it so a later phase starts a new block.
+  let reasoningId: string | undefined;
+  let reasoningIndex = 0;
   // Отдельный признак нужен, чтобы не дописывать result.result дубликатом после дельт.
   let sawTextDelta = false;
   let sawFinish = false;
@@ -350,9 +352,32 @@ async function* streamCursorAgent(
     yield { type: "text-start", id: CURSOR_TEXT_PART_ID };
   };
 
+  const openReasoning = function* (): Generator<LanguageModelV3StreamPart, void, undefined> {
+    if (reasoningId) return;
+    reasoningId = `${CURSOR_REASONING_PART_PREFIX}${reasoningIndex}`;
+    reasoningIndex += 1;
+    yield { type: "reasoning-start", id: reasoningId };
+  };
+
+  const closeReasoning = function* (): Generator<LanguageModelV3StreamPart, void, undefined> {
+    if (!reasoningId) return;
+    const id = reasoningId;
+    reasoningId = undefined;
+    yield { type: "reasoning-end", id };
+  };
+
   const emitEvent = function* (
     event: CursorParsedEvent,
   ): Generator<LanguageModelV3StreamPart, void, undefined> {
+    if (event.type === "reasoning-delta") {
+      yield* openReasoning();
+      yield { type: "reasoning-delta", id: reasoningId as string, delta: event.text };
+      return;
+    }
+    if (event.type === "reasoning-end") {
+      yield* closeReasoning();
+      return;
+    }
     if (event.type === "assistant-text") {
       yield* openText();
       sawTextDelta = true;
@@ -363,6 +388,7 @@ async function* streamCursorAgent(
       sawResult = true;
       if (event.result.isError) {
         resultError = createCursorResultError(event.result, stderr);
+        yield* closeReasoning();
         if (textStarted) {
           textStarted = false;
           yield { type: "text-end", id: CURSOR_TEXT_PART_ID };
@@ -376,6 +402,7 @@ async function* streamCursorAgent(
         sawFinish = true;
         return;
       }
+      yield* closeReasoning();
       // Причина: если дельт не было (например, все assistant-события оказались
       // дубликатами с model_call_id), единственный текст ответа есть в result.result.
       // Отдаём его одним delta в уже открытом блоке; при наличии дельт — не дублируем.
@@ -417,6 +444,7 @@ async function* streamCursorAgent(
       if (event) yield* emitEvent(event);
     }
 
+    yield* closeReasoning();
     if (textStarted) {
       textStarted = false;
       yield { type: "text-end", id: CURSOR_TEXT_PART_ID };
@@ -490,209 +518,6 @@ function mapToolEventToParts(
         },
       ];
   }
-}
-
-function parseCursorLine(line: string, logger: Logger | undefined): CursorParsedEvent | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    // Не-JSON строки в stdout (например, предупреждения Cursor) не должны рвать поток.
-    logger?.debug("cursor-agent non-JSON stdout line", { line: line.slice(0, 512) });
-    return undefined;
-  }
-  const record = asRecord(parsed);
-  if (!record) return undefined;
-  const type = record.type;
-  if (type === "assistant") {
-    // Причина: --stream-partial-output печатает и дельты (timestamp_ms без model_call_id),
-    // и финальное агрегированное сообщение. Дедупликация по документированному правилу.
-    if (record.timestamp_ms === undefined || record.model_call_id !== undefined) return undefined;
-    const message = asRecord(record.message);
-    const content = message?.content;
-    if (!Array.isArray(content)) return undefined;
-    const text = content
-      .map((part) => {
-        const entry = asRecord(part);
-        return entry?.type === "text" && typeof entry.text === "string" ? entry.text : "";
-      })
-      .join("");
-    return text.length > 0 ? { type: "assistant-text", text } : undefined;
-  }
-  if (type === "tool_call") {
-    const subtype = record.subtype;
-    if (subtype !== "started" && subtype !== "completed") return undefined;
-    const callId = typeof record.call_id === "string" ? record.call_id : undefined;
-    if (!callId) return undefined;
-    const toolCall = asRecord(record.tool_call);
-    if (!toolCall) return undefined;
-    const key = Object.keys(toolCall)[0];
-    if (!key) return undefined;
-    const value = asRecord(toolCall[key]) ?? {};
-    const rawInput = value.args ?? value.arguments ?? {};
-    if (subtype === "started") {
-      return {
-        type: "tool-call-start",
-        call: {
-          callId,
-          toolName: key,
-          input: safeStringify(rawInput),
-          result: undefined,
-        },
-      };
-    }
-    return {
-      type: "tool-call-complete",
-      call: {
-        callId,
-        toolName: key,
-        input: safeStringify(rawInput),
-        result: toToolResult(value.result ?? value.success ?? value),
-      },
-    };
-  }
-  if (type === "result") {
-    const subtype = typeof record.subtype === "string" ? record.subtype : undefined;
-    return {
-      type: "result",
-      result: {
-        isError: record.is_error === true || subtype !== "success",
-        subtype,
-        text: typeof record.result === "string" ? record.result : undefined,
-      },
-    };
-  }
-  return undefined;
-}
-
-function toToolResult(value: unknown): NonNullable<JSONValue> {
-  const record = asRecord(value);
-  const candidate = record && "result" in record ? record.result : value;
-  try {
-    const serialized = JSON.stringify(candidate);
-    if (serialized === undefined) return { value: String(candidate) };
-    return JSON.parse(serialized) as NonNullable<JSONValue>;
-  } catch {
-    return { value: String(candidate) };
-  }
-}
-
-function safeStringify(value: unknown): string {
-  try {
-    const serialized = JSON.stringify(value);
-    return serialized === undefined ? "{}" : serialized;
-  } catch {
-    return "{}";
-  }
-}
-
-function buildCursorArgs(
-  modelId: string,
-  cwd: string,
-  force: boolean,
-  prompt: string,
-): readonly string[] {
-  return [
-    "-p",
-    "--output-format",
-    "stream-json",
-    "--stream-partial-output",
-    "--model",
-    modelId,
-    "--workspace",
-    cwd,
-    ...(force ? ["--force"] : []),
-    // cursor-agent принимает prompt позиционным аргументом; без него `-p` ждёт stdin.
-    prompt,
-  ];
-}
-
-function projectPrompt(prompt: LanguageModelV3Prompt): string {
-  const blocks: string[] = [];
-  for (const message of prompt) {
-    switch (message.role) {
-      case "system":
-        if (message.content.trim()) blocks.push(message.content);
-        break;
-      case "user": {
-        const text = message.content
-          .map((part) =>
-            part.type === "text" ? part.text : `[file: ${part.mediaType}]`,
-          )
-          .join("");
-        if (text.trim()) blocks.push(text);
-        break;
-      }
-      case "assistant": {
-        const text = message.content
-          .map((part) => {
-            switch (part.type) {
-              case "text":
-                return part.text;
-              case "tool-call":
-                return `[tool-call ${part.toolName} ${safeStringify(part.input)}]`;
-              case "tool-result":
-                return `[tool-result ${part.toolName}] ${stringifyToolResultOutput(part.output)}`;
-              case "file":
-                return `[file: ${part.mediaType}]`;
-              case "reasoning":
-                return "";
-            }
-          })
-          .filter((part) => part.length > 0)
-          .join("\n");
-        if (text.trim()) blocks.push(`Assistant:\n${text}`);
-        break;
-      }
-      case "tool": {
-        const text = message.content
-          .map((part) => {
-            if (part.type === "tool-result") {
-              return `[tool-result ${part.toolName}] ${stringifyToolResultOutput(part.output)}`;
-            }
-            const approved = part.approved ? "approved" : "denied";
-            return `[tool-approval ${approved}${part.reason ? `: ${part.reason}` : ""}]`;
-          })
-          .join("\n");
-        if (text.trim()) blocks.push(text);
-        break;
-      }
-    }
-  }
-  return blocks.join("\n\n");
-}
-
-function stringifyToolResultOutput(output: LanguageModelV3ToolResultOutput): string {
-  switch (output.type) {
-    case "text":
-    case "error-text":
-      return output.value;
-    case "json":
-    case "error-json":
-      return safeStringify(output.value);
-    case "execution-denied":
-      return `[execution denied${output.reason ? `: ${output.reason}` : ""}]`;
-    case "content":
-      return output.value
-        .map((part) => {
-          if (part.type === "text") return part.text;
-          if (part.type === "file-url") return `[file: ${part.url}]`;
-          if ("mediaType" in part) return `[file: ${part.mediaType}]`;
-          return "[file]";
-        })
-        .join("\n");
-  }
-}
-
-function createCursorResultError(result: CursorResultEvent, stderr: string): Error {
-  const message = result.text?.trim() || stderr.trim() || `cursor-agent result: ${result.subtype}`;
-  return new APICallError({
-    message: `Cursor CLI вернул ошибку: ${message}`,
-    url: "cursor-cli://local",
-    requestBodyValues: {},
-    responseBody: stderr,
-    isRetryable: false,
-  });
 }
 
 function createCursorApiCallError(

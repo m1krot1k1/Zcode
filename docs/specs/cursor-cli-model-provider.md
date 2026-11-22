@@ -141,6 +141,9 @@ The Host now groups the flat catalog:
   `cursor-agent --model`, so the selected base model + level reaches the exact model;
 - the model picker labels use `properties.displayName`; the Cursor settings summary shows
   grouped names/count instead of 285 raw entries.
+- `thinking` stream events are mapped to AI SDK reasoning parts (`reasoning-start`,
+  `reasoning-delta`, `reasoning-end`), so the existing reasoning row renders live and is
+  persisted with the assistant message. `doGenerate` keeps reasoning content as well.
 
 Legacy persisted selections are migrated by `migrateLegacyModelSelection`:
 `grok-4.7-xhigh-fast` becomes `grok-4.7-fast` + `reasoningLevel: xhigh`; a
@@ -151,11 +154,15 @@ already exists in the grouped catalog is never re-parsed, so the `-fast` and
 migrated a second time.
 
 The runtime caches status and catalog for 60 seconds and keeps the last successful
-catalog when a refresh fails (for example, `api2.cursor.sh` DNS failure). This prevents a
-transient network error from removing the provider and silently resetting the selected
-Cursor model to `auto`. A failed refresh is cached for at most 15 seconds to avoid a
-settings-refresh loop; the last good catalog remains authoritative until a new successful
-`cursor-agent models` call.
+catalog when a refresh fails (for example, `api2.cursor.sh` DNS failure). After the
+first success, an expired cache is returned immediately while the CLI refreshes in the
+background, so opening a chat or sending a turn never waits for `cursor-agent models`.
+The last successful status/catalog is also persisted atomically at
+`{appConfigDir}/cursor-cli-catalog.json`; a cold start reads it before spawning the CLI.
+This prevents a transient network error from removing the provider and silently resetting
+the selected Cursor model to `auto`. A failed refresh is cached for at most 15 seconds to
+avoid a settings-refresh loop; the last good catalog remains authoritative until a new
+successful `cursor-agent models` call.
 
 ## Отличия от OpenCode CLI (принятые и документированные)
 

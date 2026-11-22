@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import type {
   ICursorCliRuntime,
   CursorCliInstallResult,
@@ -37,7 +39,20 @@ export interface CursorCliRuntimeOptions {
   };
   /** Catalog/status cache TTL; stops settings refreshes from spawning the CLI repeatedly. */
   cacheTtlMs?: number;
+  /**
+   * Optional JSON file for the last successful status/catalog. It makes a cold app start
+   * instant and keeps the selected Cursor model alive when the CLI/network is temporarily
+   * unavailable; the background refresh still replaces it after the TTL.
+   */
+  persistPath?: string;
   now?: () => number;
+}
+
+interface PersistedCursorCliCache {
+  readonly version: 1;
+  readonly executablePath: string;
+  readonly status?: CursorCliStatus;
+  readonly catalog?: CursorCliModelCatalog;
 }
 
 function collect(stream: NodeJS.ReadableStream, sink: string[], onBytes: (total: number) => void) {
@@ -175,89 +190,140 @@ export function createCursorCliRuntime(options: CursorCliRuntimeOptions = {}): I
     cache.set(key, { expiresAt: now() + ttlMs, value });
   };
   const negativeTtlMs = Math.min(cacheTtlMs, 15_000);
+  const persistPath = options.persistPath;
+  const isAvailableStatus = (
+    value: unknown,
+  ): value is Extract<CursorCliStatus, { status: "available" }> => {
+    if (!value || typeof value !== "object") return false;
+    const record = value as Record<string, unknown>;
+    return (
+      record.status === "available" &&
+      typeof record.version === "string" &&
+      typeof record.executablePath === "string"
+    );
+  };
+  const isAvailableCatalog = (
+    value: unknown,
+  ): value is Extract<CursorCliModelCatalog, { status: "available" }> => {
+    if (!value || typeof value !== "object") return false;
+    const record = value as Record<string, unknown>;
+    return (
+      record.status === "available" &&
+      Array.isArray(record.models) &&
+      record.models.every(
+        (model) =>
+          !!model &&
+          typeof model === "object" &&
+          typeof (model as Record<string, unknown>).modelId === "string" &&
+          typeof (model as Record<string, unknown>).name === "string",
+      )
+    );
+  };
+  let persistedLoad: Promise<void> | undefined;
+  const ensurePersistedLoaded = (): Promise<void> => {
+    if (!persistPath) return Promise.resolve();
+    persistedLoad ??= (async () => {
+      try {
+        const parsed: unknown = JSON.parse(await readFile(persistPath, "utf8"));
+        if (!parsed || typeof parsed !== "object") return;
+        const record = parsed as Partial<PersistedCursorCliCache>;
+        if (record.version !== 1 || typeof record.executablePath !== "string") return;
+        if (!isAvailableStatus(record.status)) return;
+        if (record.status.executablePath !== record.executablePath) return;
+        lastGoodStatus.set(record.executablePath, record.status);
+        writeCached(statusCache, record.executablePath, record.status);
+        if (isAvailableCatalog(record.catalog)) {
+          lastGoodCatalog.set(record.executablePath, record.catalog);
+          writeCached(catalogCache, record.executablePath, record.catalog);
+        }
+      } catch {
+        // Отсутствующий/повреждённый кэш не должен мешать обычной проверке CLI.
+      }
+    })();
+    return persistedLoad;
+  };
+  let persistChain: Promise<void> = Promise.resolve();
+  const persist = (executablePath: string): void => {
+    if (!persistPath) return;
+    const status = lastGoodStatus.get(executablePath);
+    if (!isAvailableStatus(status)) return;
+    const catalog = lastGoodCatalog.get(executablePath);
+    const payload: PersistedCursorCliCache = {
+      version: 1,
+      executablePath,
+      status,
+      ...(isAvailableCatalog(catalog) ? { catalog } : {}),
+    };
+    persistChain = persistChain
+      .then(async () => {
+        await mkdir(dirname(persistPath), { recursive: true });
+        const temporaryPath = `${persistPath}.${process.pid}.tmp`;
+        await writeFile(temporaryPath, JSON.stringify(payload), { mode: 0o600 });
+        await rename(temporaryPath, persistPath);
+      })
+      .catch(() => undefined);
+  };
 
-  return {
-    getCliStatus: async ({ cliPath } = {}): Promise<CursorCliStatus> => {
-      const executable = await resolveExecutable(cliPath);
-      if (!executable.ok) {
-        return {
-          status: "missing",
-          diagnostic: executable.diagnostic,
-          installCommand: CURSOR_CLI_INSTALL_COMMAND,
-        };
-      }
-      const cached = readCached(statusCache, executable.path);
-      if (cached) return cached;
-      const result = await run([executable.path, "--version"], STATUS_TIMEOUT_MS);
-      if (result.timedOut) {
-        const stale = lastGoodStatus.get(executable.path);
-        if (stale) {
-          // 同样按短 TTL 缓存失败后的 last-good，否则设置页每次刷新都会重新 spawn 一次
-          // --version，网络故障时反而放大启动风暴。
-          writeCached(statusCache, executable.path, stale, negativeTtlMs);
-          return stale;
+  const statusRefreshes = new Map<string, Promise<CursorCliStatus>>();
+  const refreshStatus = (executablePath: string): Promise<CursorCliStatus> => {
+    const existing = statusRefreshes.get(executablePath);
+    if (existing) return existing;
+    const refresh = (async (): Promise<CursorCliStatus> => {
+      const result = await run([executablePath, "--version"], STATUS_TIMEOUT_MS);
+      if (!result.timedOut) {
+        const version = parseVersion(result.stdout, result.stderr);
+        if (result.exitCode === 0 && version) {
+          const status: CursorCliStatus = {
+            status: "available",
+            version,
+            executablePath,
+          };
+          lastGoodStatus.set(executablePath, status);
+          writeCached(statusCache, executablePath, status);
+          persist(executablePath);
+          return status;
         }
-        const status: CursorCliStatus = {
-          status: "timed-out",
-          diagnostic: "cursor-agent --version timed out",
-          installCommand: CURSOR_CLI_INSTALL_COMMAND,
-        };
-        writeCached(statusCache, executable.path, status, negativeTtlMs);
-        return status;
       }
-      const version = parseVersion(result.stdout, result.stderr);
-      if (result.exitCode !== 0 || !version) {
-        const stale = lastGoodStatus.get(executable.path);
-        if (stale) {
-          writeCached(statusCache, executable.path, stale, negativeTtlMs);
-          return stale;
-        }
-        const status: CursorCliStatus = {
-          status: "unavailable",
-          diagnostic: diagnosticFrom(result) ?? "cursor-agent --version failed",
-          installCommand: CURSOR_CLI_INSTALL_COMMAND,
-        };
-        writeCached(statusCache, executable.path, status, negativeTtlMs);
-        return status;
+      const stale = lastGoodStatus.get(executablePath);
+      if (stale) {
+        // 失败时 last-good 也进入短 TTL：设置页刷新不能反复 spawn --version。
+        writeCached(statusCache, executablePath, stale, negativeTtlMs);
+        return stale;
       }
-      const status: CursorCliStatus = {
-        status: "available",
-        version,
-        executablePath: executable.path,
-      };
-      lastGoodStatus.set(executable.path, status);
-      writeCached(statusCache, executable.path, status);
+      const status: CursorCliStatus = result.timedOut
+        ? {
+            status: "timed-out",
+            diagnostic: "cursor-agent --version timed out",
+            installCommand: CURSOR_CLI_INSTALL_COMMAND,
+          }
+        : {
+            status: "unavailable",
+            diagnostic: diagnosticFrom(result) ?? "cursor-agent --version failed",
+            installCommand: CURSOR_CLI_INSTALL_COMMAND,
+          };
+      writeCached(statusCache, executablePath, status, negativeTtlMs);
       return status;
-    },
+    })().finally(() => {
+      statusRefreshes.delete(executablePath);
+    });
+    statusRefreshes.set(executablePath, refresh);
+    return refresh;
+  };
 
-    listModels: async ({ cliPath } = {}): Promise<CursorCliModelCatalog> => {
-      const executable = await resolveExecutable(cliPath);
-      if (!executable.ok) {
-        return { status: "unavailable", diagnostic: executable.diagnostic };
-      }
-      const cached = readCached(catalogCache, executable.path);
-      if (cached) return cached;
+  const catalogRefreshes = new Map<string, Promise<CursorCliModelCatalog>>();
+  const refreshCatalog = (executablePath: string): Promise<CursorCliModelCatalog> => {
+    const existing = catalogRefreshes.get(executablePath);
+    if (existing) return existing;
+    const refresh = (async (): Promise<CursorCliModelCatalog> => {
       const attempts: readonly (readonly string[])[] = [
-        [executable.path, "models"],
-        [executable.path, "--list-models"],
+        [executablePath, "models"],
+        [executablePath, "--list-models"],
       ];
       let last: CursorCliCommandResult | undefined;
       for (const args of attempts) {
         const result = await run(args, CATALOG_TIMEOUT_MS);
         last = result;
-        if (result.timedOut) {
-          const stale = lastGoodCatalog.get(executable.path);
-          if (stale) {
-            writeCached(catalogCache, executable.path, stale, negativeTtlMs);
-            return stale;
-          }
-          const catalog: CursorCliModelCatalog = {
-            status: "timed-out",
-            diagnostic: `cursor-agent ${args.slice(1).join(" ")} timed out`,
-          };
-          writeCached(catalogCache, executable.path, catalog, negativeTtlMs);
-          return catalog;
-        }
+        if (result.timedOut) break;
         if (result.exitCode !== 0) continue;
         const models = parseCursorModelCatalog(result.stdout);
         if (models.length > 0) {
@@ -266,8 +332,9 @@ export function createCursorCliRuntime(options: CursorCliRuntimeOptions = {}): I
             models,
             authentication: "not-checked",
           };
-          lastGoodCatalog.set(executable.path, catalog);
-          writeCached(catalogCache, executable.path, catalog);
+          lastGoodCatalog.set(executablePath, catalog);
+          writeCached(catalogCache, executablePath, catalog);
+          persist(executablePath);
           return catalog;
         }
       }
@@ -279,21 +346,67 @@ export function createCursorCliRuntime(options: CursorCliRuntimeOptions = {}): I
           models: [...CURSOR_BASELINE_MODELS],
           authentication: "not-checked",
         };
-        lastGoodCatalog.set(executable.path, catalog);
-        writeCached(catalogCache, executable.path, catalog);
+        lastGoodCatalog.set(executablePath, catalog);
+        writeCached(catalogCache, executablePath, catalog);
+        persist(executablePath);
         return catalog;
       }
-      const stale = lastGoodCatalog.get(executable.path);
+      const stale = lastGoodCatalog.get(executablePath);
       if (stale) {
-        writeCached(catalogCache, executable.path, stale, negativeTtlMs);
+        writeCached(catalogCache, executablePath, stale, negativeTtlMs);
         return stale;
       }
-      const catalog: CursorCliModelCatalog = {
-        status: "unavailable",
-        diagnostic: (last && diagnosticFrom(last)) ?? "cursor-agent model listing failed",
-      };
-      writeCached(catalogCache, executable.path, catalog, negativeTtlMs);
+      const catalog: CursorCliModelCatalog = last?.timedOut
+        ? { status: "timed-out", diagnostic: "cursor-agent model listing timed out" }
+        : {
+            status: "unavailable",
+            diagnostic: (last && diagnosticFrom(last)) ?? "cursor-agent model listing failed",
+          };
+      writeCached(catalogCache, executablePath, catalog, negativeTtlMs);
       return catalog;
+    })().finally(() => {
+      catalogRefreshes.delete(executablePath);
+    });
+    catalogRefreshes.set(executablePath, refresh);
+    return refresh;
+  };
+
+  return {
+    getCliStatus: async ({ cliPath } = {}): Promise<CursorCliStatus> => {
+      await ensurePersistedLoaded();
+      const executable = await resolveExecutable(cliPath);
+      if (!executable.ok) {
+        return {
+          status: "missing",
+          diagnostic: executable.diagnostic,
+          installCommand: CURSOR_CLI_INSTALL_COMMAND,
+        };
+      }
+      const cached = readCached(statusCache, executable.path);
+      if (cached) return cached;
+      const stale = lastGoodStatus.get(executable.path);
+      if (stale) {
+        // Холодный старт/открытие чата не должны ждать сеть: отдаём last-good и обновляем фоном.
+        void refreshStatus(executable.path).catch(() => undefined);
+        return stale;
+      }
+      return refreshStatus(executable.path);
+    },
+
+    listModels: async ({ cliPath } = {}): Promise<CursorCliModelCatalog> => {
+      await ensurePersistedLoaded();
+      const executable = await resolveExecutable(cliPath);
+      if (!executable.ok) {
+        return { status: "unavailable", diagnostic: executable.diagnostic };
+      }
+      const cached = readCached(catalogCache, executable.path);
+      if (cached) return cached;
+      const stale = lastGoodCatalog.get(executable.path);
+      if (stale) {
+        void refreshCatalog(executable.path).catch(() => undefined);
+        return stale;
+      }
+      return refreshCatalog(executable.path);
     },
 
     installCli: async (): Promise<CursorCliInstallResult> => {
@@ -335,6 +448,9 @@ export function createCursorCliRuntime(options: CursorCliRuntimeOptions = {}): I
       if (verify.exitCode !== 0 || !version) return verifyFailed;
       statusCache.clear();
       catalogCache.clear();
+      lastGoodStatus.clear();
+      lastGoodCatalog.clear();
+      if (persistPath) await rm(persistPath, { force: true }).catch(() => undefined);
       return { status: "installed", version, executablePath: executable.path };
     },
   };

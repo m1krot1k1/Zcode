@@ -4,6 +4,8 @@ import {
   buildServerRemoteWorkspaceIdentity,
   remoteHostIdFromWorkspaceIdentity,
 } from "@zcode/shared";
+import { join } from "node:path";
+import { getAppConfigDir } from "./paths.js";
 import { IBotsService } from "./bots/bots.js";
 import { ServiceCollection } from "./collection.js";
 import { createSourceServerWorkspaceService } from "./source-server-workspace/sourceServerWorkspaceService.js";
@@ -109,7 +111,13 @@ export function createLocalServices(options: CreateLocalServicesOptions): Servic
   const settingService = createObservableSettingService(
     options?.settingService ?? localSettings!.service,
   );
-  const cursorCliRuntime = !isDesktopAttachedRemote ? createCursorCliRuntime() : undefined;
+  const cursorCliRuntime = !isDesktopAttachedRemote
+    ? createCursorCliRuntime({
+        // Холодный старт не должен ждать `cursor-agent models`; последний удачный
+        // каталог читается сразу, а CLI обновляет его в фоне после TTL.
+        persistPath: join(getAppConfigDir(), "cursor-cli-catalog.json"),
+      })
+    : undefined;
   const localCliProviderCatalogSource =
     openCodeAcpRuntime || cursorCliRuntime
       ? // `export { ... }` ниже только переэкспортирует символ и не создаёт локального binding.

@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CURSOR_CLI_INSTALL_COMMAND,
   createCursorCliRuntime,
@@ -153,7 +156,8 @@ describe("createCursorCliRuntime", () => {
     expect(runCommand).toHaveBeenCalledTimes(2);
     now += 1_001;
     await cursor.listModels();
-    expect(runCommand).toHaveBeenCalledTimes(3);
+    // Просроченный last-good отдаётся сразу, а CLI обновляется в фоне.
+    await vi.waitFor(() => expect(runCommand).toHaveBeenCalledTimes(3));
   });
 
   it("сохраняет последний удачный каталог, если сеть Cursor пропала", async () => {
@@ -179,11 +183,84 @@ describe("createCursorCliRuntime", () => {
     expect(second.status).toBe("available");
     if (second.status !== "available") throw new Error("expected stale catalog");
     expect(second.models.map((model) => model.modelId)).toEqual(["composer-1"]);
+    // Фоновое обновление пробует обе команды; после него результат снова в коротком TTL.
+    await vi.waitFor(() => expect(runCommand).toHaveBeenCalledTimes(3));
     // 失败结果也进入短 TTL 缓存：设置页刷新不能反复 spawn CLI。
     const callsAfterFailure = runCommand.mock.calls.length;
     const third = await cursor.listModels();
     expect(third.status).toBe("available");
     expect(runCommand).toHaveBeenCalledTimes(callsAfterFailure);
+  });
+
+  it("на холодном старте использует сохранённый каталог без запуска CLI", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "zcode-cursor-cache-"));
+    const persistPath = join(directory, "cursor-cli-catalog.json");
+    try {
+      await writeFile(
+        persistPath,
+        JSON.stringify({
+          version: 1,
+          executablePath: "/bin/cursor-agent",
+          status: {
+            status: "available",
+            version: "2025.11.1",
+            executablePath: "/bin/cursor-agent",
+          },
+          catalog: {
+            status: "available",
+            authentication: "not-checked",
+            models: [{ modelId: "composer-1", name: "Composer 1", source: "cli" }],
+          },
+        }),
+      );
+      const runCommand = vi.fn(async () => result({}));
+      const cursor = createCursorCliRuntime({
+        resolveCli: async () => found,
+        runCommand,
+        persistPath,
+        now: () => 1_000,
+      });
+
+      await expect(cursor.getCliStatus()).resolves.toMatchObject({
+        status: "available",
+        version: "2025.11.1",
+      });
+      await expect(cursor.listModels()).resolves.toMatchObject({
+        status: "available",
+        models: [{ modelId: "composer-1" }],
+      });
+      expect(runCommand).not.toHaveBeenCalled();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("сохраняет удачный каталог на диск для следующего запуска", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "zcode-cursor-cache-"));
+    const persistPath = join(directory, "cursor-cli-catalog.json");
+    try {
+      const runCommand = vi.fn(async (args: readonly string[]) =>
+        args[1] === "--version"
+          ? result({ stdout: "cursor-agent 2025.11.1\n" })
+          : result({ stdout: "composer-1 - Composer 1\n" }),
+      );
+      const cursor = createCursorCliRuntime({
+        resolveCli: async () => found,
+        runCommand,
+        persistPath,
+        now: () => 1_000,
+      });
+      await cursor.getCliStatus();
+      await cursor.listModels();
+      await vi.waitFor(async () => {
+        const parsed = JSON.parse(await readFile(persistPath, "utf8")) as {
+          catalog?: { models?: Array<{ modelId?: string }> };
+        };
+        expect(parsed.catalog?.models?.[0]?.modelId).toBe("composer-1");
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("сообщает unavailable, если обе команды завершились ошибкой", async () => {

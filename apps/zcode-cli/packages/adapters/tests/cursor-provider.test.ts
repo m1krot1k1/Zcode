@@ -211,6 +211,46 @@ describe("cursor-provider", () => {
     expect(parts.filter((part) => part.type === "finish")).toHaveLength(1);
   });
 
+  it("(d) стримит thinking как reasoning-части и закрывает блок", async () => {
+    const spawn: CursorCliSpawn = () =>
+      fakeProcess([
+        { type: "system", subtype: "init", session_id: "s1" },
+        { type: "thinking", subtype: "delta", text: "The user" },
+        { type: "thinking", subtype: "delta", text: " asks who I am." },
+        { type: "thinking", subtype: "completed" },
+        ...["I", " am", " Auto", "."].map((text, index) => ({
+          type: "assistant",
+          timestamp_ms: index + 1,
+          message: { role: "assistant", content: [{ type: "text", text }] },
+        })),
+        { type: "result", subtype: "success", is_error: false, result: "I am Auto." },
+      ]);
+    const { stream } = await createModel(spawn).doStream(prompt);
+    const parts = await collect(stream as ReadableStream<{ type: string }>);
+    expect(parts.filter((part) => part.type === "reasoning-start")).toHaveLength(1);
+    expect(parts.filter((part) => part.type === "reasoning-end")).toHaveLength(1);
+    const reasoning = parts
+      .filter((part) => part.type === "reasoning-delta")
+      .map((part) => part.delta)
+      .join("");
+    expect(reasoning).toBe("The user asks who I am.");
+    expect(parts.filter((part) => part.type === "text-start")).toHaveLength(1);
+  });
+
+  it("(e) сохраняет reasoning в doGenerate content", async () => {
+    const spawn: CursorCliSpawn = () =>
+      fakeProcess([
+        { type: "thinking", subtype: "delta", text: "reasoning" },
+        { type: "thinking", subtype: "completed" },
+        { type: "result", subtype: "success", is_error: false, result: "answer" },
+      ]);
+    const result = await createModel(spawn).doGenerate?.(prompt);
+    expect(result?.content).toEqual([
+      { type: "reasoning", text: "reasoning" },
+      { type: "text", text: "answer" },
+    ]);
+  });
+
   it("(c) игнорирует дубликат assistant с model_call_id и не склеивает его в текст", async () => {
     const spawn: CursorCliSpawn = () =>
       fakeProcess([
