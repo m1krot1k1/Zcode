@@ -129,10 +129,12 @@ describe("runtime agent listing", () => {
     expect(listingMessages(requests[0]!)).toHaveLength(1);
     const description = requests[0]!.tools?.find((tool) => tool.name === "Agent")?.description;
     expect(description).toContain("Available agent types are listed in <system-reminder>");
-    expect(description).toContain("if CodeIndex is available, check status");
-    expect(description).toContain("message begins with `Start`/`start` as a task label");
+    expect(description).toContain("use CodeIndex when it materially helps trace a cross-file relationship");
+    expect(description).toContain("If the user explicitly requests the named `start` profile");
     expect(description).toContain("the first tool action must invoke the exact `start` profile");
-    expect(description).toContain("Let start decide whether to delegate independent work to orchestrator");
+    expect(description).toContain("Use Agent only when a separate owner materially helps");
+    expect(description).toContain("do not apply a fixed 1–2 agent ceiling");
+    expect(description).toContain("When you are the start profile, route one bounded deliverable directly to its exact matching worker");
     expect(description).not.toContain("Description A");
     const notices = listingMessages(requests[1]!);
     expect(notices).toHaveLength(2);
@@ -177,7 +179,7 @@ describe("runtime agent listing", () => {
     expect(notice?.content).toContain("Bash");
   });
 
-  it("shows start only the orchestrator in its catalog", async () => {
+  it("shows start the workers and orchestrator it may route to", async () => {
     definitions.mockReturnValue({
       activeAgents: [
         {
@@ -219,8 +221,8 @@ describe("runtime agent listing", () => {
 
     const notice = listingMessages(requests[0]!)[0];
     expect(notice?.content).toContain("- orchestrator: Orchestrates work");
-    expect(notice?.content).not.toContain("- coder:");
-    expect(notice?.content).not.toContain("- researcher:");
+    expect(notice?.content).toContain("- coder: Coder");
+    expect(notice?.content).toContain("- researcher: Researcher");
     expect(notice?.content).not.toContain("- start:");
   });
 

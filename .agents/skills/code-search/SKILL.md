@@ -15,6 +15,20 @@ description: >-
 
 # Code search: pick the rung, then move down it
 
+## ZCode agent execution
+
+When this skill runs inside a ZCode agent, use the native `CodeIndex`, `Grep`, and
+`Glob` tools. Do not run `rg`, `grep`, or `find` through `Bash` for repository
+search: shell approval can be waiting on the root session while the child is idle.
+Try CodeIndex once only when it covers the question; if it fails or returns no
+usable result, make one narrow native `Grep`/`Glob` call scoped to the owning
+directory and file type. Do not fall back to a repository-root sweep. If a native
+search fails, report the failure and return `blocked` instead of retrying the same
+search through another tool or waiting for shell approval.
+
+If `Skill code-search` itself cannot be loaded, stop and report that blocker; do
+not continue repository work without these instructions.
+
 Semantic tools (a language server) answer "who calls this" in one call when
 they cover the code. When they don't, they return nothing, and the expensive
 mistake is to keep rephrasing the question. A repo instruction that says

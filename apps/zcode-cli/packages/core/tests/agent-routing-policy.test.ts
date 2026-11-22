@@ -58,22 +58,22 @@ describe("Agent/Task caller routing policy", () => {
   it.each([
     ["Agent", agentToolEntry],
     ["Task", taskToolEntry],
-  ] as const)("%s rejects start -> coder before spawn", async (_name, entry) => {
+  ] as const)("%s allows start to route a bounded task directly to a worker", async (_name, entry) => {
     const launch = vi.fn();
     await expect(
       entry.handler(
         { description: "delegate", prompt: "implement", subagent_type: "coder" },
         createContext({
           callerAgentType: "start",
-          availableAgentTypes: ["orchestrator"],
+          availableAgentTypes: ["orchestrator", "coder"],
           subagentPort: { launch } as never,
         }),
       ),
-    ).rejects.toThrow("Agent type 'coder' is not available to start");
-    expect(launch).not.toHaveBeenCalled();
+    ).resolves.toBeUndefined();
+    expect(launch).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects start -> coder even when a stale catalog still lists it", async () => {
+  it("uses the start-scoped catalog to allow a worker when it is listed", async () => {
     const launch = vi.fn();
     await expect(
       agentToolEntry.handler(
@@ -84,8 +84,8 @@ describe("Agent/Task caller routing policy", () => {
           subagentPort: { launch } as never,
         }),
       ),
-    ).rejects.toThrow("start must delegate through Task(orchestrator)");
-    expect(launch).not.toHaveBeenCalled();
+    ).resolves.toBeUndefined();
+    expect(launch).toHaveBeenCalledTimes(1);
   });
 
   it.each(["start", "orchestrator"])("rejects coder -> %s before spawn", async (target) => {
@@ -418,7 +418,7 @@ describe("Agent/Task caller routing policy", () => {
         },
         createContext({
           callerAgentType: "start",
-          availableAgentTypes: ["orchestrator"],
+          availableAgentTypes: ["orchestrator", "coder"],
           subagentPort: { launch, runTaskDag } as never,
         }),
       );
@@ -644,7 +644,7 @@ describe("Agent/Task caller routing policy", () => {
     expect(launch).not.toHaveBeenCalled();
   });
 
-  it("uses the start-scoped runtime catalog for admission", async () => {
+  it("uses the start-scoped runtime catalog for direct worker admission", async () => {
     const launch = vi.fn(async () => completedOutput("orchestrator"));
     const runtime = createTestAgentRuntime(
       createSessionId("agent-routing-start-runtime"),
@@ -660,24 +660,23 @@ describe("Agent/Task caller routing policy", () => {
       },
     );
 
-    const rejected = await runtime.getToolExecutor().execute({
+    const acceptedWorker = await runtime.getToolExecutor().execute({
       id: "call_start_coder",
       name: "Agent",
       input: { description: "delegate", prompt: "implement", subagent_type: "coder" },
     });
-    expect(rejected.success).toBe(false);
-    expect(rejected.error?.message).toContain("not available to start");
+    expect(acceptedWorker.success).toBe(true);
 
-    const accepted = await runtime.getToolExecutor().execute({
+    const acceptedOrchestrator = await runtime.getToolExecutor().execute({
       id: "call_start_orchestrator",
       name: "Agent",
       input: { description: "delegate", prompt: "route", subagent_type: "orchestrator" },
     });
-    expect(accepted.success).toBe(true);
-    expect(launch).toHaveBeenCalledTimes(1);
+    expect(acceptedOrchestrator.success).toBe(true);
+    expect(launch).toHaveBeenCalledTimes(2);
   });
 
-  it("stamps the child runtime with its routing identity from the spawn request", async () => {
+  it("stamps the child runtime so start can route directly to a worker", async () => {
     let rootCalls = 0;
     let childCalls = 0;
     let childSawRejection = false;
@@ -751,7 +750,7 @@ describe("Agent/Task caller routing policy", () => {
 
     await runtime.executeTurn("route the work");
 
-    expect(childCalls).toBe(2);
-    expect(childSawRejection).toBe(true);
+    expect(childCalls).toBe(3);
+    expect(childSawRejection).toBe(false);
   });
 });

@@ -9,6 +9,7 @@
 - 行拿到 `rootSessionId + parentSessionId + childSessionId` 和打开 callback 时，摘要行是详情动作：点击或按 Enter/Space 在桌面/普通 Web 打开右侧只读 tab，在手机 `/remote` 打开现有右侧抽屉
 - child 尚未投影或启动前失败时，摘要保持静态、不可点击；child 目标后到只切换为可点击，不自动打开详情
 - `agentName` 优先取已配对 `subagentRow.subagentType`、`output.agentType`、`input.subagent_type` / `input.agent_type` 等真实智能体名称，不使用协议实现名 `Agent`
+- Agent graph 的根节点同样优先使用已配对行的权威 `subagentType`；后代节点使用各自的 input/raw metadata。缺失角色时显示中性 SubAgent 标签，不把 `Agent`/`Task` 工具名冒充角色。
 - `subagent_type` 采用三态展示：已解析出显式类型时立即显示；`raw.inputPreviewComplete !== true` 且尚未拿到权威类型时留空；仅当输入预览明确完整、仍省略类型时显示真实默认值 `general-purpose`
 - `primaryText` 会跳过 `Agent` / `Task` / `spawn_agent` 等实现名，优先展示 nickname、title、description 或 agent type
 - foreground/background 只影响 runtime 生命周期，不影响详情入口

@@ -281,7 +281,7 @@ export interface AgentRuntimeConfig {
   /**
    * Caller routing identity. Root/main sessions leave it undefined; subagent children
    * set their canonical profile name so Agent/Task admission and the visible catalog
-   * only expose roles the caller is allowed to spawn (start -> orchestrator only).
+   * only expose roles the caller is allowed to spawn (start -> worker or orchestrator).
    */
   agentType?: string;
   /**

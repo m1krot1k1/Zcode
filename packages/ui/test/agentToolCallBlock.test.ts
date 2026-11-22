@@ -8,6 +8,7 @@ import { ServiceProvider } from "@/hooks/useServices.js";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import { StoreProvider } from "@/store/StoreProvider.js";
 import { useSubagentsStore } from "@/store/subagentsStore.js";
+import { getAgentGraphType } from "../src/ToolCallBlocks/renderers/agentHelpers.js";
 import { AgentToolCallBlock } from "../src/ToolCallBlocks/renderers/agent.js";
 
 const localStorageState = new Map<string, string>();
@@ -128,6 +129,27 @@ describe("AgentToolCallBlock", () => {
       ),
     );
   }
+
+  it("uses the authoritative role and nested tool metadata in agent graph nodes", () => {
+    const taskCall = {
+      toolId: "tool-task",
+      toolName: "Task",
+      kind: "Task",
+      title: "Task",
+      input: { description: "delegate work", prompt: "inspect" },
+      output: undefined,
+      status: "completed",
+      raw: { inputPreviewComplete: true },
+    } as Parameters<typeof getAgentGraphType>[0];
+
+    expect(getAgentGraphType(taskCall, "SubAgent", "orchestrator")).toBe("orchestrator");
+    expect(
+      getAgentGraphType({ ...taskCall, input: { subagent_type: "researcher" } }, "SubAgent"),
+    ).toBe("researcher");
+    expect(getAgentGraphType({ ...taskCall, input: { prompt: "unknown role" } }, "SubAgent")).toBe(
+      "SubAgent",
+    );
+  });
 
   it("keeps an Agent without a persisted child as a static one-line summary", () => {
     const html = renderToStaticMarkup(

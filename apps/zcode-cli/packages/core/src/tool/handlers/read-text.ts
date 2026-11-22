@@ -63,6 +63,13 @@ export function formatReadTextOutput(output: ReadTextOutput): string {
   const partialViewPrefix = output.partialViewNotice
     ? `${formatReadToolResultWarning(output.partialViewNotice)}\n\n`
     : "";
+  const rangeViewNotice =
+    output.truncatedByTokenCap !== true &&
+    (output.startLine > 1 || output.numLines < output.totalLines)
+      ? `${formatReadToolResultWarning(
+          `This Read result shows lines ${output.startLine}-${output.startLine + output.numLines - 1} of ${output.totalLines}; it is a range, not a full-file read.`,
+        )}\n\n`
+      : "";
 
   if (!output.content) {
     const warning =
@@ -76,7 +83,7 @@ export function formatReadTextOutput(output: ReadTextOutput): string {
 
   // 成功文本结果的模型可见契约只包含条件提醒与带行号正文；
   // 历史安全提醒不属于当前 tool result 路径。
-  return `${partialViewPrefix}${addReadLineNumbers({
+  return `${partialViewPrefix}${rangeViewNotice}${addReadLineNumbers({
     content: output.content,
     startLine: output.startLine,
   })}`;

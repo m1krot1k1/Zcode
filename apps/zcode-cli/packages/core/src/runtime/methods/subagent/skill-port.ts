@@ -19,6 +19,8 @@ import {
   type OfficialCuaPolicy,
 } from "../../../subagent/computer-use-policy.js";
 
+type AllowedSkillDiscovery = SkillLoadOutcome & { parentSkillNames: string[] };
+
 /**
  * Catalog projection for a role. Built-ins keep `skills: ["*", ...concrete]` for
  * compatibility; showing only the concrete names makes the role actually specialized
@@ -70,22 +72,42 @@ class FilteredSkillPort implements SkillPort {
     const outcome = await this.discoverAllowedSkills(request, options);
     const skills = outcome.skills.filter((skill) => this.isPreferredSkill(skill));
     return {
-      ...outcome,
+      diagnostics: outcome.diagnostics,
       skills,
       totalDiscovered: skills.length,
     };
   }
 
-  private async discoverAllowedSkills(
+  /** Непредпочтённое представление каталога для вложенного profile. */
+  async discoverSkillsForDescendant(
     request: Parameters<SkillPort["discoverSkills"]>[0],
     options?: SkillOperationOptions,
   ): Promise<SkillLoadOutcome> {
-    const outcome = await this.parent.discoverSkills(request, options);
+    return this.discoverAllowedSkills(request, options);
+  }
+
+  private async discoverAllowedSkills(
+    request: Parameters<SkillPort["discoverSkills"]>[0],
+    options?: SkillOperationOptions,
+  ): Promise<AllowedSkillDiscovery> {
+    // 祖先 profile 的 preferredSkills 只控制该 agent 自己看到的目录，不应
+    // 隐藏后代 profile 明确声明的技能；后代仍逐层经过每个祖先的 allowlist。
+    const parentWithDescendantDiscovery = this.parent as SkillPort & {
+      discoverSkillsForDescendant?: (
+        nestedRequest: Parameters<SkillPort["discoverSkills"]>[0],
+        nestedOptions?: SkillOperationOptions,
+      ) => Promise<SkillLoadOutcome>;
+    };
+    const outcome = parentWithDescendantDiscovery.discoverSkillsForDescendant
+      ? await parentWithDescendantDiscovery.discoverSkillsForDescendant(request, options)
+      : await this.parent.discoverSkills(request, options);
+    const parentSkillNames = outcome.skills.map((skill) => skill.qualifiedName ?? skill.name);
     const skills = outcome.skills.filter((skill) => this.isAllowedSkill(skill));
     return {
-      ...outcome,
+      diagnostics: outcome.diagnostics,
       skills,
       totalDiscovered: skills.length,
+      parentSkillNames,
     };
   }
 
@@ -99,14 +121,22 @@ class FilteredSkillPort implements SkillPort {
     ) {
       throw createSubagentComputerUseUnavailableError(request.name);
     }
-    const resolvedName = await this.resolveAllowedSkillRequestName(request, options);
+    const resolution = await this.resolveAllowedSkillRequestName(request, options);
+    const resolvedName = resolution.name;
     if (!resolvedName) {
+      // 祖先白名单拒绝与当前目录未发现技能是两种故障；合并成“not allowed”会误导 Agent 以为环境禁用了 Skill。
+      const message = resolution.allowedByProfile
+        ? `Skill '${request.name}' is allowed by this subagent profile but is missing from the inherited skill catalog. Check the active workspace skill roots and ancestor allowlists.`
+        : "Skill is not allowed for subagent";
       throw createCoreError(
         CoreErrorType.ToolExecutionFailed,
-        "Skill is not allowed for subagent",
+        message,
         {
           context: {
             allowedSkills: this.allowedSkills ? [...this.allowedSkills] : [],
+            allowedByProfile: resolution.allowedByProfile,
+            discoveredSkillNames: resolution.discoveredSkillNames,
+            parentSkillNames: resolution.parentSkillNames,
             skill: request.name,
             toolName: "Skill",
           },
@@ -194,7 +224,12 @@ class FilteredSkillPort implements SkillPort {
   private async resolveAllowedSkillRequestName(
     request: Parameters<SkillPort["loadSkill"]>[0],
     options?: SkillOperationOptions,
-  ): Promise<string | undefined> {
+  ): Promise<{
+    name?: string;
+    allowedByProfile: boolean;
+    discoveredSkillNames: string[];
+    parentSkillNames: string[];
+  }> {
     const outcome = await this.discoverAllowedSkills(
       {
         workingDirectory: request.workingDirectory,
@@ -204,8 +239,14 @@ class FilteredSkillPort implements SkillPort {
       options,
     );
     const matches = outcome.skills.filter((skill) => matchesSkillRequestName(skill, request.name));
+    const allowedByProfile =
+      this.allowedSkills?.has("*") === true || this.allowedSkills?.has(request.name) === true;
     if (matches.length === 0) {
-      return undefined;
+      return {
+        allowedByProfile,
+        discoveredSkillNames: outcome.skills.map((skill) => skill.qualifiedName ?? skill.name),
+        parentSkillNames: outcome.parentSkillNames,
+      };
     }
     if (matches.length > 1) {
       throw createCoreError(
@@ -224,7 +265,12 @@ class FilteredSkillPort implements SkillPort {
     }
     // 可见 skills 列表会把 plugin skill 展示为 qualified name，并声明 bare alias 也可加载。
     // 子 agent 按 bare alias 调用时，先绑定回过滤后的 metadata，避免父端按全局同名 skill 误加载。
-    return matches[0]?.qualifiedName ?? matches[0]?.name;
+    return {
+      allowedByProfile: true,
+      discoveredSkillNames: outcome.skills.map((skill) => skill.qualifiedName ?? skill.name),
+      name: matches[0]?.qualifiedName ?? matches[0]?.name,
+      parentSkillNames: outcome.parentSkillNames,
+    };
   }
 }
 

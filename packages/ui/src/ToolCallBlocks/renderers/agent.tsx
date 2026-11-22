@@ -22,6 +22,7 @@ import { AgentPromptSection } from "./agentPromptSection.js";
 import {
   formatAgentMessage,
   getAgentColor,
+  getAgentGraphType,
   getAgentKindLabel,
   getAgentActivityContent,
   getAgentPrimaryText,
@@ -102,18 +103,23 @@ function readAgentGraphUsage(output: unknown, locale: Locale): string | undefine
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-function buildAgentGraphNode(node: AgentGraphToolNode, locale: Locale): AgentGraphNode | undefined {
+function buildAgentGraphNode(
+  node: AgentGraphToolNode,
+  locale: Locale,
+  fallbackLabel: string,
+  authoritativeAgentType?: string,
+): AgentGraphNode | undefined {
   const name = node.toolCall.toolName ?? node.toolCall.kind;
   if (!AGENT_TOOL_NAMES.has(name)) return undefined;
   const input = asRecord(node.toolCall.input);
   const output = node.toolCall.output;
   const children = node.childToolCalls
-    .map((child) => buildAgentGraphNode(child, locale))
+    .map((child) => buildAgentGraphNode(child, locale, fallbackLabel))
     .filter((child): child is AgentGraphNode => child !== undefined);
   return {
     id: node.toolCall.toolId,
     label: textField(input, "description") ?? node.toolCall.title ?? name,
-    agentType: textField(input, "subagent_type", "agent", "agentType") ?? name,
+    agentType: getAgentGraphType(node.toolCall, fallbackLabel, authoritativeAgentType),
     status: node.toolCall.status,
     ...(readAgentGraphUsage(output, locale) ? { usage: readAgentGraphUsage(output, locale) } : {}),
     children,
@@ -347,13 +353,19 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl, locale } = useZCodeIntl();
   const { toolCall, childToolCalls } = context.toolCallNode;
   const [graphOpen, setGraphOpen] = useState(false);
+  const fallbackLabel = formatAgentMessage(intl, "chat.toolCall.agent.fallback", "SubAgent");
   const graphRoot = useMemo(
-    () => buildAgentGraphNode(context.toolCallNode, locale),
-    [context.toolCallNode, locale],
+    () =>
+      buildAgentGraphNode(
+        context.toolCallNode,
+        locale,
+        fallbackLabel,
+        context.authoritativeAgentType,
+      ),
+    [context.authoritativeAgentType, context.toolCallNode, fallbackLabel, locale],
   );
   const hasGraph = graphRoot !== undefined && graphRoot.children.length > 0;
   const prompt = getAgentPrompt(toolCall);
-  const fallbackLabel = formatAgentMessage(intl, "chat.toolCall.agent.fallback", "SubAgent");
   const primaryText = getAgentPrimaryText(toolCall, fallbackLabel);
   const agentName = getAgentKindLabel(toolCall, fallbackLabel, context.authoritativeAgentType);
   const configuredAgentColor = useToolPresentationCapabilities().agentColor?.(agentName);

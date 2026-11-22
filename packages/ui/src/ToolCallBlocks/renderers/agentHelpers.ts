@@ -171,6 +171,15 @@ export function getAgentKindLabel(
   return rawRecord?.inputPreviewComplete === true ? fallbackLabel : "";
 }
 
+/** Agent graph shares profile precedence but keeps a neutral label when metadata is absent. */
+export function getAgentGraphType(
+  toolCall: AgentToolCall,
+  fallbackLabel: string,
+  authoritativeAgentType?: string,
+): string {
+  return getAgentKindLabel(toolCall, fallbackLabel, authoritativeAgentType) || fallbackLabel;
+}
+
 export function getAgentColor(toolCall: AgentToolCall) {
   const outputRecord = readRecordFromUnknown(toolCall.output);
   const inputRecord = isPlainRecord(toolCall.input) ? toolCall.input : null;

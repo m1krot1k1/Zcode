@@ -60,6 +60,7 @@ const READ_PROVIDER_DESCRIPTION = [
   "- `file_path` must be an absolute path.",
   `- Reads up to ${READ_DEFAULT_MAX_LINES} lines by default.`,
   "- Prefer a targeted range: pass offset and limit when a CodeIndex/Grep hit already shows the lines you need. Reading a whole large file keeps costing context on every later step of the turn and is the main reason turns get slow.",
+  "- A ranged result states the full Read line count; never treat the number of displayed lines as the file's total. Use a full-file count when the exact count matters.",
   "- Read the whole file only when you must edit it and no narrower range suffices. When several ranges are needed, issue the Reads in one parallel batch instead of widening one of them.",
   "- Results are returned using cat -n format, with line numbers starting at 1",
   "- Reads images (PNG, JPG, …) and presents them visually.",

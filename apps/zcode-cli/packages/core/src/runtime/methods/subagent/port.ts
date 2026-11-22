@@ -490,7 +490,7 @@ export function createDefaultSubagentPort(
                   ...(workspaceRules ? { workspaceRules } : {}),
                 },
                 agentName: `zcode-${request.agentType}`,
-                // Child knows its routing identity: start -> orchestrator only, orchestrator ->
+                // Child knows its routing identity: start -> worker or orchestrator, orchestrator ->
                 // worker roles, worker/custom roles -> full catalog. Root remains undefined.
                 agentType: request.agentType,
                 // 子代理的 maxTurns 只有显式配置才生效：profile 优先，其次 subagents 级设置；

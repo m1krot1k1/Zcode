@@ -359,14 +359,14 @@ function buildAgentProviderDescription(
     "",
     "## When to use",
     "",
-    "Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. If the request spans two or more independent file areas, before any Read loop call Task once with subagent_type orchestrator, or several Task calls in the same message with disjoint paths. A small single-file question stays with you. After those agents return, synthesize the answer and do not scan the repository again. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.",
+    "Use Agent only when a separate owner materially helps: an explicitly requested specialist, a distinct deliverable, or genuinely independent work that can reduce the critical path. One bounded task, a known-file lookup, several files owned by one change, or serial integration stays with you; profile availability alone is not a reason to spawn. For a multi-branch request, choose one routing level: either launch the exact matching workers directly, or call orchestrator once to decompose/join. Do not send the same work to both. After a delegated lookup, synthesize its result and verify only load-bearing claims; do not repeat the same search.",
     "",
-    "Batch independent agents: when two or more agents' inputs do not depend on each other's output, launch them as several Task calls in the SAME response instead of one at a time. Sequential waiting is the dominant cost of delegation — 73 of 90 measured tool-hours went to waiting for subagents. Dependencies still serialize: an agent consuming another agent's findings belongs in a later response.",
+    "Batching and ownership: launch all genuinely independent direct workers in the SAME response, one branch per separately checkable outcome, with exact non-overlapping write_paths. Let the runtime cap active concurrency; do not apply a fixed 1–2 agent ceiling. Use a single orchestrator call when the work needs decomposition, dependency planning, or a join owner; the orchestrator then launches its independent leaves together. A branch owns focused research, execution, and its narrow checks end to end; do not insert a researcher before each implementer. After a successful join, stop. Reopen only for a concrete failed acceptance criterion or reproducible defect, make one focused repair, and rerun only affected checks.",
     "",
-    "For repository/code tasks, if CodeIndex is available, check status and run a targeted search before broad file reads. Use context/impact/trace for relationships. Answer from the excerpt and path:startLine-endLine when the fact is already in the excerpt. Read only to edit, open a test, or when the excerpt is truncated, endLine is missing, or the needed text is absent. Issue those Reads in one parallel batch with offset = startLine and a limit covering the range — not the whole file and not every caller. Do not repeat an index-backed lookup with a broad Explore/Grep sweep. Fall back to normal search if the index is unavailable, empty, stale, or does not cover the question. A partial index does not prove the code is absent.",
+    "For repository/code tasks, use CodeIndex when it materially helps trace a cross-file relationship. For a known file, symbol, or value, search/read directly; do not probe the index as ceremony. Use targeted context/impact/trace and excerpts, then read only what is needed to edit, open a test, or fill a concrete gap. Do not repeat an index-backed lookup with a broad Explore/Grep sweep. Fall back to normal search if the index is unavailable, empty, stale, or does not cover the question; a partial index does not prove absence.",
     "",
-    "If the user's message begins with `Start`/`start` as a task label, or explicitly asks to use the named profile, the first tool action must invoke the exact `start` profile through Agent/Task before any repository read, search, CodeIndex call, or command. Let start decide whether to delegate independent work to orchestrator; do not silently do the same work from root before or alongside it. If invocation fails or the profile is unavailable, report that blocker instead of taking over.",
-    "When you are the start profile, call Task once with subagent_type: \"orchestrator\", a short description and the full user task in prompt. Do not send task_graph; the orchestrator owns worker planning. Top-level acceptance_criteria are optional.",
+    "If the user explicitly requests the named `start` profile (for example `/start` or a task label beginning with `Start`/`start`), the first tool action must invoke the exact `start` profile before any repository read, search, CodeIndex call, or command. This explicit workflow request owns the task; do not duplicate its work from root. If invocation fails or the profile is unavailable, report that blocker instead of taking over.",
+    "When you are the start profile, route one bounded deliverable directly to its exact matching worker. Call Task once with subagent_type: \"orchestrator\" only when multiple distinct deliverables need a separate owner for decomposition/join, or real dependencies must be planned. Unclear scope alone is not enough. Pass the full user task and constraints; do not send task_graph. Top-level acceptance_criteria are optional.",
     "",
     "- The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters.",
     "- Use SendMessage with the agent's ID to continue a previously spawned agent with its context intact; a new Agent call starts fresh.",
@@ -569,12 +569,12 @@ const agentHandler: ToolHandler = async (input, context) => {
   }
 
   // Caller routing policy is the same predicate that builds the visible catalog:
-  // start -> orchestrator only, orchestrator -> worker roles only.
+  // start -> matching worker or orchestrator, orchestrator -> worker roles only.
   if (callerAgentType !== undefined && !isAgentTypeAllowedForCaller(agentType, callerAgentType)) {
     throw createCoreError(
       CoreErrorType.ToolExecutionFailed,
       callerAgentType.trim().toLocaleLowerCase("en-US") === "start"
-        ? `Agent type '${agentType}' is not available to start. start must delegate through Task(orchestrator).`
+        ? `Agent type '${agentType}' is not available to start. Choose the exact worker profile for one bounded deliverable, or orchestrator only when separate decomposition/join is needed.`
         : `Agent type '${agentType}' is not available to ${callerAgentType}. Router roles must delegate to worker roles instead of calling start or orchestrator.`,
       {
         context: {

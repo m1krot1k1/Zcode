@@ -425,6 +425,8 @@ nodes:
         file: "apps/zcode-cli/packages/core/src/runtime/methods/turn.ts"
       - symbol: "agentHandler"
         file: "apps/zcode-cli/packages/core/src/tool/handlers/agent.ts"
+      - symbol: "AgentToolCallBlock"
+        file: "packages/ui/src/ToolCallBlocks/renderers/agent.tsx"
       - symbol: "normalizeAgentProfiles"
         file: "apps/zcode-cli/packages/core/src/subagent/profile.ts"
       - symbol: "NodeContextSourceAdapter"

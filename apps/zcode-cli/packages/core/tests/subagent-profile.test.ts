@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildSkillAgentProfile } from "@zcode/shared";
 import {
   createBuiltInExploreAgentProfile,
   formatAgentProfileForPrompt,
@@ -322,7 +323,16 @@ tools:
   });
 
   it("adds only opted-in custom profiles with bounded tools to the swarm roster", () => {
+    const marketplaceSkill = buildSkillAgentProfile({
+      name: "visual-audit",
+      description: "Checks visual quality against a UI design skill.",
+      whenToUse: "Use for focused visual interface audits.",
+    });
     const profiles = normalizeAgentProfiles([
+      {
+        ...marketplaceSkill.config,
+        source: "project",
+      },
       {
         name: "custom-debugger",
         description: "Debug a focused issue",
@@ -366,6 +376,22 @@ tools:
 
     const swarmProfiles = getSwarmAgentProfiles(profiles);
 
+    const skillAgent = swarmProfiles.find(({ name }) => name === "visual-audit");
+    expect(skillAgent).toMatchObject({
+      description: expect.stringContaining("visual interface audits"),
+      skills: ["visual-audit"],
+      includeInSwarm: true,
+    });
+    expect(skillAgent?.systemPrompt).toContain("Если загрузка не удалась");
+    expect(skillAgent?.systemPrompt).toContain("сразу остановись со status=blocked");
+    expect(skillAgent?.systemPrompt).toContain("не продолжай без специализации");
+    expect(filterAgentTypesForCaller(swarmProfiles, "orchestrator").map(({ name }) => name)).toContain(
+      "visual-audit",
+    );
+    expect(filterAgentTypesForCaller(swarmProfiles, "visual-audit").map(({ name }) => name)).toContain(
+      "custom-debugger",
+    );
+    expect(isAgentTypeAllowedForCaller("custom-debugger", "visual-audit")).toBe(true);
     expect(swarmProfiles.map(({ name }) => name)).toContain("custom-debugger");
     expect(swarmProfiles.map(({ name }) => name)).not.toContain("unbounded-debugger");
     expect(swarmProfiles.map(({ name }) => name)).not.toContain("same-name-debugger");
@@ -725,8 +751,7 @@ Review carefully.`,
   });
 
   describe("built-in start gateway contract", () => {
-    // 回归依据：实测 start 以「Grep/Glob/Bash 不在我的工具集里」为由拒绝执行 L1–L4 自检，
-    // 且把该自检当成「小任务」直接口述；这里锁定工具清单、层级语义和禁止自我复用的约束。
+    // 回归依据：start 是无仓库访问能力的路由器；这里只锁定实际工具清单、独立任务边界和禁止自我复用。
     const startProfile = () =>
       getSwarmAgentProfiles(normalizeAgentProfiles([])).find(({ name }) => name === "start");
     const startPrompt = () => startProfile()?.systemPrompt ?? "";
@@ -766,26 +791,31 @@ Review carefully.`,
       const start = profiles.find(({ name }) => name === "start")?.systemPrompt ?? "";
       const orchestrator = profiles.find(({ name }) => name === "orchestrator")?.systemPrompt ?? "";
 
-      expect(start).toContain("не исполняешь её сам");
-      expect(start).toContain("implementer");
+      expect(start.toLowerCase()).toContain("рабочий запрос сразу передай точному worker-профилю");
+      expect(start).toContain("конверт для выбранного профильного worker-а");
+      expect(start.toLowerCase()).toContain("неясность, неизвестный объём или один поиск сами по себе не создают дополнительный уровень");
+      expect(start).toContain("worker");
       expect(start).toContain("orchestrator");
-      expect(start).toContain("Если Task недоступен");
+      expect(start.toLowerCase()).toContain("если task недоступен");
+      expect(start).toContain("не повторяй");
+      expect(start).toContain("только после изменения выбора");
       expect(orchestrator).toContain("не исследуй и не исполняй сам");
       expect(orchestrator).toContain("зафиксируй причину");
     });
 
-    it("states the single available tool and the L1-L4 nesting chain in the system prompt", () => {
+    it("keeps delegation bounded by independent deliverables, not artificial nesting levels", () => {
       const prompt = startPrompt();
 
       expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
-      expect(prompt).toContain("Read, Glob, Grep, Skill, Bash, Write, Edit");
+      expect(prompt).toContain("Read/Glob/Grep/Skill/Bash/Write/Edit");
       expect(prompt).toContain("недоступны");
       expect(prompt).not.toContain("включая Read, Glob, Grep, Write, Edit, Bash");
       for (const tool of ["Read", "Glob", "Grep", "Skill", "Task"]) expect(prompt).toContain(tool);
-      for (const level of ["L1", "L2", "L3", "L4"]) expect(prompt).toContain(level);
-      expect(prompt).toContain("L4 — достаточная глубина для проверки вложенности");
-      expect(prompt).toContain("номер уровня — только запись, а не стоп-условие");
-      expect(prompt).toContain("Каждый уровень подтверждается только собственным вызовом Task");
+      expect(prompt).toContain("самостоятельную независимую подзадачу с отдельным проверяемым результатом");
+      expect(prompt).toContain("не создавай Task для измерения глубины цепочки");
+      expect(prompt.toLowerCase()).toContain("неясность, неизвестный объём или один поиск сами по себе не создают дополнительный уровень");
+      expect(prompt).not.toContain("L4 — достаточная глубина");
+      expect(prompt).not.toContain("Level+1");
     });
 
     it("forbids reopening start or orchestrator without a narrower envelope", () => {
@@ -801,10 +831,8 @@ Review carefully.`,
 
       expect(prompt).not.toContain("Небольшой самостоятельный запрос обработай кратко");
       expect(prompt).toContain("Тривиальна только светская реплика без задачи");
-      expect(prompt).toContain(
-        "Любая задача с файлами, командами, тестами или evidence",
-      );
-      expect(prompt).toContain("не исполняешь её сам");
+      expect(prompt.toLowerCase()).toContain("рабочий запрос сразу передай точному worker-профилю");
+      expect(prompt).toContain("orchestrator нужен для независимых веток");
     });
   });
 });
@@ -967,13 +995,13 @@ describe("specialized worker roster", () => {
   it("routes a single bounded task to a worker with orchestrator reserved for fan-out", () => {
     const prompt = profile("start")?.systemPrompt ?? "";
 
-    expect(prompt).toContain("одной ограниченной задачи");
-    expect(prompt).toContain("профильным worker");
+    expect(prompt).toContain("Одна ограниченная задача");
+    expect(prompt).toContain("worker-профилем");
     expect(prompt).toContain('Task(subagent_type: "orchestrator")');
     expect(prompt).not.toContain("Твой единственный маршрут");
     expect(prompt).toContain("не передаёт task_graph");
-    expect(prompt).toContain("следующий wave");
-    expect(prompt).toContain("накопленным контекстом");
+    expect(prompt).toContain("новая wave");
+    expect(prompt).toContain("контекст и evidence");
     expect(prompt).not.toContain("production-код — coder");
     expect(prompt).not.toContain("Сразу маршрутизируй изменяющую работу специализированному исполнителю");
   });
@@ -999,9 +1027,10 @@ describe("specialized worker roster", () => {
 
     expect(prompt).toContain("доступной ёмкости хоста и провайдера");
     expect(prompt).toContain("debugger — дефект");
-    expect(prompt).toContain("Сопоставь имена/описания с задачей");
+    expect(prompt).toContain("Сверь задачу с активным каталогом профилей");
     expect(prompt).toContain("Планируй волнами");
     expect(prompt).toContain("После join");
+    expect(prompt).toContain("debugger — дефект");
     expect(prompt).toContain("subagent-factory");
     expect(prompt).toContain("Не дроби deliverable");
     expect(prompt).not.toContain("remaining_spawns");
@@ -1012,11 +1041,13 @@ describe("specialized worker roster", () => {
     const prompt = profile("orchestrator")?.systemPrompt ?? "";
 
     expect(prompt).toContain("Твои инструменты — Task, TodoRead и TodoWrite");
-    expect(prompt).toContain("Зависимую задачу сначала разложи через TodoWrite");
+    expect(prompt).toContain("Зависимую задачу разложи через TodoWrite");
     expect(prompt).toContain("Независимые листья делегируй отдельными Task в одном assistant-сообщении");
-    expect(prompt).toContain("Последовательный цикл Task→ожидание→Task для независимых пунктов запрещён");
-    expect(prompt).toContain("Разные компетенции — разные профили");
-    expect(prompt).toContain("После join обнови todos и централизованно сверь отчёты");
+    expect(prompt).toContain("Все независимые листья запускай одним сообщением");
+    expect(prompt).toContain("Выбирай точные профили по компетенции");
+    expect(prompt).toContain("После join сверь отчёты с исходной целью");
+    expect(prompt).toContain("repair создавай только по конкретному проваленному критерию");
+    expect(prompt).toContain("Не ставь researcher обязательным этапом до исполнения");
   });
 
   it("re-dispatches after claim conflict and reacts to each terminal report", () => {
@@ -1025,7 +1056,7 @@ describe("specialized worker roster", () => {
     expect(prompt).toContain("write_claim_conflict");
     expect(prompt).toContain("не считай её выполненной");
     expect(prompt).toContain("отложи спавн и повтори после терминала держателя claim");
-    expect(prompt).toContain("После каждого терминального отчёта пересматривай план");
+    expect(prompt).toContain("Меняй план после отчёта только при блокере");
     expect(prompt).toContain("SkillSearch/SkillInstall");
     expect(prompt).toContain("requires:");
     expect(prompt).toContain("Runtime отклонит spawn, пока capability не установлена");
@@ -1422,11 +1453,17 @@ describe("delegation routing gate", () => {
     }
   });
 
-  it("orchestrates two or more independent workstreams", () => {
+  it("fans clear independent workstreams out directly from root", () => {
     expect(decideDelegationRoute({ role: "root", independentWorkstreams: 3 })).toMatchObject({
-      route: "orchestrate",
+      route: "fanout_direct",
       maxParallel: 3,
     });
+  });
+
+  it("uses an orchestrator only when decomposition or joining needs a separate owner", () => {
+    expect(
+      decideDelegationRoute({ role: "root", independentWorkstreams: 3, needsOrchestrator: true }),
+    ).toMatchObject({ route: "orchestrate", maxParallel: 3 });
   });
 
   it("keeps serial caller-owned integration in the root", () => {
@@ -1435,11 +1472,21 @@ describe("delegation routing gate", () => {
     ).toMatchObject({ route: "integrate_inline", maxParallel: 0 });
   });
 
-  it("delegates a single bounded task even from the root", () => {
+  it("keeps one bounded task inline at root unless a distinct specialist is required", () => {
     expect(decideDelegationRoute({ role: "root" })).toMatchObject({
+      route: "execute_inline",
+      maxParallel: 0,
+    });
+    expect(decideDelegationRoute({ role: "root", specialistRequired: true })).toMatchObject({
       route: "delegate_single",
       maxParallel: 1,
     });
+  });
+
+  it("preserves multiple workstreams when requested concurrency is one", () => {
+    expect(
+      decideDelegationRoute({ role: "root", independentWorkstreams: 4, userMaxParallel: 1 }),
+    ).toMatchObject({ route: "fanout_direct", maxParallel: 1 });
   });
 
   it("uses workstream count and explicit concurrency preference, ignoring legacy task budgets", () => {
@@ -1457,7 +1504,7 @@ describe("delegation routing gate", () => {
         independentWorkstreams: 6,
         userMaxParallel: 2,
       }),
-    ).toMatchObject({ route: "orchestrate", maxParallel: 2 });
+    ).toMatchObject({ route: "fanout_direct", maxParallel: 2 });
   });
 
   it("allows read-only triage in place and still delegates implementation", () => {
@@ -1471,12 +1518,14 @@ describe("delegation routing gate", () => {
   it("embeds the routing contract in start and orchestrator prompts", () => {
     const profiles = getSwarmAgentProfiles(normalizeAgentProfiles([]));
 
-    for (const name of ["start", "orchestrator"]) {
-      const prompt = profiles.find((profile) => profile.name === name)?.systemPrompt ?? "";
-      expect(prompt).toContain("Перед действием классифицируй задачу");
-      expect(prompt).toContain("integrate_inline");
-      expect(prompt).toContain("max_parallel");
-    }
+    const start = profiles.find((profile) => profile.name === "start")?.systemPrompt ?? "";
+    const orchestrator =
+      profiles.find((profile) => profile.name === "orchestrator")?.systemPrompt ?? "";
+    expect(start).toContain("Одна ограниченная задача без независимых веток");
+    expect(start).not.toContain("integrate_inline");
+    expect(orchestrator).toContain("Перед действием классифицируй задачу");
+    expect(orchestrator).toContain("integrate_inline");
+    expect(orchestrator).toContain("max_parallel");
   });
 
   it("clamps the runtime swarm DAG parallelism through the routing gate", () => {

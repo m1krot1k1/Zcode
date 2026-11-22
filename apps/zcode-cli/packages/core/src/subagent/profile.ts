@@ -34,7 +34,9 @@ export {
 export type DelegationRoute =
   | "answer_directly"
   | "delegate_single"
+  | "fanout_direct"
   | "orchestrate"
+  | "execute_inline"
   | "integrate_inline";
 
 export interface DelegationEnvelope {
@@ -47,6 +49,10 @@ export interface DelegationEnvelope {
   userMaxParallel?: number;
   /** Read-only triage may stay with the caller; implementation still delegates. */
   readOnly?: boolean;
+  /** True only when a distinct specialist must own the task; availability alone is insufficient. */
+  specialistRequired?: boolean;
+  /** Root uses a separate orchestrator only when decomposition or joining needs its own owner. */
+  needsOrchestrator?: boolean;
 }
 
 export interface DelegationDecision {
@@ -72,7 +78,24 @@ export function decideDelegationRoute(envelope: DelegationEnvelope): DelegationD
   const workstreams = Math.max(1, envelope.independentWorkstreams ?? 1);
   const userMaxParallel = Math.max(1, envelope.userMaxParallel ?? workstreams);
   const maxParallel = Math.max(1, Math.min(workstreams, userMaxParallel));
-  if (workstreams >= 2 && maxParallel >= 2) {
+  if (envelope.role === "root" && envelope.needsOrchestrator === true) {
+    return {
+      route: "orchestrate",
+      reason: "decomposition or join needs a separate owner",
+      maxParallel,
+    };
+  }
+
+  if (workstreams >= 2) {
+    if (envelope.role === "root") {
+      // 修复依据：root 已清楚划分分支时可一次并行派发，省去无意义的 orchestrator 交接。
+      return {
+        route: "fanout_direct",
+        reason: "clear independent workstreams can be dispatched directly",
+        maxParallel,
+      };
+    }
+
     return {
       route: "orchestrate",
       reason: "multiple independent workstreams",
@@ -96,7 +119,11 @@ export function decideDelegationRoute(envelope: DelegationEnvelope): DelegationD
     };
   }
 
-  return { route: "delegate_single", reason: "single bounded task", maxParallel: 1 };
+  if (envelope.specialistRequired === true) {
+    return { route: "delegate_single", reason: "a distinct specialist is required", maxParallel: 1 };
+  }
+
+  return { route: "execute_inline", reason: "single bounded task stays with the caller", maxParallel: 0 };
 }
 
 export interface SwarmParallelismInput {
