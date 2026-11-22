@@ -3635,6 +3635,7 @@ describe("Explore subagent", () => {
                         description: "Parallel one",
                         prompt: "Run foreground child one.",
                         subagent_type: "Explore",
+                        run_in_background: false,
                       },
                     },
                     {
@@ -3644,6 +3645,7 @@ describe("Explore subagent", () => {
                         description: "Parallel two",
                         prompt: "Run foreground child two.",
                         subagent_type: "Explore",
+                        run_in_background: false,
                       },
                     },
                   ],

@@ -81,6 +81,10 @@ export function createCodeIntelligenceService(
   const localEmbedding =
     options.localEmbeddingRuntime ?? createLocalEmbeddingRuntime({ fetch: fetchImpl });
   const progressByIdentity = new Map<string, WorkspaceProgress>();
+  // Пока идёт полный проход, worker занят и не отвечает на status. Держим последний
+  // успешный payload, чтобы status/getStatus не вставал в очередь за индексацией:
+  // иначе Host RPC (включая CodeIndex hint перед main_turn) ждёт десятки секунд.
+  const lastStatusByIdentity = new Map<string, WorkerStatusPayload>();
   const diagnosticsByIdentity = new Map<string, string[]>();
   const activePasses = new Map<string, Promise<CodeIndexStatus>>();
   const activatedRoots = new Map<string, string>();
@@ -198,23 +202,33 @@ export function createCodeIntelligenceService(
 
   const statusOf = async (params: WorkspaceParams): Promise<CodeIndexStatus> => {
     const workspace = resolveWorkspace(params);
+    const progress = progressByIdentity.get(workspace.key);
+    // Bug 原因: status уходил в worker и ждал весь активный index-pass; на большом
+    // workspace это 14+ секунд, и main_turn/UI RPC стояли в очереди. Пока проход
+    // идёт, отдаём последний известный payload и progress фоном, не ожидая worker.
+    if (progress?.state === "indexing") {
+      const cached = lastStatusByIdentity.get(workspace.key);
+      const embedding = await embeddingStatus(workspace.key, cached);
+      return statusFromWorker(
+        cached ?? { state: "indexing", counts: {} },
+        embedding,
+        diagnosticsByIdentity.get(workspace.key) ?? [],
+        { discoveredFiles: progress.discoveredFiles, indexedFiles: progress.indexedFiles },
+      );
+    }
     // Оба источника читаются ПОСЛЕ хука: если проход завершился, пока ответ готовился,
     // статус обязан показать актуальное `ready`, а не устаревшее `indexing`/`unindexed`.
     await options.beforeReadStatusProgress?.();
     const payload = (await client.status(refOf(params)).catch(() => undefined)) as
       | WorkerStatusPayload
       | undefined;
+    if (payload) lastStatusByIdentity.set(workspace.key, payload);
     const embedding = await embeddingStatus(workspace.key, payload);
-    const progress = progressByIdentity.get(workspace.key);
-    const status = statusFromWorker(
+    return statusFromWorker(
       payload ?? { state: "unindexed", counts: {} },
       embedding,
       diagnosticsByIdentity.get(workspace.key) ?? [],
-      progress?.state === "indexing"
-        ? { discoveredFiles: progress.discoveredFiles, indexedFiles: progress.indexedFiles }
-        : undefined,
     );
-    return status;
   };
 
   const runPass = async (
@@ -246,6 +260,7 @@ export function createCodeIntelligenceService(
               ...(embeddingApiKey ? { embeddingApiKey } : {}),
             }))) as WorkerStatusPayload;
         if (payload.migratedFromV1) pushDiagnostic(workspace.key, MIGRATION_DIAGNOSTIC);
+        lastStatusByIdentity.set(workspace.key, payload);
         const embedding = await embeddingStatus(workspace.key, payload);
         return statusFromWorker(payload, embedding, diagnosticsByIdentity.get(workspace.key) ?? []);
       } catch (error) {
@@ -529,6 +544,7 @@ export function createCodeIntelligenceService(
         await client.clear(refOf(params));
         diagnosticsByIdentity.delete(workspace.key);
         progressByIdentity.delete(workspace.key);
+        lastStatusByIdentity.delete(workspace.key);
       } finally {
         clearing.delete(workspace.key);
       }

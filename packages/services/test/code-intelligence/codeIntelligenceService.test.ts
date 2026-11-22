@@ -216,31 +216,16 @@ describe("code intelligence embedding configuration", () => {
     });
   });
 
-  it("reports ready when a status read outlives the indexing pass that was in flight", async () => {
+  it("reports ready after the indexing pass that was in flight", async () => {
     const { workspacePath, root } = await createTestService();
     await writeFile(join(workspacePath, "held.ts"), "export const held = true;\n", "utf8");
     let releaseFetch: (response: Response) => void = () => undefined;
     const fetchGate = new Promise<Response>((resolve) => {
       releaseFetch = resolve;
     });
-    let releaseStatusRead: () => void = () => undefined;
-    let markStatusPaused: () => void = () => undefined;
-    const statusPaused = new Promise<void>((resolve) => {
-      markStatusPaused = resolve;
-    });
-    const statusGate = new Promise<void>((resolve) => {
-      releaseStatusRead = resolve;
-    });
-    let pauseStatusRead = false;
     const service = createCodeIntelligenceService({
       indexRootDir: join(root, "stale-status-index"),
       fetch: vi.fn(() => fetchGate) as typeof fetch,
-      beforeReadStatusProgress: async () => {
-        if (!pauseStatusRead) return;
-        pauseStatusRead = false;
-        markStatusPaused();
-        await statusGate;
-      },
     });
     services.push(service);
     await service.setEmbeddingConfig({
@@ -254,18 +239,50 @@ describe("code intelligence embedding configuration", () => {
     await vi.waitFor(async () => {
       expect((await service.getStatus({ workspacePath })).state).toBe("indexing");
     });
-    pauseStatusRead = true;
-    const pendingStatus = service.getStatus({ workspacePath });
-    await statusPaused;
     releaseFetch(
       Response.json({
         data: [{ index: 0, embedding: [1, 0] }],
       }),
     );
     await indexing;
-    releaseStatusRead();
 
-    await expect(pendingStatus).resolves.toMatchObject({ state: "ready" });
+    await expect(service.getStatus({ workspacePath })).resolves.toMatchObject({ state: "ready" });
+  });
+
+  it("returns indexing status without waiting for the busy worker", async () => {
+    const { workspacePath, root } = await createTestService();
+    await writeFile(join(workspacePath, "held.ts"), "export const held = true;\n", "utf8");
+    let releaseFetch: (response: Response) => void = () => undefined;
+    const fetchGate = new Promise<Response>((resolve) => {
+      releaseFetch = resolve;
+    });
+    const statusHook = vi.fn(async () => {});
+    const service = createCodeIntelligenceService({
+      indexRootDir: join(root, "busy-worker-index"),
+      fetch: vi.fn(() => fetchGate) as typeof fetch,
+      beforeReadStatusProgress: statusHook,
+    });
+    services.push(service);
+    await service.setEmbeddingConfig({
+      workspacePath,
+      provider: "openai-compatible",
+      endpoint: "https://example.com/v1/embeddings",
+      model: "embed-model",
+    });
+
+    const indexing = service.indexWorkspace({ workspacePath });
+    await vi.waitFor(async () => {
+      expect((await service.getStatus({ workspacePath })).state).toBe("indexing");
+    });
+    const callsBefore = statusHook.mock.calls.length;
+    const startedAt = Date.now();
+    const status = await service.getStatus({ workspacePath });
+    expect(status.state).toBe("indexing");
+    expect(statusHook.mock.calls.length).toBe(callsBefore);
+    expect(Date.now() - startedAt).toBeLessThan(1000);
+
+    releaseFetch(Response.json({ data: [{ index: 0, embedding: [1, 0] }] }));
+    await indexing;
   });
 
   it("sanitizes invalid probe inputs and credential-store failures without saving draft settings", async () => {
