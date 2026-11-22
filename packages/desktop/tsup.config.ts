@@ -367,6 +367,9 @@ export default defineConfig([
     entry: {
       "host/index": "src/host/index.ts",
       "host/tasksStorageWorker": "src/host/database-startup/tasksStorageWorker.ts",
+      // IndexWorkerClient ищет indexWorker.js рядом с host-бандлом. Без отдельного
+      // энтри индекс исполняется в потоке Host и блокирует RPC/отправку на большом проекте.
+      "host/indexWorker": "../services/src/code-intelligence/worker/indexWorker.ts",
     },
     outDir: "out",
     format: "esm",

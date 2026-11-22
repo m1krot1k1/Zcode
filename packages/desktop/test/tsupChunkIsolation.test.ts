@@ -36,6 +36,14 @@ function getNoExternal(configName: string): string[] {
   return target?.noExternal as string[];
 }
 
+function getEntry(configName: string): Record<string, string> {
+  const configs = Array.isArray(tsupConfig) ? tsupConfig : [tsupConfig];
+  const target = configs.find((config) => config.name === configName);
+  expect(target).toBeDefined();
+  expect(target?.entry).toBeTypeOf("object");
+  return target?.entry as Record<string, string>;
+}
+
 function getDefines(configName: string): Record<string, string> {
   const configs = Array.isArray(tsupConfig) ? tsupConfig : [tsupConfig];
   const target = configs.find((config) => config.name === configName);
@@ -57,6 +65,14 @@ describe("desktop tsup chunk isolation", () => {
 
   it("host 构建应将 chunk 输出到 host 子目录，避免覆盖 main 构建产物", () => {
     expect(getChunkNames("host")).toBe("host/chunk-[hash]");
+  });
+
+  it("host 构建应输出独立 indexWorker.js，避免索引阻塞 Host RPC", () => {
+    // IndexWorkerClient резолвит indexWorker.js рядом с host-бандлом. Без файла
+    // индекс исполняется в потоке Host, и отправка ждёт весь проход индексации.
+    expect(getEntry("host")).toMatchObject({
+      "host/indexWorker": "../services/src/code-intelligence/worker/indexWorker.ts",
+    });
   });
 
   it("main/host 构建应外置飞书 SDK，避免 Electron ESM 动态 require 崩溃", () => {
