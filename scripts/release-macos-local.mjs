@@ -14,6 +14,7 @@ import { main } from "./release-macos-local/main.mjs";
 export {
   assertMacReleaseAssetPair,
   clearExpectedMacReleaseAssets,
+  clearMacAppOutput,
   expectedMacReleaseAssetNames,
   selectMacReleaseAppBundle,
   selectMacReleaseAssets,

@@ -23,6 +23,7 @@ import {
   bumpSemver,
   buildReleaseCreateArgs,
   clearExpectedMacReleaseAssets,
+  clearMacAppOutput,
   expectedMacReleaseAssetNames,
   macTargetArch,
   preflightMacRelease,
@@ -229,6 +230,25 @@ test("перед сборкой удаляются только точные DMG
       removed,
     );
     assert.deepEqual((await readdir(distDir)).sort(), files.slice(2).sort());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("перед сборкой удаляется прошлый app output выбранной архитектуры", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zcode-release-clean-app-"));
+  try {
+    const distDir = path.join(root, "dist");
+    const staleApp = path.join(distDir, "mac-arm64", "ZCodePreview.app", "Contents");
+    const otherArch = path.join(distDir, "mac", "ZCodePreview.app");
+    await mkdir(staleApp, { recursive: true });
+    await mkdir(otherArch, { recursive: true });
+    await writeFile(path.join(staleApp, "Info.plist"), "stale");
+    await writeFile(path.join(otherArch, "Info.plist"), "keep");
+    const removedOutput = await clearMacAppOutput({ distDir, targetArch: "arm64" });
+    assert.equal(removedOutput, path.join(distDir, "mac-arm64"));
+    await assert.rejects(readdir(removedOutput), /ENOENT/u);
+    assert.deepEqual(await readdir(otherArch), ["Info.plist"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

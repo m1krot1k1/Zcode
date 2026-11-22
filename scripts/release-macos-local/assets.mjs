@@ -70,6 +70,25 @@ export async function clearExpectedMacReleaseAssets({
   return paths;
 }
 
+/**
+ * electron-builder переименовывает распакованный Electron.app в продуктовый bundle.
+ * Если прошлый запуск оставил непустой dist/mac-<arch>/<Product>.app, rename падает с
+ * ENOTEMPTY ещё до подписи и публикации. Удаляем только целевой output текущей арх.
+ */
+export async function clearMacAppOutput({
+  distDir,
+  targetArch,
+  removeDirectory = (dirPath) => rm(dirPath, { recursive: true, force: true }),
+}) {
+  if (targetArch !== "arm64" && targetArch !== "x64") {
+    throw new Error(`Нужна точная архитектура release asset: ${targetArch}`);
+  }
+  // electron-builder defaultArch=x64: x64 → dist/mac, arm64 → dist/mac-arm64.
+  const outputDir = path.join(distDir, targetArch === "arm64" ? "mac-arm64" : "mac");
+  await removeDirectory(outputDir);
+  return outputDir;
+}
+
 export function selectMacReleaseAppBundle(appEntries, expectedName = "ZCode.app") {
   const appNames = appEntries
     .filter((entry) => entry.isDirectory() && entry.name.endsWith(".app"))

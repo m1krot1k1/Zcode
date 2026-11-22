@@ -21,6 +21,7 @@ import {
   assertReleaseTargetSha,
   bumpSemver,
   clearExpectedMacReleaseAssets,
+  clearMacAppOutput,
   expectedMacReleaseAssetNames,
   macTargetArch,
   preflightMacRelease,
@@ -380,6 +381,7 @@ async function main() {
         productName: previewProductName,
         artifactSuffix: "_TEST",
       });
+      await clearMacAppOutput({ distDir, targetArch });
       await writeFile(packagePath, replacePackageVersion(original, version));
       await writeFile(packageLockPath, replaceRootPackageLockVersion(originalLock, version));
       await run(["git", "add", "--", "package.json", "package-lock.json"]);

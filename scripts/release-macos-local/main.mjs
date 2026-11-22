@@ -6,7 +6,7 @@ import {
   createMacReleaseBuildEnvironment,
   preflightMacReleaseSecurity,
 } from "../macos-release-security.mjs";
-import { clearExpectedMacReleaseAssets } from "./assets.mjs";
+import { clearExpectedMacReleaseAssets, clearMacAppOutput } from "./assets.mjs";
 import { capture, run } from "./commands.mjs";
 import { assertReleaseTargetSha, buildReleaseCreateArgs } from "./github-release.mjs";
 import { preflightMacRelease } from "./preflight.mjs";
@@ -66,6 +66,7 @@ export async function main() {
     throw new Error(`Удалённый Git tag уже существует: ${tag}`);
   }
   await clearExpectedMacReleaseAssets({ distDir, version: next, targetArch });
+  await clearMacAppOutput({ distDir, targetArch });
   await writeFile(packagePath, replacePackageVersion(original, next));
   console.log(`version ${next} arch ${targetArch}`);
   let committed = false;
