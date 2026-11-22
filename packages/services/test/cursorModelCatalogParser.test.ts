@@ -37,6 +37,19 @@ describe("parseCursorModelCatalog", () => {
     expect(models.map((model) => model.modelId)).toEqual(["composer-1", "bad", "gpt-5"]);
   });
 
+  it("не публикует строку Tip как модель", () => {
+    const models = parseCursorModelCatalog(
+      [
+        "auto - Auto",
+        "composer-1 - Composer 1",
+        'Tip: run "cursor-agent models" again after signing in',
+        "Note: model names may change",
+      ].join("\n"),
+    );
+
+    expect(models.map((model) => model.modelId)).toEqual(["auto", "composer-1"]);
+  });
+
   it("возвращает пустой массив для пустого вывода", () => {
     expect(parseCursorModelCatalog("")).toEqual([]);
   });

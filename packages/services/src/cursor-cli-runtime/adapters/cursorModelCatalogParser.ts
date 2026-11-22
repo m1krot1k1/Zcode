@@ -5,6 +5,10 @@ const LINE_MARKERS = /[*>\u2713\u2714\u2190\u2192]/gu;
 const CURRENT_SUFFIX = /\s*\((?:current|default|active)\)\s*$/iu;
 const HEADER_LINE = /^(?:model(?:s| id)?|id|name|available models?)\b/iu;
 const PROVIDER_HEADER_LINE = /^[a-zA-Z][\w .-]*:\s*$/u;
+// `cursor-agent models` заканчивает вывод строкой-подсказкой (`Tip: ...`). Без этого
+// фильтра первый токен `Tip:` проходил MODEL_ID_PATTERN (двоеточие допустимо) и попадал
+// в каталог как отдельная модель.
+const INSTRUCTIONAL_LINE = /^(?:tips?|notes?|hints?|usage|docs?|documentation)\s*:/iu;
 const SEPARATOR_LINE = /^[-=_\s]+$/u;
 
 /**
@@ -18,10 +22,11 @@ export function parseCursorModelCatalog(output: string): CursorCliModelDescripto
   for (const rawLine of output.split(/\r?\n/u)) {
     const line = rawLine.replace(LINE_MARKERS, " ").replace(CURRENT_SUFFIX, "").trim();
     if (!line || SEPARATOR_LINE.test(line)) continue;
-    if (HEADER_LINE.test(line) || PROVIDER_HEADER_LINE.test(line)) continue;
+    if (HEADER_LINE.test(line) || PROVIDER_HEADER_LINE.test(line) || INSTRUCTIONAL_LINE.test(line))
+      continue;
 
     const [modelId, ...rest] = line.split(/\s+/u);
-    if (!modelId || !MODEL_ID_PATTERN.test(modelId)) continue;
+    if (!modelId || modelId.endsWith(":") || !MODEL_ID_PATTERN.test(modelId)) continue;
     if (models.has(modelId)) continue;
 
     // Разделитель после id (`-`, `:`, `—`) не является частью имени модели.
