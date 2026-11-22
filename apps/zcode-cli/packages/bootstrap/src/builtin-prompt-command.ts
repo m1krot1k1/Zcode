@@ -11,7 +11,7 @@ const ZCODE_NATIVE_AGENT_COMMANDS = {
   start: {
     role: "start",
     instruction:
-      "Use the start gateway: preserve the user's goal, scope, constraints, and authorization; send one deliverable directly to its best matching worker. Use orchestrator only for multiple independent deliverables or real dependency planning and joining. At the root, call Task(start) only. If start returns an exact missing plugin capability, call InstallCapability for that plugin only after user approval, then retry Task(start) once. For any other blocked/failed result, report it; do not use root workspace tools or launch sibling profiles. Do not ask again for permission already granted.",
+      "Use the start gateway: preserve the user's goal, scope, constraints, and authorization. If the request has two or more independent deliverables, dispatch an orchestrator in one Task call with a task_graph whose independent leaves run in the same wave and max_parallel set to host capacity; nested children are allowed while each adds an independent deliverable. For a single bounded deliverable, send one Task directly to its best matching worker. Workers must batch independent tool calls in the same assistant message so the runtime executes them in parallel; do not serialize reads, searches, or independent checks. At the root, call Task(start) only. If start returns an exact missing plugin capability, call InstallCapability for that plugin only after user approval, then retry Task(start) once. For any other blocked/failed result, report it; do not use root workspace tools or launch sibling profiles. Do not ask again for permission already granted.",
     defaultTask: "Handle the user's actionable workspace request.",
   },
   review: {

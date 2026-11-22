@@ -1,4 +1,5 @@
 import type { AgentProfile } from "@zcode/shared";
+import { createSpecialistProfiles } from "@zcode/shared";
 
 // 16 канонических ролей и их контракты вынесены из profile.ts: файл перешёл порог
 // 800 строк, а ростер и тексты контрактов — стабильный каталог без логики.
@@ -12,6 +13,14 @@ export const SWARM_AGENT_TYPES = [
   "frontend-coder",
   "backend-coder",
   "infra-coder",
+  "architect",
+  "planner",
+  "data-engineer",
+  "ml-engineer",
+  "mobile-coder",
+  "performance-engineer",
+  "migration-engineer",
+  "docs-writer",
   "reviewer",
   "security-reviewer",
   "test-engineer",
@@ -275,6 +284,14 @@ const ROLE_EVIDENCE_LINES: Readonly<Record<string, string>> = {
   "frontend-coder": "Evidence: verify desktop and narrow layouts, theme, keyboard, and i18n; attach the actual check.",
   "backend-coder": "Evidence: verify state ownership, idempotency, concurrency, and the targeted integration test.",
   "infra-coder": "Evidence: verify the build/release path and cross-platform behavior; attach command output.",
+  architect: "Evidence: cite the existing contracts and path:line; give alternatives, trade-offs, and the acceptance scenario.",
+  planner: "Evidence: every deliverable needs a verifiable acceptance check and an owner; mark unknowns instead of inventing scope.",
+  "data-engineer": "Evidence: show migration order, idempotent rerun, integrity checks, and rollback proof.",
+  "ml-engineer": "Evidence: baseline and candidate on the same eval, with quality, cost, and latency numbers.",
+  "mobile-coder": "Evidence: verify narrow layout, keyboard/safe area, offline path, accessibility, and both mobile platforms.",
+  "performance-engineer": "Evidence: before/after p50/p95 from the same reproducible scenario, plus the profile that found the bottleneck.",
+  "migration-engineer": "Evidence: prove compatibility during the transition, rerun safety, and rollback on real data.",
+  "docs-writer": "Evidence: every documented claim links to code, spec, test, or command output; no future promises.",
   reviewer: "Evidence: every finding needs path:line, impact, and a concrete failure scenario; omit style-only nits.",
   "security-reviewer": "Evidence: prove the attack path or secret exposure; include severity, boundary, and remediation check.",
   "test-engineer": "Evidence: show the failing test before the fix and green after; do not substitute broad suites for targeted proof.",
@@ -288,7 +305,7 @@ const baseBuiltInSwarmProfiles: readonly AgentProfile[] = [
   {
     name: "start",
     description:
-      "Передаёт одну задачу точному worker-профилю; использует orchestrator только для независимых веток с необходимой декомпозицией или join.",
+      "Шлюз для небольших задач и маршрутизатор сложной работы к профильному оркестратору.",
     color: "cyan",
     injectAgentsMd: true,
     source: "built-in",
@@ -558,6 +575,15 @@ const baseBuiltInSwarmProfiles: readonly AgentProfile[] = [
       "zcode-swarm",
     ],
   },
+  ...createSpecialistProfiles({
+    codeIndexContract: CODE_INDEX_USAGE_CONTRACT,
+    capabilityContract: CAPABILITY_SELECTION_CONTRACT,
+    workerParallelContract: WORKER_PARALLEL_DELEGATION_CONTRACT,
+    handoffContract: SUBAGENT_HANDOFF_CONTRACT,
+    inspectionTools: INSPECTION_SUBAGENT_TOOL_NAMES,
+    researcherTools: RESEARCHER_SUBAGENT_TOOL_NAMES,
+    workerTools: WORKER_SUBAGENT_TOOL_NAMES,
+  }),
   {
     name: "reviewer",
     description:
@@ -726,6 +752,14 @@ const BUILT_IN_MAX_TURNS: Record<(typeof SWARM_AGENT_TYPES)[number], number> = {
   "frontend-coder": 50,
   "backend-coder": 50,
   "infra-coder": 50,
+  architect: 25,
+  planner: 20,
+  "data-engineer": 40,
+  "ml-engineer": 40,
+  "mobile-coder": 45,
+  "performance-engineer": 35,
+  "migration-engineer": 40,
+  "docs-writer": 25,
   reviewer: 25,
   "security-reviewer": 25,
   "test-engineer": 30,
