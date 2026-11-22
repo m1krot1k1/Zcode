@@ -200,7 +200,9 @@ provider независимо.
 
 - `packages/provider`: `cursor-cli` проходит api-shape, pair-rule, personal-rule; группировка
   reasoning/fast вариантов, restricted-CEL map и миграция legacy flat id покрыты
-  `cursorModelGrouping.test.ts` и `model-selection-config.test.ts`.
+  `cursorModelGrouping.test.ts` и `model-selection-config.test.ts`; реальный каталог
+  `cursor-agent` от 2026-11-22 (285 плоских id) проецируется в 78 селекторов без дублей,
+  включая `gpt-5.5-extra-high` → `gpt-5.5` + `xhigh`.
 - `packages/shared`: парсинг snapshot с `cursor`, карта `cliExecutablePaths`, model id schema.
 - `packages/services`: композитный каталог публикует 0/1/2 провайдера по флагам; резолвер и
   парсер `--list-models`; кэш статуса/каталога и last-good fallback.
