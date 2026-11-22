@@ -360,6 +360,11 @@ export const zcodeToolUpdatedEventPayloadSchema = z.discriminatedUnion("kind", [
     .extend({
       kind: z.literal("started"),
       startedAt: protocolInstantSchema,
+      // 修复依据：CLI 在执行前已发出解析后的 capability，漏掉字段会让 v3 严格校验丢弃整条工具事件。
+      readOnly: z.boolean().optional(),
+      sideEffectScope: z
+        .enum(["none", "workspace", "git", "network", "system", "session", "userInteraction"])
+        .optional(),
     })
     .strict(),
   zcodeToolCallBasePayloadSchema

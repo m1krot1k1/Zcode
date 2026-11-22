@@ -52,7 +52,7 @@ describe("FilteredSkillPort marketplace delegation", () => {
     });
     await expect(
       port.loadSkill({ name: "other-skill", workingDirectory: "/w" }),
-    ).rejects.toThrow("Skill is not allowed for subagent");
+    ).rejects.toThrow(/Skill 'other-skill' is not allowed by this subagent profile/u);
   });
 
   it("explains when an explicitly allowed skill is missing from inherited discovery", async () => {

@@ -21,6 +21,17 @@ import {
 } from "../src/subagent/profile.js";
 
 describe("subagent profile Markdown parser", () => {
+  it("keeps /start agent-only and routes plugin skills through the plugin capability path", () => {
+    const profiles = getSwarmAgentProfiles([]);
+    const start = profiles.find((profile) => profile.name === "start");
+    const orchestrator = profiles.find((profile) => profile.name === "orchestrator");
+
+    expect(start?.systemPrompt).toContain("Одна ограниченная задача без независимых веток");
+    expect(orchestrator?.systemPrompt).toContain("InstallCapability");
+    expect(orchestrator?.systemPrompt).toContain("только для skills.sh");
+    expect(orchestrator?.systemPrompt).toContain("ручной fallback");
+  });
+
   it("gives every working role a role-specific evidence contract", () => {
     const profiles = getSwarmAgentProfiles([]);
     const working = profiles.filter((profile) => profile.name !== "start" && profile.name !== "orchestrator");

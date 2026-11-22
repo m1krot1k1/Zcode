@@ -125,9 +125,10 @@ class FilteredSkillPort implements SkillPort {
     const resolvedName = resolution.name;
     if (!resolvedName) {
       // 祖先白名单拒绝与当前目录未发现技能是两种故障；合并成“not allowed”会误导 Agent 以为环境禁用了 Skill。
+      // 修复依据：loadSkill 的实际边界是 profile allowlist；测试已验证显式列入的 marketplace skill 可正常加载。
       const message = resolution.allowedByProfile
         ? `Skill '${request.name}' is allowed by this subagent profile but is missing from the inherited skill catalog. Check the active workspace skill roots and ancestor allowlists.`
-        : "Skill is not allowed for subagent";
+        : `Skill '${request.name}' is not allowed by this subagent profile. Allowed skills: ${[...(this.allowedSkills ?? [])].sort().join(", ") || "none"}. This is a profile-scoped restriction; use a profile that declares the required skill.`;
       throw createCoreError(
         CoreErrorType.ToolExecutionFailed,
         message,

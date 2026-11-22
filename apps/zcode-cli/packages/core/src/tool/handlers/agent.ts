@@ -28,9 +28,8 @@ const MAX_AGENT_MODEL_BYTES = 120_000;
 
 /**
  * Жёсткий preflight перед спавном: `requires` объявляет уже установленные
- * capability. Отсутствующий skill блокирует spawn до SkillInstall; отсутствующий
- * MCP/plugin — до InstallCapability с user approval. После установки родитель
- * повторяет тот же Task.
+ * capability. SkillInstall обслуживает только публичный skills.sh; plugin-owned
+ * skills нужно устанавливать как plugin через InstallCapability с approval.
  */
 export async function assertRequiredCapabilities(
   requires: readonly string[] | undefined,
@@ -121,9 +120,10 @@ export async function assertRequiredCapabilities(
     }
     const missing = skills.filter((name) => !available.has(name));
     if (missing.length > 0) {
+      // 根因：plugin-qualified skill 被误导到 skills.sh 而 404；插件必须走 InstallCapability。
       throw createCoreError(
         CoreErrorType.ToolExecutionFailed,
-        `Required skill(s) not installed: ${missing.join(", ")}. Run SkillInstall for each, then retry the same Task. The spawn was not started.`,
+        `Required skill(s) not installed: ${missing.join(", ")}. ${missing.some((name) => /^[^:]+:[^:]+$/u.test(name)) ? `Plugin-qualified skills require the exact plugin id and InstallCapability after user approval; do not use SkillInstall. SkillInstall is only for public skills.sh results. Retry this exact Task once after installation; otherwise return the blocker without direct-tool fallback.` : "Search SkillSearch for a public skills.sh result, install only that exact result with SkillInstall, then retry this exact Task once. If it fails, return the blocker without direct-tool fallback."} The spawn was not started.`,
         {
           context: {
             code: AgentErrorCode.CAPABILITY_MISSING,

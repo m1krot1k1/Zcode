@@ -55,8 +55,9 @@ subagents. The result was expensive, slow, and only nominally specialized.
 ### Start routing
 
 1. A single bounded task goes directly to a matching worker profile.
-2. `orchestrator` is used for two or more independent workstreams, unknown scope, or
-   explicit planning/join.
+2. `orchestrator` is used for two or more independent workstreams or explicit dependency
+   planning/join when a separate owner reduces the critical path. Unclear scope alone does
+   not add a handoff level; the exact worker owns research for one deliverable.
 3. `start` never runs implementation itself and never delegates to itself.
 4. Admission and the visible catalog use the same predicate, so the model cannot call a
    role it cannot see.

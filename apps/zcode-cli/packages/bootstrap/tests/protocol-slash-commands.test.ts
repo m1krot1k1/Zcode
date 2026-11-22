@@ -13,6 +13,20 @@ import { resolveZCodeCustomCommandPrompt } from "../src/custom-command-prompt.js
 import { listProtocolSlashCommands } from "../src/zcode-protocol/slash-commands.js";
 
 describe("protocol slash command surface", () => {
+  it("keeps /start routing one deliverable on its exact worker", () => {
+    const prompt = resolveZCodeBuiltinPromptCommand("/start build one report", {
+      workingDirectory: "/tmp/zcode-start-prompt",
+    });
+
+    expect(prompt).toContain("Required exact profile: start");
+    expect(prompt).toContain("one deliverable directly to its best matching worker");
+    expect(prompt).toContain("orchestrator only for multiple independent deliverables");
+    expect(prompt).toContain("At the root, call Task(start) only");
+    expect(prompt).toContain("call InstallCapability for that plugin only after user approval");
+    expect(prompt).toContain("do not use root workspace tools or launch sibling profiles");
+    expect(prompt).not.toContain("delegate complex work to orchestrator");
+  });
+
   it("returns app-supported builtins plus agent-discovered custom commands", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-protocol-slash-"));
     const workspace = join(tempRoot, "workspace");

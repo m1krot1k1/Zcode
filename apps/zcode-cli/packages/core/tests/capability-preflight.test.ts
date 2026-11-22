@@ -64,7 +64,16 @@ describe("Task capability preflight", () => {
     }));
     await expect(
       assertRequiredCapabilities(["skill:missing"], contextWith(discover)),
-    ).rejects.toThrow(/not installed.*SkillInstall/su);
+    ).rejects.toThrow(/not installed.*SkillSearch.*SkillInstall/su);
+  });
+
+  it("routes plugin-qualified skill requirements to plugin installation, not skills.sh", async () => {
+    const discover = vi.fn(async () => ({ skills: [], diagnostics: [], totalDiscovered: 0 }));
+    await expect(
+      assertRequiredCapabilities(["skill:presentations:pptx"], contextWith(discover)),
+    ).rejects.toThrow(
+      /presentations:pptx.*InstallCapability.*do not use SkillInstall/su,
+    );
   });
 
   it("fails closed for MCP and plugin requirements", async () => {

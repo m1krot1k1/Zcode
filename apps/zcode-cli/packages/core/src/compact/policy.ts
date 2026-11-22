@@ -13,7 +13,9 @@ export const DEFAULT_WORKING_CONTEXT_CEILING_TOKENS = 80_000;
 // 否则请求预算和压缩窗口会继续按两套常量计算。
 export const DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 32_000;
 const PREFLIGHT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 21_000;
-export const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000;
+// Compaction is an auxiliary call; keep the summary bounded so it cannot turn into a
+// second long-form generation when the model is asked to reconstruct a large transcript.
+export const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 8_000;
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000;
 export const DEFAULT_AUTOCOMPACT_THRESHOLD_PERCENT = 100;
 export const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3;

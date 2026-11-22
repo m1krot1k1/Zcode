@@ -69,6 +69,7 @@ import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-h
 import { recordModelUsageFact } from "./usage-observability.js";
 import { resetProjectMemoryRecall } from "../helpers/project-memory-recall.js";
 import { createRuntimeModel, getLatestCompletedModelRequestId } from "./runtime-model.js";
+import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 import {
   filterOutputTokenContinuationEntries,
   preserveCanonicalContextPrefix,
@@ -180,11 +181,17 @@ async function compactActiveConversationImpl(
   const trigger = options.trigger ?? CompactTrigger.Manual;
   const phase = options.phase ?? defaultCompactPhaseForTrigger(trigger);
   const compactReason = options.compactReason ?? defaultCompactReasonForTrigger(trigger);
-  const compactModel =
+  const baseCompactModel =
     options.model ??
     createRuntimeModel(this, {
       selection: this.getSessionModelSelection(),
     });
+  // 根因：compact 继承了主模型的 max reasoning；一次自动压缩也会消耗数十秒。
+  // 修复依据：compact 是辅助调用，使用模型最低 reasoning 档，并限制总结输出到 8K。
+  const compactModel = baseCompactModel.bind({
+    ...auxiliaryModelOptions(baseCompactModel),
+    maxOutputTokens: MAX_OUTPUT_TOKENS_FOR_SUMMARY,
+  });
   const _executionMaxOutputTokens = compactModel.optionSpecs.maxOutputTokens.max;
   // Active compact 会跨多个 await 保留这份成员浅快照；它依赖 RuntimeMessageEntry
   // 不可变约定。selection、provider render 和最终 replace 会创建各自拥有的副本，
@@ -774,7 +781,7 @@ function selectInitialCompactEntriesForActiveConversation(input: {
 }
 
 function capCompactSummaryMaxOutputTokens(model: Model): number {
-  // Compact 是独立执行链，在这里显式选择模型上限与 summary 20K 上限中的较小值。
+  // Compact 是独立执行链；保留模型硬上限，同时遵守辅助总结的 8K 预算。
   const desired = Math.min(
     resolveNormalRequestMaxOutputTokens({
       modelMaxOutputTokens: model.optionSpecs.maxOutputTokens.max,

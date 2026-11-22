@@ -1222,6 +1222,32 @@ describe("ZCode Protocol", () => {
     ).toThrow();
   });
 
+  it("parses resolved capability metadata on started tool events", () => {
+    const event = zcodeSessionEventSchema.parse({
+      eventId: "evt_tool_started_capability",
+      seq: 16,
+      sessionId: "sess_1",
+      timestamp: 17,
+      type: "tool.updated",
+      payload: {
+        kind: "started",
+        toolCallId: "call_1",
+        toolName: "Bash",
+        startedAt: 17,
+        readOnly: true,
+        sideEffectScope: "none",
+      },
+    });
+
+    expect(event.payload).toMatchObject({ readOnly: true, sideEffectScope: "none" });
+    expect(() =>
+      zcodeSessionEventSchema.parse({
+        ...event,
+        payload: { ...event.payload, sideEffectScope: "unknown" },
+      }),
+    ).toThrow();
+  });
+
   it("parses background subagent mirrored tool updates", () => {
     const event = zcodeSessionEventSchema.parse({
       eventId: "evt_background_subagent_tool_started",
