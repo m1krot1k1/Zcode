@@ -1,6 +1,6 @@
 # Code-index worker must be shipped as its own bundle
 
-Status: active (2026-11-23, release 3.17.157)
+Status: active (2026-11-23, release 3.17.158)
 
 ## Problem
 
@@ -37,12 +37,22 @@ This is separate from ghost autocomplete; autocomplete was not present in either
   `tsupChunkIsolation.test.ts` and the packaged-artifact check.
 - The in-process fallback remains for tests and environments without the compiled worker,
   but production Desktop must not use it.
+- While a full index pass owns the worker, `getStatus` must not await the worker `status`
+  request. It returns the last successful payload plus the in-memory progress immediately.
+  The CodeIndex turn hint therefore sees `indexing` and skips optional context instead of
+  spending its 2 s budget; normal RPC (including send) stays responsive.
+- The last payload is reused only for display; it does not advance `generation`,
+  `updatedAt`, commits, or `ready` before the pass actually finishes.
 
 ## Verification
 
 - `packages/desktop/out/host/indexWorker.js` exists after `tsup`; a direct worker request
   returns a valid `status` result.
 - `tsupChunkIsolation.test.ts` asserts the `host/indexWorker` entry.
-- Rebuilt Desktop 3.17.157 measurement on the large workspace: click → `main_turn`
-  should be bounded by RPC/serialization (~1 s or less), not by the index pass.
+- Rebuilt Desktop 3.17.157 measurement on the large workspace with the index actively
+  running: click → `main_turn` **2,274 ms** instead of 15,593 ms.
+- 3.17.158 adds the cached-status fast path: the same measurement is **267 ms** while the
+  composer still shows «Индексируется». A tiny workspace with a ready index is 165 ms.
 - `pnpm typecheck`, `pnpm lint`, `architecture:check --changed` and focused tests pass.
+- `codeIntelligenceService.test.ts` holds an index pass open and asserts `getStatus`
+  returns `indexing` without calling the worker status seam, then `ready` after the pass.
