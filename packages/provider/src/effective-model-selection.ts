@@ -1,5 +1,6 @@
 import type { AccountProviderStates } from "./account-provider-state.js";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
+import { migrateLegacyModelSelection } from "./model-selection-config.js";
 export type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import {
   validateModelSelectionOptions,
@@ -21,7 +22,11 @@ export function resolveEffectiveModelSelection(input: {
   readonly classifyProvider: ModelSelectionProviderClassifier;
   readonly resolveLegacyReasoningLevel?: (selection: ModelSelection) => string | undefined;
 }): EffectiveModelSelectionResult {
-  const original = input.selection;
+  const original = input.selection
+    ? // Composer 读的是 renderer 里持久化的选择；Cursor 旧 flat id 必须在解析
+      // effective view 前无损迁移，否则模型已分组时这里会报 model-not-found 并退回 auto。
+      migrateLegacyModelSelection(input.registry, input.selection)
+    : null;
   if (!original)
     return Object.freeze({ effectiveSelection: null, selectionIssue: "selection-missing" });
   const kind = input.classifyProvider(original.providerId);

@@ -5,6 +5,7 @@ import {
   resolveInitialModelSelection,
   type ProviderRegistryView,
 } from "../src/index.js";
+import { resolveEffectiveModelSelection } from "../src/effective-model-selection.js";
 import { ModelConfig, ModelOptionSpecsConfig, ModelPropertiesConfig } from "../src/config/index.js";
 import { createApiKeyProviderConfig } from "./provider-config-fixtures.js";
 
@@ -221,6 +222,28 @@ describe("normalizeModelSelection", () => {
     ).toEqual({
       providerId: "provider-a",
       modelId: "model-a",
+    });
+  });
+});
+
+describe("resolveEffectiveModelSelection", () => {
+  it("мигрирует legacy Cursor flat id до построения composer view", () => {
+    expect(
+      resolveEffectiveModelSelection({
+        selection: {
+          providerId: "cursor",
+          modelId: "grok-4.7-xhigh-fast",
+          options: { reasoningLevel: "disabled" },
+        },
+        registry: cursorRegistryView(),
+        classifyProvider: () => "ordinary",
+      }),
+    ).toEqual({
+      effectiveSelection: {
+        providerId: "cursor",
+        modelId: "grok-4.7-fast",
+        options: { reasoningLevel: "xhigh" },
+      },
     });
   });
 });
