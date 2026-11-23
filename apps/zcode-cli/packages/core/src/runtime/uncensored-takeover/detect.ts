@@ -57,6 +57,22 @@ export function attributeTodoItem(todos: readonly TodoItem[]): AttributedTakeove
   return { itemIndex: resolved, itemText: truncateItemText(item.content) };
 }
 
+/**
+ * Attribution cascade: a tracked todo wins; otherwise the last user message becomes item 0,
+ * so a plain chat refusal still gets one fallback attempt. The same 4000-char bound applies,
+ * and an empty message never starts a takeover.
+ */
+export function attributeTurnItem(
+  todos: readonly TodoItem[],
+  lastUserText: string,
+): AttributedTakeoverItem | null {
+  const todoItem = attributeTodoItem(todos);
+  if (todoItem) return todoItem;
+  const text = truncateItemText(normalizeItemText(lastUserText));
+  if (text.length === 0) return null;
+  return { itemIndex: 0, itemText: text };
+}
+
 function extractPaths(itemText: string): string[] {
   const matches = itemText.match(PATH_PATTERN);
   return matches ? [...new Set(matches)] : [];

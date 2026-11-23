@@ -29,6 +29,18 @@ single-provider поля `apiUrl`/`apiKey`/`models` во всех раздела
 - Удаление провайдера удаляет его ключ; пустой список провайдеров — полный сброс.
 - В карточке под-запуска показываются провайдер, модель, статус и вывод.
 
+## General chat refusal (2026-11-24)
+
+- Attribution cascade: first `in_progress` todo, else first `pending`, else the **last user
+  message** as item 0 (same 4000-char bound). A plain chat turn therefore gets a takeover
+  even when no TodoWrite list exists.
+- No extra classification model call: the decision uses the already received finish reason
+  and the final assistant text.
+- Exactly one attempt per enabled uncensored model; no retry of the same model and no loop.
+  A successful main-model answer never calls an uncensored model.
+- When every enabled model refuses or fails, the terminal `refused`/`error` status is
+  persisted and shown; the turn is not restarted.
+
 ## Проблема
 
 Основная модель чата ведёт задачу по списку `TodoWrite`. На одном пункте провайдер может

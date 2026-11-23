@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TodoItem } from "@zcode/contracts";
 import {
   attributeTodoItem,
+  attributeTurnItem,
   buildTakeoverRequestBody,
   detectRefusal,
   detectTextRefusal,
@@ -147,6 +148,36 @@ describe("attributeTodoItem", () => {
     const item = attributeTodoItem([todo("x".repeat(5000), "pending")]);
     expect(item?.itemText.length).toBe(4000);
     expect(item?.itemText.endsWith("…")).toBe(true);
+  });
+});
+
+describe("attributeTurnItem", () => {
+  it("prefers the tracked todo", () => {
+    expect(
+      attributeTurnItem(
+        [todo("first", "pending"), todo("second", "in_progress")],
+        "chat text",
+      ),
+    ).toEqual({ itemIndex: 1, itemText: "second" });
+  });
+
+  it("falls back to the last user message when no todo is actionable", () => {
+    expect(attributeTurnItem([], "  explain this   file  ")).toEqual({
+      itemIndex: 0,
+      itemText: "explain this file",
+    });
+    expect(attributeTurnItem([todo("done", "completed")], "hello")).toEqual({
+      itemIndex: 0,
+      itemText: "hello",
+    });
+  });
+
+  it("returns null for empty text", () => {
+    expect(attributeTurnItem([], "   ")).toBeNull();
+  });
+
+  it("truncates the fallback to the item bound", () => {
+    expect(attributeTurnItem([], "x".repeat(5000))?.itemText.length).toBeLessThanOrEqual(4000);
   });
 });
 

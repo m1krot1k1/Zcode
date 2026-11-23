@@ -5,7 +5,7 @@ import type { RegularTurnLoopState } from "./turn-loop-state.js";
 import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
 import { systemReminderAttachmentEntry } from "../../agent/message-history.js";
 import {
-  attributeTodoItem,
+  attributeTurnItem,
   buildTakeoverEntry,
   buildTakeoverReminder,
   detectRefusal,
@@ -188,8 +188,14 @@ export async function runUncensoredTakeoverGate(
   // never treated as refusals.
   let lastAssistantText = "";
   let lastAssistantHasToolCalls = false;
+  let lastUserText = "";
   for (const entry of state.turnRequestState.entries) {
-    if (entry.kind === "attachment" || entry.message.role !== "assistant") continue;
+    if (entry.kind === "attachment") continue;
+    if (entry.message.role === "user") {
+      lastUserText = modelMessageContentToText(entry.message.content);
+      continue;
+    }
+    if (entry.message.role !== "assistant") continue;
     lastAssistantText = modelMessageContentToText(entry.message.content);
     lastAssistantHasToolCalls = (entry.message.toolCalls?.length ?? 0) > 0;
   }
@@ -212,7 +218,7 @@ export async function runUncensoredTakeoverGate(
     });
     return false;
   }
-  const item = attributeTodoItem(todos);
+  const item = attributeTurnItem(todos, lastUserText);
   if (!item) return false;
 
   const taskId = String(this.sessionId);
