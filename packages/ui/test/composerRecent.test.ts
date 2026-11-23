@@ -322,6 +322,41 @@ describe("composerRecent", () => {
       resolveDraftInitialModelSelection({ ...view, preferredSelection: undefined }, null),
     ).toEqual({ selection: null, invalidated: false });
   });
+
+  it("считает embedding-модель недействительным выбором чата", () => {
+    const view = {
+      revision: 1,
+      preferredSelection: {
+        providerId: "ollama",
+        modelId: "bge-m3",
+        options: { reasoningLevel: "disabled" },
+      },
+      providers: [
+        {
+          providerId: "ollama",
+          config: {},
+          models: [
+            {
+              modelId: "bge-m3",
+              config: { optionSpecs: { reasoningLevel: { values: ["disabled"] } } },
+            },
+          ],
+        },
+      ],
+    } as const;
+
+    expect(
+      resolveDraftInitialModelSelection(view, {
+        providerId: "ollama",
+        modelId: "bge-m3",
+        options: { reasoningLevel: "disabled" },
+      }),
+    ).toEqual({ selection: null, invalidated: true });
+    expect(resolveDraftInitialModelSelection(view, null)).toEqual({
+      selection: null,
+      invalidated: false,
+    });
+  });
 });
 
 describe("firstSelectableModelSelection", () => {
@@ -347,6 +382,36 @@ describe("firstSelectableModelSelection", () => {
     expect(firstSelectableModelSelection(view)).toEqual({
       providerId: "provider-a",
       modelId: "model-a",
+      options: { reasoningLevel: "medium" },
+    });
+  });
+
+  it("пропускает embedding-модели при выборе первой доступной", async () => {
+    const { firstSelectableModelSelection } = await import("@/lib/composerRecent.js");
+    const view = {
+      revision: 1,
+      providers: [
+        {
+          providerId: "ollama",
+          config: {},
+          models: [
+            {
+              modelId: "bge-m3",
+              config: { optionSpecs: { reasoningLevel: { values: ["disabled"], map: "{}" } } },
+            },
+            {
+              modelId: "qwen3:8b",
+              config: {
+                optionSpecs: { reasoningLevel: { values: ["medium", "high"], map: "{}" } },
+              },
+            },
+          ],
+        },
+      ],
+    } as ModelSelectionView;
+    expect(firstSelectableModelSelection(view)).toEqual({
+      providerId: "ollama",
+      modelId: "qwen3:8b",
       options: { reasoningLevel: "medium" },
     });
   });

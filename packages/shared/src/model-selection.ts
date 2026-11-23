@@ -61,3 +61,18 @@ export function parseModelPickerValue(value: string): ModelSelection {
     options: { reasoningLevel: rawModelId.slice(reasoningSeparatorIndex + 1) },
   });
 }
+
+/**
+ * Embedding-модели Ollama не умеют вести чат. UI не должен предлагать их в Composer
+ * и выбирать как preferred model для вспомогательных задач.
+ *
+ * Важно: provider держит свою копию правила в `model-selection-config.ts`, потому что
+ * `@zcode/shared` отдаёт исходники и собирается внутри provider без node-типов.
+ * Семейства моделей в обоих списках должны совпадать.
+ */
+const EMBEDDING_ONLY_MODEL_PATTERN =
+  /(?:^|[/:_.-])(?:bge|nomic-embed|mxbai-embed|all-minilm|snowflake-arctic-embed|text-embedding|embeddinggemma|jina-embed|qwen\d*(?:\.\d+)?-embedding|e5-|gte-)/iu;
+
+export function isEmbeddingOnlyModelId(modelId: string): boolean {
+  return EMBEDDING_ONLY_MODEL_PATTERN.test(modelId.trim());
+}

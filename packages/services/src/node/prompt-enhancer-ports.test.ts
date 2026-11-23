@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ISkillsService } from "../skills/skills.js";
 import type { ISubagentsService } from "../subagents/subagents.js";
-import { createPromptEnhancerCapabilityIndexProvider } from "./prompt-enhancer-ports.js";
+import {
+  createPromptEnhancerCapabilityIndexProvider,
+  createPromptEnhancerPaths,
+} from "./prompt-enhancer-ports.js";
 
 function skillsService(names: readonly string[]): Pick<ISkillsService, "list"> {
   return {
@@ -41,6 +44,42 @@ function subagentsService(names: readonly string[]): Pick<ISubagentsService, "li
     })),
   };
 }
+
+describe("prompt enhancer model resolver", () => {
+  it("falls back to a chat model when preferred selection is embedding-only", async () => {
+    const paths = createPromptEnhancerPaths({
+      zcodeAgentService: { generateWorkspaceText: vi.fn() },
+      providerRuntime: {
+        modelSelection: {
+          getView: async () => ({
+            preferredSelection: { providerId: "ollama", modelId: "bge-m3" },
+            providers: [
+              {
+                providerId: "ollama",
+                models: [
+                  {
+                    modelId: "bge-m3",
+                    config: { optionSpecs: { reasoningLevel: { values: ["disabled"] } } },
+                  },
+                  {
+                    modelId: "qwen3:8b",
+                    config: { optionSpecs: { reasoningLevel: { values: ["medium", "high"] } } },
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      },
+    });
+
+    await expect(paths.modelResolver.resolveDefaultSelection()).resolves.toEqual({
+      providerId: "ollama",
+      modelId: "qwen3:8b",
+      reasoningLevels: ["medium", "high"],
+    });
+  });
+});
 
 describe("prompt enhancer capability index provider", () => {
   it("merges skills and user agents into one installed index", async () => {

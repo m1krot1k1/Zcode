@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Cpu, Download, HardDrive, LoaderCircle } from "lucide-react";
+import { isEmbeddingOnlyModelId } from "@zcode/shared";
 import type { CodeIntelligenceService, CodeWorkspaceRef } from "./contract.js";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 
@@ -73,13 +74,6 @@ function normalizeModelId(id: string): string {
     .toLowerCase();
 }
 
-/** Embedding-only Ollama models must never be offered as chat models in Composer. */
-function isEmbeddingModelId(id: string): boolean {
-  return /(?:^|[/:])(?:bge(?:[-:]|$)|nomic-embed|mxbai-embed|all-minilm|snowflake-arctic-embed|text-embedding|embeddinggemma|e5-|gte-|jina-embed)/iu.test(
-    id,
-  );
-}
-
 function pickRecommended(totalMemoryBytes: number | undefined): LocalChatModel {
   const memory = totalMemoryBytes && totalMemoryBytes > 0 ? totalMemoryBytes : 16 * GB;
   const fitting = LOCAL_CHAT_MODELS.filter((model) => memory >= model.minRamBytes);
@@ -151,7 +145,9 @@ export function LocalModelSettings({
   const [customModel, setCustomModel] = useState("");
   const activeDownloads =
     runtime?.downloads?.filter(
-      (download) => download.state === "downloading" || download.state === "verifying",
+      (download) =>
+        (download.state === "downloading" || download.state === "verifying") &&
+        !isEmbeddingOnlyModelId(download.model),
     ) ?? [];
 
   const refreshRuntime = useCallback(async () => {
@@ -188,7 +184,7 @@ export function LocalModelSettings({
     return ids;
   }, [runtime]);
   const installedChatModels = useMemo(
-    () => [...installed].filter((id) => !isEmbeddingModelId(id)),
+    () => [...installed].filter((id) => !isEmbeddingOnlyModelId(id)),
     [installed],
   );
 

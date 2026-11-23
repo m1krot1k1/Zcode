@@ -1,4 +1,4 @@
-import { isHighspeedProviderId } from "@zcode/shared";
+import { isEmbeddingOnlyModelId, isHighspeedProviderId } from "@zcode/shared";
 import { modelSelectionSchema, type ModelSelection } from "@zcode/shared/model-selection";
 import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ModelSelectionView } from "@zcode/services";
@@ -179,6 +179,11 @@ export function resolveDraftInitialModelSelection(
   // 收到 View 后再做语义校验。
   if (!view) return { selection: recent, invalidated: false };
   if (recent) {
+    // bge-m3 и другие embedding-модели могли попасть в Recent до фильтра каталога.
+    // Они не ведут чат, поэтому как сохранённый выбор считаются недействительными.
+    if (isEmbeddingOnlyModelId(recent.modelId)) {
+      return { selection: null, invalidated: true };
+    }
     const model = findModel(view, recent);
     if (!model) return { selection: null, invalidated: true };
     const reasoning = recent.options?.reasoningLevel;
@@ -197,7 +202,9 @@ export function resolveDraftInitialModelSelection(
   }
   return {
     selection:
-      view.preferredSelection && isSelectionInView(view, view.preferredSelection)
+      view.preferredSelection &&
+      !isEmbeddingOnlyModelId(view.preferredSelection.modelId) &&
+      isSelectionInView(view, view.preferredSelection)
         ? view.preferredSelection
         : null,
     invalidated: recent !== null,
@@ -214,6 +221,7 @@ export function resolveDraftInitialModelSelection(
 export function firstSelectableModelSelection(view: ModelSelectionView): ModelSelection | null {
   for (const provider of view.providers) {
     for (const model of provider.models) {
+      if (isEmbeddingOnlyModelId(model.modelId)) continue;
       const reasoningLevel = model.config.optionSpecs.reasoningLevel.values[0];
       return {
         providerId: provider.providerId,

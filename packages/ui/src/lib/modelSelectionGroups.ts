@@ -1,4 +1,5 @@
 import {
+  isEmbeddingOnlyModelId,
   isZCodeAgentProvider,
   resolveModelProviderFamilySpecByProviderId,
   zcodeProviderAccountAccessSchema,
@@ -100,6 +101,11 @@ export function buildRegistryModelSelectGroups(
         ? (labels.apiKeyBadgeLabel ?? "API")
         : undefined);
 
+    // Embedding-модели не умеют вести чат; не показываем их в каталоге Composer,
+    // иначе bge-m3 можно выбрать как обычную модель и получить 400 при отправке.
+    const chatModels = provider.models.filter(({ modelId }) => !isEmbeddingOnlyModelId(modelId));
+    if (chatModels.length === 0) return [];
+
     return [
       {
         key: `registry-provider:${provider.providerId}`,
@@ -107,7 +113,7 @@ export function buildRegistryModelSelectGroups(
         ...(provider.config.logo ? { logo: provider.config.logo } : {}),
         ...(labelBadge ? { labelBadge } : {}),
         ...(accountPresentation ? { directItems: true } : {}),
-        items: provider.models.map(({ modelId, config }) => {
+        items: chatModels.map(({ modelId, config }) => {
           // 上下文窗口来自有效配置；未知值不渲染徽标，避免把缺省值写成事实。
           const contextBadgeLabel = formatContextWindowLabel(config.properties?.contextWindow);
           return {

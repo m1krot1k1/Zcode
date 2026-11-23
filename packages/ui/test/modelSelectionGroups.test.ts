@@ -43,6 +43,38 @@ describe("model selection groups", () => {
     expect(items[2]!.supportsVisionInput).toBe(true);
     expect(view.providers[0]!.models[0]!.config.properties?.inputFormat?.supportsImage).toBe(true);
   });
+  it("не показывает embedding-модели в каталоге Composer", () => {
+    const view: ModelSelectionView = {
+      revision: 1,
+      providers: [
+        {
+          providerId: "ollama-local",
+          providerName: "Ollama (local)",
+          config: {
+            access: { type: "api-key", apiKey: "ollama" },
+            api: { type: "openai-chat-completions", baseUrl: "http://127.0.0.1:11434/v1" },
+          },
+          models: [
+            { modelId: "bge-m3", config: {} },
+            { modelId: "qwen3:8b", config: {} },
+          ],
+        },
+        {
+          providerId: "embedding-only",
+          config: {
+            access: { type: "api-key", apiKey: "ollama" },
+            api: { type: "openai-chat-completions", baseUrl: "http://127.0.0.1:11434/v1" },
+          },
+          models: [{ modelId: "nomic-embed-text", config: {} }],
+        },
+      ],
+    };
+
+    const groups = buildRegistryModelSelectGroups("glm", view);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.items.map((item) => item.name)).toEqual(["qwen3:8b"]);
+  });
+
   it("模型选择显示 Provider 目录的 displayName，未提供时回退 modelId", () => {
     const view: ModelSelectionView = {
       revision: 1,

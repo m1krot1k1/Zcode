@@ -4,6 +4,18 @@ import {
   type ProviderRegistryView,
 } from "./registry.js";
 
+/**
+ * Копия правила из `@zcode/shared/embedding-models`: provider не может импортировать
+ * shared index, потому что тот отдаёт исходники и требует node-типы, которых нет в
+ * этом tsconfig. Семейства моделей должны совпадать с shared-версией.
+ */
+const EMBEDDING_ONLY_MODEL_PATTERN =
+  /(?:^|[/:_.-])(?:bge|nomic-embed|mxbai-embed|all-minilm|snowflake-arctic-embed|text-embedding|embeddinggemma|jina-embed|qwen\d*(?:\.\d+)?-embedding|e5-|gte-)/iu;
+
+function isEmbeddingOnlyModelId(modelId: string): boolean {
+  return EMBEDDING_ONLY_MODEL_PATTERN.test(modelId.trim());
+}
+
 export type InitialModelSelectionResolution =
   | {
       readonly source: "configured-default" | "registry-fallback";
@@ -46,6 +58,10 @@ export function resolveInitialModelSelection(input: {
   for (const provider of input.registry.providers) {
     if (provider.config.visibility === "hidden") continue;
     for (const model of provider.models) {
+      // Embedding-модель (bge-m3 и т.п.) отклоняет chat-запросы с 400. Она не должна
+      // становиться preferred selection: от него зависят prompt enhancer,
+      // autocomplete и proactive suggestions.
+      if (isEmbeddingOnlyModelId(model.modelId)) continue;
       const selection = completeNewModelSelection(input.registry, {
         providerId: provider.providerId,
         modelId: model.modelId,
@@ -145,6 +161,7 @@ function migrateLegacyCursorSelection(
 }
 
 function isSelectable(registry: ProviderRegistryView, selection: ModelSelection): boolean {
+  if (isEmbeddingOnlyModelId(selection.modelId)) return false;
   const provider = registry.providers.find(
     (candidate) => candidate.providerId === selection.providerId,
   );

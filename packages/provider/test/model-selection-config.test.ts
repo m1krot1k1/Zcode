@@ -90,6 +90,77 @@ describe("resolveInitialModelSelection", () => {
       }),
     ).toEqual({ source: "none" });
   });
+
+  it("never selects an embedding-only model as preferred chat selection", () => {
+    const embeddingFirstRegistry = {
+      revision: 2,
+      providers: [
+        {
+          providerId: "provider-embed",
+          config: createApiKeyProviderConfig({
+            apiFormat: "openai-chat-completions",
+            apiKey: "ollama",
+            baseURL: "http://127.0.0.1:11434/v1",
+            models: ["bge-m3"],
+          }),
+          models: [
+            {
+              modelId: "bge-m3",
+              config: new ModelConfig({
+                properties: new ModelPropertiesConfig({
+                  requiresMfjsToolSchema: false,
+                  contextWindow: 8_192,
+                  inputFormat: {
+                    supportsText: true,
+                    supportsImage: false,
+                    supportsVideo: false,
+                    supportsAudio: false,
+                    supportsPdf: false,
+                  },
+                  outputFormat: { supportsText: true },
+                  supportsToolCall: false,
+                  supportsJsonSchemaOutput: false,
+                  supportsNativeWebSearch: false,
+                  supportsMidConversationSystem: false,
+                }),
+                optionSpecs: new ModelOptionSpecsConfig({
+                  reasoningLevel: { values: ["disabled"], map: "{}" },
+                  maxOutputTokens: { max: 8_000, map: "{}" },
+                }),
+              }),
+            },
+          ],
+        },
+        ...registry.providers,
+      ],
+    } as ProviderRegistryView;
+
+    expect(resolveInitialModelSelection({ registry: embeddingFirstRegistry })).toEqual({
+      source: "registry-fallback",
+      selection: {
+        providerId: "provider-a",
+        modelId: "model-a",
+        options: { reasoningLevel: "high" },
+      },
+    });
+    expect(
+      resolveInitialModelSelection({
+        configuredDefault: {
+          providerId: "provider-embed",
+          modelId: "bge-m3",
+          options: { reasoningLevel: "disabled" },
+        },
+        registry: embeddingFirstRegistry,
+      }),
+    ).toEqual({
+      source: "registry-fallback",
+      selection: {
+        providerId: "provider-a",
+        modelId: "model-a",
+        options: { reasoningLevel: "high" },
+      },
+    });
+  });
 });
 
 describe("normalizeModelSelection", () => {

@@ -15,7 +15,7 @@ import type { ISubagentsService } from "../subagents/subagents.js";
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { IZCodeSessionService } from "../zcode-session/zcodeSession.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
-import { buildPromptEnhanceCapabilityIndex } from "@zcode/shared";
+import { buildPromptEnhanceCapabilityIndex, isEmbeddingOnlyModelId } from "@zcode/shared";
 
 /**
  * Проводка `PromptEnhancerService` к Host-портам.
@@ -140,32 +140,46 @@ export function createPromptEnhancerPaths(input: {
         // Улучшение — вспомогательная операция: она не должна наследовать тяжёлую модель
         // сессии. Host использует предпочтительное быстрое выделение, если оно задано.
         const view = await input.providerRuntime?.modelSelection.getView().catch(() => null);
-        const preferred = view?.preferredSelection as
-          | { providerId?: unknown; modelId?: unknown }
-          | undefined;
-        if (
-          !preferred ||
-          typeof preferred.providerId !== "string" ||
-          typeof preferred.modelId !== "string"
-        ) {
-          return null;
-        }
         // 修复原因：реестр знает допустимые уровни рассуждений конкретной модели, а сервис
         // раньше жёстко ставил `minimal`. Для провайдеров с единственным `disabled`
         // (например opencode-go-messages/minimax-m3) это давало
         // "Reasoning level is required for ..." и кнопка Enhance не работала.
-        const providerView = view?.providers?.find(
-          (candidate) => candidate.providerId === preferred.providerId,
-        );
-        const modelView = providerView?.models?.find(
-          (candidate) => candidate.modelId === preferred.modelId,
-        );
-        const reasoningLevels = modelView?.config?.optionSpecs?.reasoningLevel?.values;
-        return {
-          providerId: preferred.providerId,
-          modelId: preferred.modelId,
-          ...(Array.isArray(reasoningLevels) ? { reasoningLevels } : {}),
+        const resolveModel = (providerId: string, modelId: string) => {
+          // bge-m3 и другие embedding-модели не ведут чат и отклоняют запрос с 400.
+          // Они не должны становиться моделью вспомогательной операции.
+          if (isEmbeddingOnlyModelId(modelId)) return null;
+          const providerView = view?.providers?.find(
+            (candidate) => candidate.providerId === providerId,
+          );
+          const modelView = providerView?.models?.find(
+            (candidate) => candidate.modelId === modelId,
+          );
+          if (!modelView) return null;
+          const reasoningLevels = modelView.config?.optionSpecs?.reasoningLevel?.values;
+          return {
+            providerId,
+            modelId,
+            ...(Array.isArray(reasoningLevels) ? { reasoningLevels } : {}),
+          };
         };
+
+        const preferred = view?.preferredSelection as
+          | { providerId?: unknown; modelId?: unknown }
+          | undefined;
+        if (typeof preferred?.providerId === "string" && typeof preferred.modelId === "string") {
+          const selection = resolveModel(preferred.providerId, preferred.modelId);
+          if (selection) return selection;
+        }
+
+        // Preferred selection мог указывать на embedding-модель или удалённый провайдер.
+        // Берём первую chat-модель из реестра, чтобы кнопка Enhance не зависела от него.
+        for (const provider of view?.providers ?? []) {
+          for (const model of provider.models ?? []) {
+            const selection = resolveModel(provider.providerId, model.modelId);
+            if (selection) return selection;
+          }
+        }
+        return null;
       },
     },
   };
