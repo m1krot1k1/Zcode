@@ -57,28 +57,3 @@ export {
   type TakeoverAttemptOutcome,
 } from "./http.js";
 export { runUncensoredTakeover } from "./orchestrator.js";
-
-import type { CliUncensoredTakeoverContract } from "./contract.js";
-import { buildTakeoverReminder, buildTakeoverRequestBody } from "./context.js";
-import { attributeTodoItem, detectRefusal, selectContextFragments } from "./detect.js";
-import {
-  buildTakeoverEntry,
-  parseTakeoverEntryData,
-  takeoverAgentId,
-  takeoverIdempotencyKey,
-} from "./durable-entry.js";
-import { runUncensoredTakeover } from "./orchestrator.js";
-
-/** Default implementation honouring the public contract. */
-export const cliUncensoredTakeover: CliUncensoredTakeoverContract = {
-  detectRefusal,
-  attributeItem: attributeTodoItem,
-  idempotencyKey: takeoverIdempotencyKey,
-  agentId: takeoverAgentId,
-  selectFragments: selectContextFragments,
-  buildRequestBody: buildTakeoverRequestBody,
-  run: runUncensoredTakeover,
-  buildReminder: buildTakeoverReminder,
-  buildEntry: buildTakeoverEntry,
-  parseEntryData: parseTakeoverEntryData,
-};
