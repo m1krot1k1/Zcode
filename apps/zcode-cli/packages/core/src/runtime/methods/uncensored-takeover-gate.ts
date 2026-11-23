@@ -9,6 +9,7 @@ import {
   buildTakeoverEntry,
   buildTakeoverReminder,
   detectRefusal,
+  detectTextRefusal,
   parseTakeoverEntryData,
   runUncensoredTakeover,
   selectContextFragments,
@@ -178,10 +179,26 @@ export async function runUncensoredTakeoverGate(
   if (options.querySource !== "main_turn") return false;
   const takeover = this.config.uncensoredTakeover;
   if (!takeover) return false;
-  const reason = detectRefusal({
+  const providerReason = detectRefusal({
     finishReason: options.result.finishReason,
     rawFinishReason: options.result.rawFinishReason ?? state.lastStepDiagnostics?.rawFinishReason,
   });
+  // Cascade layer 2: a normal `stop` with no tool calls can still be a textual refusal.
+  // Only the last assistant message is inspected; tool output and clarifying questions are
+  // never treated as refusals.
+  let lastAssistantText = "";
+  let lastAssistantHasToolCalls = false;
+  for (const entry of state.turnRequestState.entries) {
+    if (entry.kind === "attachment" || entry.message.role !== "assistant") continue;
+    lastAssistantText = modelMessageContentToText(entry.message.content);
+    lastAssistantHasToolCalls = (entry.message.toolCalls?.length ?? 0) > 0;
+  }
+  const textReason =
+    !providerReason &&
+    (options.result.finishReason === undefined || options.result.finishReason === "stop")
+      ? detectTextRefusal(lastAssistantText, { hasToolCalls: lastAssistantHasToolCalls })
+      : null;
+  const reason = providerReason ?? textReason;
   if (!reason) return false;
   if (!this.sessionStore?.readTodos) return false;
   let todos;

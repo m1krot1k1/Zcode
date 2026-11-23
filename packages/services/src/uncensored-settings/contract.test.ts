@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { ZCodeUncensoredProviderConfig } from "@zcode/shared";
+
 import { uncensoredSettingsModule } from "./module.js";
 import { createUncensoredSettingsService } from "./service.js";
 import type { UncensoredSettingsStorePort } from "./contract.js";
@@ -49,5 +51,34 @@ describe("uncensored-settings contract", () => {
       expect.objectContaining({ method: "POST", redirect: "error" }),
     );
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe("Bearer secret");
+  });
+
+  it("mirrors providers after a write and lazily on first read", async () => {
+    const mirrorProviders = vi.fn(
+      async (_providers: readonly ZCodeUncensoredProviderConfig[]) => {},
+    );
+    const store = {
+      read: async () => ({ providers: [] }),
+      write: async () => ({ providers: [] }),
+      readTakeoverConfig: async () => ({
+        providers: [
+          {
+            id: "p1",
+            name: "Provider",
+            apiUrl: "https://p1.test/v1/chat",
+            apiKey: "secret",
+            models: [{ id: "m1", enabled: true }],
+          },
+        ],
+      }),
+    } as unknown as UncensoredSettingsStorePort;
+    const service = createUncensoredSettingsService({ store, mirrorProviders });
+
+    await service.getConfig({ workspacePath: "/workspace" });
+    await vi.waitFor(() => expect(mirrorProviders).toHaveBeenCalledTimes(1));
+    await service.updateConfig({ workspacePath: "/workspace" }, { providers: [] });
+
+    expect(mirrorProviders).toHaveBeenCalledTimes(2);
+    expect(mirrorProviders.mock.calls[0]![0]).toHaveLength(1);
   });
 });

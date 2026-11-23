@@ -1,4 +1,5 @@
 import { createServiceLogger } from "../logger/serviceLogger.js";
+import type { ZCodeUncensoredProviderConfig } from "@zcode/shared";
 import type {
   UncensoredChatInput,
   UncensoredChatResult,
@@ -19,6 +20,11 @@ export interface UncensoredSettingsServiceOptions {
   store: UncensoredSettingsStorePort;
   /** Injectable for tests; production uses the Host's global fetch. */
   fetch?: typeof fetch;
+  /**
+   * Host-side mirror into the normal provider registry. The renderer never sees the key;
+   * failures are logged and do not fail the settings save.
+   */
+  mirrorProviders?: (providers: readonly ZCodeUncensoredProviderConfig[]) => Promise<void>;
 }
 
 const CHAT_TIMEOUT_MS = 60_000;
@@ -43,9 +49,38 @@ export function createUncensoredSettingsService(
   const logger = createServiceLogger("uncensored-settings");
   const { store } = options;
   const fetchImpl = options.fetch ?? fetch;
+  const mirroredWorkspaces = new Set<string>();
+
+  const workspaceKey = (workspace: UncensoredSettingsWorkspace): string =>
+    workspace.workspaceIdentity?.trim() || workspace.workspacePath;
+
+  async function mirrorProviders(
+    workspace: UncensoredSettingsWorkspace,
+    force: boolean,
+  ): Promise<void> {
+    if (!options.mirrorProviders) return;
+    const key = workspaceKey(workspace);
+    if (!force && mirroredWorkspaces.has(key)) return;
+    mirroredWorkspaces.add(key);
+    try {
+      const config = await store.readTakeoverConfig(workspace);
+      await options.mirrorProviders(config.providers);
+    } catch (error) {
+      // Mirror is derived state: a registry failure must not break the settings save.
+      mirroredWorkspaces.delete(key);
+      logger.warn(undefined, "Uncensored provider mirror failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return {
-    getConfig: (workspace) => store.read(workspace),
+    async getConfig(workspace) {
+      const status = await store.read(workspace);
+      // Lazy first sync: settings saved before this feature still reach the composer picker.
+      void mirrorProviders(workspace, false);
+      return status;
+    },
 
     async updateConfig(workspace, write) {
       try {
@@ -56,6 +91,7 @@ export function createUncensoredSettingsService(
           configuredKeyCount: status.providers.filter((provider) => provider.apiKeyConfigured)
             .length,
         });
+        await mirrorProviders(workspace, true);
         return status;
       } catch (error) {
         logger.warn(undefined, "Uncensored settings update rejected", {

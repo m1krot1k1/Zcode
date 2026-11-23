@@ -39,9 +39,11 @@ export { buildTakeoverMessages, buildTakeoverReminder, buildTakeoverRequestBody 
 export {
   attributeTodoItem,
   detectRefusal,
+  detectTextRefusal,
   normalizeFinishReason,
   normalizeItemText,
   selectContextFragments,
+  TEXT_REFUSAL_REASON,
   truncateItemText,
 } from "./detect.js";
 export {

@@ -4,6 +4,7 @@ import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { BuildContext, CoreServices, ProviderServices } from "./bundles.js";
 import { createCodeIntelligenceService, createUncensoredSettingsStore } from "../code-intelligence/index.js";
 import { createUncensoredSettingsService } from "../uncensored-settings/index.js";
+import { mirrorUncensoredProviders } from "../uncensored-settings/mirror.js";
 import { createCodingPlanSubscriptionService } from "../coding-plan-subscription/codingPlanSubscriptionService.js";
 import { createCommandsService } from "../commands/commandsService.js";
 import { createHooksService } from "../hooks/hooksService.js";
@@ -182,6 +183,9 @@ export function createFeatureServices(args: BuildContext & CoreServices & Provid
   // отдельно уходит в Agent service для доверенного uncensored/getConfig.
   const uncensoredSettingsService = createUncensoredSettingsService({
     store: uncensoredSettingsStore,
+    // Host-side mirror: keys never enter the renderer; the registry sees normal providers.
+    mirrorProviders: (providers) =>
+      mirrorUncensoredProviders(providerRuntime.providerSettings, providers),
   });
   const _commandsService = createCommandsService({ isDesktopRuntime: true });
   const _hooksService = createHooksService({

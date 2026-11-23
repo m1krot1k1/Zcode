@@ -4,6 +4,7 @@ import {
   attributeTodoItem,
   buildTakeoverRequestBody,
   detectRefusal,
+  detectTextRefusal,
   runUncensoredTakeover,
   selectContextFragments,
   takeoverAgentId,
@@ -91,6 +92,31 @@ describe("detectRefusal", () => {
     expect(detectRefusal({ finishReason: "other", rawFinishReason: "content_filter" })).toBe(
       "content-filter",
     );
+  });
+});
+
+describe("detectTextRefusal", () => {
+  it.each([
+    "I can't help with that.",
+    "I'm sorry, but I cannot assist with this request.",
+    "I won't do that.",
+    "Не могу помочь с этим.",
+    "无法帮助完成这个请求。",
+  ])("detects %s", (text) => {
+    expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
+  });
+
+  it.each([
+    "I can't find the file.",
+    "Can you clarify which file?",
+    "The command failed with exit code 1.",
+    "The tests passed.",
+  ])("does not detect %s", (text) => {
+    expect(detectTextRefusal(text, { hasToolCalls: false })).toBeNull();
+  });
+
+  it("never fires after a tool call", () => {
+    expect(detectTextRefusal("I can't help with that.", { hasToolCalls: true })).toBeNull();
   });
 });
 

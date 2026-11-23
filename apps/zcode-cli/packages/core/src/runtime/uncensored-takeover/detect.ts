@@ -102,3 +102,34 @@ export function selectContextFragments(input: {
   }
   return [...pathMatches, ...rest].slice(0, TAKEOVER_MAX_FRAGMENTS);
 }
+
+export const TEXT_REFUSAL_REASON = "text-refusal";
+
+const TEXT_REFUSAL_PATTERNS: readonly RegExp[] = [
+  /\b(?:i'?m|i)\b[^.!?\n]{0,80}\b(?:can'?t|cannot|won'?t|will not|must decline|unable to)\b[^.!?\n]{0,40}\b(?:help|assist|comply|provide|fulfill|do (?:that|this))\b/iu,
+  /(?:^|\s)не могу\s+(?:помочь|выполнить|предоставить|сделать это)/iu,
+  /(?:^|\s)не буду\s+(?:это\s+)?(?:делать|выполнять|помогать)/iu,
+  /(?:^|\s)отказываюсь\s+(?:помогать|выполнять)/iu,
+  /无法(?:帮助|协助|提供|完成)/u,
+  /不能(?:帮助|协助|提供|完成)/u,
+  /抱歉[，,]\s*我(?:不能|无法)/u,
+];
+
+/**
+ * Conservative text-refusal cascade layer. Only used when the provider did not already
+ * signal a refusal, the last assistant message has no tool calls, and the finish reason is
+ * `stop`. Never inspects tool output, never fires on a clarifying question, and stays
+ * high-precision: a miss keeps the normal turn, a false positive would misroute a real answer.
+ */
+export function detectTextRefusal(
+  text: string,
+  options: { hasToolCalls: boolean },
+): string | null {
+  if (options.hasToolCalls) return null;
+  const normalized = text.trim();
+  if (normalized.length === 0 || normalized.length > 4000) return null;
+  if (normalized.endsWith("?") || normalized.endsWith("？")) return null;
+  return TEXT_REFUSAL_PATTERNS.some((pattern) => pattern.test(normalized))
+    ? TEXT_REFUSAL_REASON
+    : null;
+}
