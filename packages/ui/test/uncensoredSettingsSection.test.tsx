@@ -71,8 +71,7 @@ function createPort(initial: ZCodeUncensoredSettingsStatus) {
       })),
     }),
   );
-  const sendMessage = vi.fn(async () => ({ ok: true as const, text: "model response" }));
-  return { getConfig, updateConfig, sendMessage };
+  return { getConfig, updateConfig };
 }
 
 type PortMock = ReturnType<typeof createPort>;
@@ -169,25 +168,6 @@ describe("Uncensored provider settings section", () => {
     expect(port.updateConfig.mock.calls[1]![1].providers[0]).toMatchObject({
       id: "provider-alpha",
       apiKey: null,
-    });
-  });
-
-  it("sends a direct message to the selected uncensored model", async () => {
-    const port = createPort(configuredStatus);
-    renderSettings(port);
-    await screen.findByDisplayValue("Alpha");
-
-    fireEvent.click(screen.getAllByTestId("uncensored-model-chat")[0]!);
-    fireEvent.change(screen.getByTestId("uncensored-model-chat-input"), {
-      target: { value: "hello model" },
-    });
-    fireEvent.click(screen.getByTestId("uncensored-model-chat-send"));
-
-    expect(await screen.findByText("model response")).toBeTruthy();
-    expect(port.sendMessage).toHaveBeenCalledWith(workspaceRef, {
-      providerId: "provider-alpha",
-      modelId: "model-alpha",
-      text: "hello model",
     });
   });
 

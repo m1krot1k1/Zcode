@@ -30,8 +30,26 @@ describe("uncensored provider mirror", () => {
       },
     ];
 
-    await mirrorUncensoredProviders(settings as never, providers);
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "m1", context_length: 1_048_576, max_output_tokens: 65_536 },
+          { id: "m2", context_length: 1_048_576, max_output_tokens: 65_536 },
+        ],
+      }),
+    }));
 
+    await mirrorUncensoredProviders(
+      settings as never,
+      providers,
+      fetchMock as unknown as typeof fetch,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://p1.test/v1/models?detailed=true",
+      expect.objectContaining({ method: "GET" }),
+    );
     expect(settings.deletePersonalProvider).toHaveBeenCalledTimes(1);
     expect(settings.deletePersonalProvider).toHaveBeenCalledWith("old-mirror");
     expect(settings.createPersonalProvider).toHaveBeenCalledWith({
@@ -48,14 +66,21 @@ describe("uncensored provider mirror", () => {
       1,
       "new-mirror",
       "m1",
-      expect.objectContaining({ enabled: true }),
+      expect.objectContaining({
+        enabled: true,
+        properties: expect.objectContaining({ contextWindow: 1_048_576 }),
+        optionSpecs: expect.objectContaining({ maxOutputTokens: { max: 65_536 } }),
+      }),
       true,
     );
     expect(settings.addPersonalModel).toHaveBeenNthCalledWith(
       2,
       "new-mirror",
       "m2",
-      expect.objectContaining({ enabled: true }),
+      expect.objectContaining({
+        enabled: true,
+        properties: expect.objectContaining({ contextWindow: 1_048_576 }),
+      }),
       true,
     );
   });

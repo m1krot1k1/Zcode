@@ -12,8 +12,6 @@ import { Input } from "@/components/ui/input.js";
 import { Switch } from "@/components/ui/switch.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
-import { UncensoredModelChatPanel } from "./UncensoredModelChatPanel.js";
-import { useUncensoredModelChat } from "./useUncensoredModelChat.js";
 
 /** Workspace identity for the Host-owned uncensored settings record. */
 export interface UncensoredModelSettingsWorkspaceRef {
@@ -34,10 +32,6 @@ export interface UncensoredModelSettingsPort {
     workspace: UncensoredModelSettingsWorkspaceRef,
     write: ZCodeUncensoredSettingsWrite,
   ): Promise<ZCodeUncensoredSettingsStatus>;
-  sendMessage(
-    workspace: UncensoredModelSettingsWorkspaceRef,
-    input: { providerId: string; modelId: string; text: string },
-  ): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
 }
 
 export const UNCENSORED_PROVIDERS_LIMIT = 20;
@@ -278,8 +272,6 @@ export function UncensoredModelSettings({
   const clearProviderKey = async (uid: string) => {
     await persist(new Map([[uid, null]]), `clear:${uid}`, "settings.uncensored.tokenCleared");
   };
-
-  const chat = useUncensoredModelChat(port, workspaceRef);
 
   if (!port || !workspaceRef) return null;
 
@@ -681,18 +673,6 @@ export function UncensoredModelSettings({
                                       type="button"
                                       size="sm"
                                       variant="ghost"
-                                      className="text-ui-sm"
-                                      data-testid="uncensored-model-chat"
-                                      aria-label={`${copy("settings.uncensored.write")}: ${modelLabel}`}
-                                      disabled={busy !== null || chat.busy}
-                                      onClick={() => chat.start(provider.uid, model.uid)}
-                                    >
-                                      {copy("settings.uncensored.write")}
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
                                       className="text-ui-sm text-destructive"
                                       data-testid="uncensored-model-remove"
                                       aria-label={`${copy("settings.uncensored.remove")}: ${modelLabel}`}
@@ -714,17 +694,6 @@ export function UncensoredModelSettings({
                                         : "settings.uncensored.invalidModel",
                                     )}
                                   </p>
-                                ) : null}
-                                {chat.target?.providerUid === provider.uid &&
-                                chat.target.modelUid === model.uid ? (
-                                  <UncensoredModelChatPanel
-                                    text={chat.text}
-                                    busy={chat.busy}
-                                    result={chat.result}
-                                    onTextChange={chat.setText}
-                                    onSend={() => void chat.send(provider.id, model.id)}
-                                    onCancel={chat.close}
-                                  />
                                 ) : null}
                               </li>
                             );
