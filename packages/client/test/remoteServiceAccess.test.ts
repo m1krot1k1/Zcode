@@ -4,6 +4,7 @@ import {
   ICodeIntelligenceService,
   IProactiveSuggestionService,
   ISourceServerManagementService,
+  IUncensoredSettingsService,
 } from "@zcode/services";
 import { ICursorCliRuntime, IOpenCodeAcpRuntime } from "@zcode/services";
 import { RemoteServiceAccess } from "../src/remoteServiceAccess.js";
@@ -184,6 +185,28 @@ describe("RemoteServiceAccess optional channels", () => {
       services.codeIntelligenceService!.getStatus({ workspacePath: "/workspace" }),
     ).resolves.toMatchObject({ state: "unindexed" });
     expect(getChannel).toHaveBeenCalledWith(ICodeIntelligenceService.channelName);
+  });
+
+  it("constructs the uncensored settings proxy only for an opted-in Host", async () => {
+    const getChannel = vi.fn(
+      () =>
+        ({
+          call: vi.fn(async () => ({ providers: [] })),
+          listen: vi.fn(),
+        }) as unknown as IChannel,
+    );
+    const defaultServices = new RemoteServiceAccess({ getChannel } as IChannelClient);
+    expect(defaultServices.uncensoredSettingsService).toBeUndefined();
+    expect(getChannel).not.toHaveBeenCalledWith(IUncensoredSettingsService.channelName);
+
+    const services = new RemoteServiceAccess({ getChannel } as IChannelClient, {
+      uncensoredSettingsService: true,
+    });
+    expect(services.uncensoredSettingsService).toBeDefined();
+    await expect(
+      services.uncensoredSettingsService!.getConfig({ workspacePath: "/workspace" }),
+    ).resolves.toEqual({ providers: [] });
+    expect(getChannel).toHaveBeenCalledWith(IUncensoredSettingsService.channelName);
   });
 });
 

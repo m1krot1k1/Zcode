@@ -29,6 +29,7 @@ export function createMessagePortServiceConnection(
     openCodeAcpRuntime?: boolean;
     cursorCliRuntime?: boolean;
     codeIntelligenceService?: boolean;
+    uncensoredSettingsService?: boolean;
   } = {},
 ): MessagePortServiceConnection {
   logMessagePortDebug("[messageport] creating protocol and client...");
@@ -67,6 +68,7 @@ export function connectViaMessagePort(
     openCodeAcpRuntime?: boolean;
     cursorCliRuntime?: boolean;
     codeIntelligenceService?: boolean;
+    uncensoredSettingsService?: boolean;
   } = {},
 ): IServiceAccessor {
   return createMessagePortServiceConnection(port, options).services;

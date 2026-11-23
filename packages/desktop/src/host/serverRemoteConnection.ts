@@ -214,6 +214,9 @@ function createNodeWebSocketServiceConnection(
       openCodeAcpRuntime: true,
       cursorCliRuntime: true,
       ...(codeIntelligenceService ? { codeIntelligenceService: true } : {}),
+      // Source Server регистрирует Host-owned uncensored settings; раздел настроек
+      // должен быть доступен и для SSH-воркспейса.
+      uncensoredSettingsService: true,
     }),
     dispose,
   };

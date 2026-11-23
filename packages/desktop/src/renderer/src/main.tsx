@@ -334,6 +334,7 @@ function initializeBusinessRoot(port: MessagePort): void {
     openCodeAcpRuntime: true,
     cursorCliRuntime: true,
     codeIntelligenceService: true,
+    uncensoredSettingsService: true,
   });
   baseServicesForRemoteSessions = services;
   registerBaseWorkspaceServices(services);
