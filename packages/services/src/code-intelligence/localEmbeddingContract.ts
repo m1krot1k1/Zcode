@@ -27,5 +27,7 @@ export type LocalEmbeddingPullResult =
 export interface LocalEmbeddingPort {
   getStatus(): Promise<LocalEmbeddingRuntimeStatus>;
   install(): Promise<LocalEmbeddingInstallResult>;
+  /** Start the managed server if installed; false when the binary/server is unavailable. */
+  start(): Promise<boolean>;
   pull(model: string): Promise<LocalEmbeddingPullResult>;
 }

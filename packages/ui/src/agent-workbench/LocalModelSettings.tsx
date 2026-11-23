@@ -149,7 +149,14 @@ export function LocalModelSettings({
       return;
     }
     try {
-      setRuntime(await localRuntime.getStatus());
+      let next = await localRuntime.getStatus();
+      // Installed but stopped after an app restart: start it when the local-model
+      // settings open so the Composer can use the already downloaded model.
+      if (next.installed && !next.running) {
+        await localRuntime.start().catch(() => false);
+        next = await localRuntime.getStatus();
+      }
+      setRuntime(next);
     } catch {
       setRuntime(null);
     }

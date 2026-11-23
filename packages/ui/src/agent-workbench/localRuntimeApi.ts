@@ -9,6 +9,7 @@ import type {
 export interface LocalRuntimeApi {
   getStatus(): Promise<LocalEmbeddingRuntimeStatus>;
   install(): Promise<LocalEmbeddingInstallResult>;
+  start(): Promise<boolean>;
   pull(model: string): Promise<LocalEmbeddingPullResult>;
 }
 
@@ -34,6 +35,11 @@ export function resolveLocalRuntimeApi(
         if (result.action !== "install") throw new Error("Unexpected local runtime response");
         return result.result;
       },
+      start: async () => {
+        const result = await call({ action: "start" });
+        if (result.action !== "start") throw new Error("Unexpected local runtime response");
+        return result.running;
+      },
       pull: async (model) => {
         const result = await call({ action: "pull", model });
         if (result.action !== "pull") throw new Error("Unexpected local runtime response");
@@ -48,7 +54,10 @@ export function resolveLocalRuntimeApi(
     typeof nested.install === "function" &&
     typeof nested.pull === "function"
   ) {
-    return nested;
+    return {
+      ...nested,
+      start: typeof nested.start === "function" ? () => nested.start() : async () => false,
+    };
   }
   return null;
 }

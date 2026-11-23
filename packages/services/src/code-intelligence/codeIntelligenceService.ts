@@ -495,6 +495,7 @@ export function createCodeIntelligenceService(
     localEmbeddings: {
       getStatus: () => localEmbedding.getStatus(),
       install: () => localEmbedding.install(),
+      start: () => localEmbedding.start(),
       pull: (model) => localEmbedding.pull(model),
     },
     async localRuntime(request) {
@@ -502,6 +503,8 @@ export function createCodeIntelligenceService(
         return { action: "status", status: await localEmbedding.getStatus() };
       if (request.action === "install")
         return { action: "install", result: await localEmbedding.install() };
+      if (request.action === "start")
+        return { action: "start", running: await localEmbedding.start() };
       return { action: "pull", result: await localEmbedding.pull(request.model) };
     },
 

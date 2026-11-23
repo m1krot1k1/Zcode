@@ -149,14 +149,51 @@ function normalizeModelId(name: string): string {
     .toLowerCase();
 }
 
+/** List Ollama manifests without starting the server; works while runtime is stopped. */
+async function listInstalledModels(
+  toolsRoot: string,
+): Promise<Array<{ id: string; sizeBytes?: number }>> {
+  const root = join(toolsRoot, "models", "manifests");
+  const files: string[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) files.push(full);
+    }
+  };
+  await walk(root);
+  const models = new Map<string, { id: string; sizeBytes?: number }>();
+  for (const file of files) {
+    const segments = file.slice(root.length + 1).split(/[\\/]/u);
+    if (segments.length < 4) continue;
+    const [registry, namespace, model, tag] = segments.slice(-4);
+    if (!registry || !namespace || !model || !tag) continue;
+    const id = normalizeModelId(
+      namespace === "library"
+        ? tag === "latest"
+          ? model
+          : `${model}:${tag}`
+        : `${namespace}/${model}:${tag}`,
+    );
+    if (id) models.set(id, { id });
+  }
+  return [...models.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOptions = {}) {
   const platform = options.platform ?? process.platform;
   const arch = options.arch ?? process.arch;
   const toolsRoot = options.toolsRoot ?? join(getZCodeDataRootDir(), "tools", "local-embeddings");
   const fetchImpl = options.fetch ?? fetch;
   const totalMemoryBytes = (options.totalMemoryBytes ?? totalmem)();
-  const recommended =
-    totalMemoryBytes >= 16 * 1024 ** 3 ? RECOMMENDED_LARGE : RECOMMENDED_SMALL;
+  const recommended = totalMemoryBytes >= 16 * 1024 ** 3 ? RECOMMENDED_LARGE : RECOMMENDED_SMALL;
   let binaryPath: string | undefined;
   let serverChild: ReturnType<typeof spawn> | undefined;
   let installing: Promise<LocalEmbeddingInstallResult> | undefined;
@@ -388,24 +425,27 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
   return {
     async getStatus(): Promise<LocalEmbeddingRuntimeStatus> {
       const binary = await resolveBinary();
+      const diskModels = await listInstalledModels(toolsRoot);
       if (!binary) {
         return {
           runtime: "ollama",
           installed: false,
           running: false,
-          models: [],
+          models: diskModels,
           totalMemoryBytes,
           recommended,
         };
       }
       const version = await versionOf(binary);
       const probed = await probe();
+      const models = new Map(diskModels.map((model) => [model.id, model]));
+      if (probed.running) for (const model of probed.models) models.set(model.id, model);
       return {
         runtime: "ollama",
         installed: true,
         running: probed.running,
         ...(version ? { version } : {}),
-        models: probed.running ? probed.models : [],
+        models: [...models.values()],
         totalMemoryBytes,
         recommended,
       };
@@ -415,6 +455,9 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
         installing = undefined;
       });
       return installing;
+    },
+    start(): Promise<boolean> {
+      return ensureServer();
     },
     pull,
     dispose(): void {

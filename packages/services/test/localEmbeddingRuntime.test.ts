@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createLocalEmbeddingRuntime } from "../src/code-intelligence/localEmbeddingRuntime.js";
 
@@ -43,5 +46,28 @@ describe("local embedding runtime", () => {
       model: "../../etc/passwd",
       diagnostic: "invalid-model-name",
     });
+  });
+});
+
+describe("local model manifests", () => {
+  it("lists downloaded models while the runtime is stopped", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-local-manifests-"));
+    try {
+      const manifest = join(root, "models/manifests/registry.ollama.ai/library/qwen2.5/1.5b");
+      await mkdir(join(manifest, ".."), { recursive: true });
+      await writeFile(manifest, "{}");
+      const runtime = createLocalEmbeddingRuntime({
+        toolsRoot: root,
+        platform: "darwin",
+        arch: "arm64",
+        allowSystemBinary: false,
+        fetch: async () => new Response("not running", { status: 503 }),
+      });
+      const status = await runtime.getStatus();
+      expect(status.running).toBe(false);
+      expect(status.models).toEqual([{ id: "qwen2.5:1.5b" }]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

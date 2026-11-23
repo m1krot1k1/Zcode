@@ -23,11 +23,13 @@ export type EmbeddingErrorCode =
 export type LocalRuntimeRequest =
   | { readonly action: "status" }
   | { readonly action: "install" }
+  | { readonly action: "start" }
   | { readonly action: "pull"; readonly model: string };
 
 export type LocalRuntimeResult =
   | { readonly action: "status"; readonly status: LocalEmbeddingRuntimeStatus }
   | { readonly action: "install"; readonly result: LocalEmbeddingInstallResult }
+  | { readonly action: "start"; readonly running: boolean }
   | { readonly action: "pull"; readonly result: LocalEmbeddingPullResult };
 
 export interface CodeWorkspaceRef {
