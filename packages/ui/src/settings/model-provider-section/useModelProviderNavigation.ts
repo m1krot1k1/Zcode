@@ -285,6 +285,11 @@ export function useModelProviderNavigation({
               }),
               items: [
                 {
+                  key: "workspace-intelligence:local-model",
+                  type: "codeIntelligence" as const,
+                  label: intl.formatMessage({ id: "settings.localModel.navigationLabel" }),
+                },
+                {
                   key: "workspace-intelligence:embeddings",
                   type: "codeIntelligence" as const,
                   label: intl.formatMessage({ id: "settings.embedding.navigationLabel" }),

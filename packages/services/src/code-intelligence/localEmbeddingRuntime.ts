@@ -154,10 +154,9 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
   const arch = options.arch ?? process.arch;
   const toolsRoot = options.toolsRoot ?? join(getZCodeDataRootDir(), "tools", "local-embeddings");
   const fetchImpl = options.fetch ?? fetch;
+  const totalMemoryBytes = (options.totalMemoryBytes ?? totalmem)();
   const recommended =
-    (options.totalMemoryBytes ?? totalmem)() >= 16 * 1024 ** 3
-      ? RECOMMENDED_LARGE
-      : RECOMMENDED_SMALL;
+    totalMemoryBytes >= 16 * 1024 ** 3 ? RECOMMENDED_LARGE : RECOMMENDED_SMALL;
   let binaryPath: string | undefined;
   let serverChild: ReturnType<typeof spawn> | undefined;
   let installing: Promise<LocalEmbeddingInstallResult> | undefined;
@@ -395,6 +394,7 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
           installed: false,
           running: false,
           models: [],
+          totalMemoryBytes,
           recommended,
         };
       }
@@ -406,6 +406,7 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
         running: probed.running,
         ...(version ? { version } : {}),
         models: probed.running ? probed.models : [],
+        totalMemoryBytes,
         recommended,
       };
     },

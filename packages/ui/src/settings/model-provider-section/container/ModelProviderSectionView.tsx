@@ -5,7 +5,7 @@ import {
 import { Button } from "@/components/ui/button.js";
 import { logger } from "@/logger.js";
 import { sanitizeProxyRouteForDisplay } from "@/settingsPageHelpers.js";
-import { EmbeddingProviderSettings } from "@/agent-workbench/index.js";
+import { EmbeddingProviderSettings, LocalModelSettings } from "@/agent-workbench/index.js";
 import { CursorAgentSettingsPanel } from "@/cursor-agent-settings/index.js";
 import { OpenCodeAgentSettingsPanel } from "@/opencode-agent-settings/index.js";
 import { BIGMODEL_REGISTRATION_URL } from "../constants.js";
@@ -28,6 +28,8 @@ export function ModelProviderSectionView({
     codeIntelligenceService,
     codeIndexWorkspaceRef,
     providerTemplates,
+    modelProviders,
+    createPersonalProvider,
     loadError,
     reload,
     refresh,
@@ -118,6 +120,18 @@ export function ModelProviderSectionView({
             }}
             onCreateCustom={(label) => {
               return handleCreateProvider({ providerName: label });
+            }}
+          />
+        ) : selectedNavItem?.type === "codeIntelligence" &&
+          selectedNavItem.key === "workspace-intelligence:local-model" ? (
+          <LocalModelSettings
+            codeIndex={codeIntelligenceService}
+            workspaceRef={codeIndexWorkspaceRef}
+            modelProviders={modelProviders}
+            createPersonalProvider={createPersonalProvider}
+            addPersonalModel={addPersonalModel}
+            onRefresh={async () => {
+              await refresh();
             }}
           />
         ) : selectedNavItem?.type === "codeIntelligence" ? (

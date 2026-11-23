@@ -4,6 +4,8 @@ export interface LocalEmbeddingRuntimeStatus {
   readonly installed: boolean;
   readonly running: boolean;
   readonly version?: string;
+  /** Host RAM used for local model recommendations; optional for older Hosts. */
+  readonly totalMemoryBytes?: number;
   readonly models: ReadonlyArray<{ readonly id: string; readonly sizeBytes?: number }>;
   readonly recommended: {
     readonly model: string;

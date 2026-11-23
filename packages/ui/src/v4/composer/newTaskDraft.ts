@@ -1,6 +1,10 @@
 import type { ComposerInitialConfig } from "@/store/zcodeSessionStoreTypes.js";
 import type { ModelSelectionView } from "@zcode/services";
-import { readComposerRecent, resolveDraftInitialModelSelection } from "@/lib/composerRecent.js";
+import {
+  firstSelectableModelSelection,
+  readComposerRecent,
+  resolveDraftInitialModelSelection,
+} from "@/lib/composerRecent.js";
 import {
   readV4ComposerDraft,
   V4_DRAFT_SCOPE_ROOT,
@@ -24,8 +28,8 @@ export function initializeNewTaskDraft(
     mode: recent?.mode === "plan" ? "build" : (recent?.mode ?? "build"),
     planEnabled: false,
     modelSelection:
-      recent?.modelSelection ??
-      resolveDraftInitialModelSelection(view, null).selection ??
+      resolveDraftInitialModelSelection(view, recent?.modelSelection ?? null).selection ??
+      firstSelectableModelSelection(view) ??
       undefined,
   };
 }

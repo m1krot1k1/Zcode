@@ -323,3 +323,31 @@ describe("composerRecent", () => {
     ).toEqual({ selection: null, invalidated: false });
   });
 });
+
+describe("firstSelectableModelSelection", () => {
+  it("used as fallback when Recent points to a removed provider", async () => {
+    const { firstSelectableModelSelection } = await import("@/lib/composerRecent.js");
+    const view = {
+      revision: 1,
+      providers: [
+        {
+          providerId: "provider-a",
+          config: {},
+          models: [
+            {
+              modelId: "model-a",
+              config: {
+                optionSpecs: { reasoningLevel: { values: ["medium", "high"], map: "{}" } },
+              },
+            },
+          ],
+        },
+      ],
+    } as ModelSelectionView;
+    expect(firstSelectableModelSelection(view)).toEqual({
+      providerId: "provider-a",
+      modelId: "model-a",
+      options: { reasoningLevel: "medium" },
+    });
+  });
+});

@@ -23,7 +23,10 @@ import { prepareWorkspaceWithZCodeSessionService } from "@/hooks/useWorkspacePre
 import { useZCodeSessionService } from "@/hooks/useZCodeSessionService.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
-import { resolveDraftInitialModelSelection } from "@/lib/composerRecent.js";
+import {
+  firstSelectableModelSelection,
+  resolveDraftInitialModelSelection,
+} from "@/lib/composerRecent.js";
 import { initializeNewTaskDraft } from "@/v4/composer/newTaskDraft.js";
 import { useComposerClientNamespace } from "@/hooks/useServices.js";
 import { resolveComposerScope, composerScopeKey } from "@/v4/composer/composerDraftStore.js";
@@ -209,7 +212,9 @@ export function useDraftConfigControl(params: {
   // 仅为无模型原意图的 Root 草稿补齐首次可用选择；不重置正文、权限或 Plan，
   // 也不替换失效的旧选择、已有 Session 或分享导入的配置。
   if (sessionId === null && !draft.modelSelection && modelSelectionView) {
-    const selection = resolveDraftInitialModelSelection(modelSelectionView, null).selection;
+    const selection =
+      resolveDraftInitialModelSelection(modelSelectionView, null).selection ??
+      firstSelectableModelSelection(modelSelectionView);
     if (selection) draft = { ...draft, modelSelection: selection };
   }
   if (sessionId && sessionConfig) {

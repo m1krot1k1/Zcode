@@ -204,6 +204,27 @@ export function resolveDraftInitialModelSelection(
   };
 }
 
+/**
+ * First selectable model in the current registry view.
+ *
+ * New-task drafts must not stay with an empty selection when Recent points to a provider
+ * that was removed (for example a temporary local/mock provider). Falling back to the
+ * first real model keeps submit enabled and lets the user switch explicitly.
+ */
+export function firstSelectableModelSelection(view: ModelSelectionView): ModelSelection | null {
+  for (const provider of view.providers) {
+    for (const model of provider.models) {
+      const reasoningLevel = model.config.optionSpecs.reasoningLevel.values[0];
+      return {
+        providerId: provider.providerId,
+        modelId: model.modelId,
+        ...(reasoningLevel ? { options: { reasoningLevel } } : {}),
+      };
+    }
+  }
+  return null;
+}
+
 function isSelectionInView(view: ModelSelectionView, selection: ModelSelection): boolean {
   const model = findModel(view, selection);
   if (!model) return false;

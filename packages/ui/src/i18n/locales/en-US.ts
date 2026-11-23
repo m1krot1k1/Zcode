@@ -6539,6 +6539,35 @@ const enUS: Record<string, string> = {
   "codeIndex.openGraph": "Open Code Graph",
   "settings.embedding.title": "Embedding provider",
   "settings.embedding.navigationLabel": "Embeddings",
+
+  "settings.localModel.navigationLabel": "Local model",
+  "settings.localModel.title": "Local model",
+  "settings.localModel.description":
+    "Download a Qwen model through ZCode and run it locally with Ollama. The model is added to the composer as the Ollama (local) provider.",
+  "settings.localModel.unavailable": "The Host does not expose the local model runtime.",
+  "settings.localModel.statusLoading": "Checking…",
+  "settings.localModel.runtimeMissing": "Runtime not installed",
+  "settings.localModel.running": "Running",
+  "settings.localModel.stopped": "Stopped",
+  "settings.localModel.installRuntime": "Install Ollama runtime",
+  "settings.localModel.runtimeInstalled": "Ollama runtime installed.",
+  "settings.localModel.installFailed": "Could not install the Ollama runtime",
+  "settings.localModel.recommended": "Recommended for {memory} RAM: {model}",
+  "settings.localModel.recommendedReason":
+    "About {size} download. Runs locally; code never leaves this machine.",
+  "settings.localModel.memoryUnknown": "unknown",
+  "settings.localModel.download": "Download",
+  "settings.localModel.addToComposer": "Add to composer",
+  "settings.localModel.minMemory": "Needs at least {memory} RAM",
+  "settings.localModel.customTitle": "Custom Ollama model",
+  "settings.localModel.customPlaceholder": "qwen3:8b or hf.co/user/model:Q4_K_M",
+  "settings.localModel.customHint":
+    "Any model supported by Ollama. The model is registered in ZCode automatically.",
+  "settings.localModel.invalidModel": "Enter a valid Ollama model name.",
+  "settings.localModel.downloadFailed": "Could not download the model",
+  "settings.localModel.ready": "{model} is installed and available in the composer.",
+  "settings.localModel.composerHint":
+    "After download, pick the Ollama (local) provider in the composer model selector. Local models keep prompts on this machine.",
   "settings.embedding.local.title": "Local embedding model",
   "settings.embedding.local.description":
     "Runs on this machine. The app can download the local runtime and the recommended model once; after that no code leaves the machine.",
