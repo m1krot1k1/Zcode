@@ -32,6 +32,10 @@ export interface UncensoredModelSettingsPort {
     workspace: UncensoredModelSettingsWorkspaceRef,
     write: ZCodeUncensoredSettingsWrite,
   ): Promise<ZCodeUncensoredSettingsStatus>;
+  sendMessage(
+    workspace: UncensoredModelSettingsWorkspaceRef,
+    input: { providerId: string; modelId: string; text: string },
+  ): Promise<{ ok: true; text: string } | { ok: false; error: string }>;
 }
 
 export const UNCENSORED_PROVIDERS_LIMIT = 20;
@@ -142,6 +146,13 @@ export function UncensoredModelSettings({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [busy, setBusy] = useState<"save" | `clear:${string}` | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [chatTarget, setChatTarget] = useState<{
+    providerUid: string;
+    modelUid: string;
+  } | null>(null);
+  const [chatText, setChatText] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatResult, setChatResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   const applyStatus = useCallback((next: ZCodeUncensoredSettingsStatus) => {
     // Возвращённый статус — единственный принятый источник: ключи очищаются и не читаются.
@@ -334,6 +345,41 @@ export function UncensoredModelSettings({
           : provider,
       ),
     );
+  };
+
+  const startChat = (providerUid: string, modelUid: string) => {
+    setChatTarget({ providerUid, modelUid });
+    setChatText("");
+    setChatResult(null);
+  };
+
+  const closeChat = () => {
+    if (chatBusy) return;
+    setChatTarget(null);
+    setChatResult(null);
+  };
+
+  const sendChat = async (provider: ProviderRow, model: ModelRow) => {
+    if (!port || !workspaceRef || chatBusy) return;
+    const text = chatText.trim();
+    if (!text) return;
+    setChatBusy(true);
+    setChatResult(null);
+    try {
+      const result = await port.sendMessage(workspaceRef, {
+        providerId: provider.id,
+        modelId: model.id,
+        text,
+      });
+      setChatResult(result.ok ? { ok: true, text: result.text } : { ok: false, text: result.error });
+    } catch (error: unknown) {
+      setChatResult({
+        ok: false,
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setChatBusy(false);
+    }
   };
 
   return (
@@ -673,6 +719,18 @@ export function UncensoredModelSettings({
                                       type="button"
                                       size="sm"
                                       variant="ghost"
+                                      className="text-ui-sm"
+                                      data-testid="uncensored-model-chat"
+                                      aria-label={`${copy("settings.uncensored.write")}: ${modelLabel}`}
+                                      disabled={busy !== null || chatBusy}
+                                      onClick={() => startChat(provider.uid, model.uid)}
+                                    >
+                                      {copy("settings.uncensored.write")}
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
                                       className="text-ui-sm text-destructive"
                                       data-testid="uncensored-model-remove"
                                       aria-label={`${copy("settings.uncensored.remove")}: ${modelLabel}`}
@@ -694,6 +752,67 @@ export function UncensoredModelSettings({
                                         : "settings.uncensored.invalidModel",
                                     )}
                                   </p>
+                                ) : null}
+                                {chatTarget?.providerUid === provider.uid &&
+                                chatTarget.modelUid === model.uid ? (
+                                  <div
+                                    className="mt-2 space-y-2"
+                                    data-testid="uncensored-model-chat-panel"
+                                  >
+                                    <textarea
+                                      className="min-h-16 w-full resize-y rounded-md border border-border bg-surface p-2 text-ui-base text-foreground"
+                                      data-testid="uncensored-model-chat-input"
+                                      value={chatText}
+                                      placeholder={copy("settings.uncensored.messagePlaceholder")}
+                                      onChange={(event) => setChatText(event.target.value)}
+                                      disabled={chatBusy}
+                                    />
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        data-testid="uncensored-model-chat-send"
+                                        disabled={chatBusy || chatText.trim().length === 0}
+                                        onClick={() => void sendChat(provider, model)}
+                                      >
+                                        {chatBusy ? (
+                                          <LoaderCircle
+                                            className="mr-1 size-3.5 animate-spin"
+                                            aria-hidden="true"
+                                          />
+                                        ) : null}
+                                        {copy("settings.uncensored.send")}
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-ui-sm"
+                                        data-testid="uncensored-model-chat-cancel"
+                                        disabled={chatBusy}
+                                        onClick={closeChat}
+                                      >
+                                        {copy("settings.uncensored.cancel")}
+                                      </Button>
+                                    </div>
+                                    {chatResult ? (
+                                      <div
+                                        className="rounded-lg border border-border bg-surface p-2"
+                                        data-testid="uncensored-model-chat-result"
+                                      >
+                                        <p className="text-ui-sm font-medium text-foreground-subtle">
+                                          {copy("settings.uncensored.response")}
+                                        </p>
+                                        <pre
+                                          className={`mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words text-ui-sm ${
+                                            chatResult.ok ? "text-foreground" : "text-destructive"
+                                          }`}
+                                        >
+                                          {chatResult.text}
+                                        </pre>
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 ) : null}
                               </li>
                             );
