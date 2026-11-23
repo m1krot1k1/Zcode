@@ -31,14 +31,14 @@ export async function runUncensoredTakeover(
   try {
     config = await input.configPort.getConfig(input.workspace);
   } catch {
-    input.logger?.warn(
+    input.logger?.warn?.(
       "Uncensored takeover config read failed",
       logContext(input, { status: "error" }),
     );
     return errorTerminal("config");
   }
   if (!config) {
-    input.logger?.warn(
+    input.logger?.warn?.(
       "Uncensored takeover config is unavailable",
       logContext(input, { status: "error" }),
     );
@@ -50,7 +50,7 @@ export async function runUncensoredTakeover(
       .map((model) => ({ provider, model })),
   );
   if (routes.length === 0) {
-    input.logger?.info(
+    input.logger?.info?.(
       "Uncensored takeover has no enabled models",
       logContext(input, { status: "no-enabled-models" }),
     );
@@ -92,7 +92,7 @@ export async function runUncensoredTakeover(
     });
     const durationMs = Date.now() - startedAt;
     if (outcome.kind === "done") {
-      input.logger?.info(
+      input.logger?.info?.(
         "Uncensored takeover attempt completed",
         logContext(input, {
           providerId: provider.id,
@@ -110,7 +110,7 @@ export async function runUncensoredTakeover(
       };
     }
     if (outcome.kind === "refused") {
-      input.logger?.info(
+      input.logger?.info?.(
         "Uncensored takeover attempt refused",
         logContext(input, {
           providerId: provider.id,
@@ -130,7 +130,7 @@ export async function runUncensoredTakeover(
       };
       continue;
     }
-    input.logger?.warn(
+    input.logger?.warn?.(
       "Uncensored takeover attempt failed",
       logContext(input, {
         providerId: provider.id,
