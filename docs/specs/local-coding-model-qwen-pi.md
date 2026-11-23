@@ -1,6 +1,6 @@
 # Recommended local coding model: Qwen3.8-27B-pi-adapted
 
-Status: active (2026-11-23, release 3.17.159)
+Status: active (2026-11-23, release 3.17.163)
 
 The product already supports any OpenAI-compatible local server through the ordinary
 provider form. This note records the recommended open-weights coding model and the exact
@@ -94,7 +94,7 @@ Base URL: `http://127.0.0.1:9931/v1`; model id: `qwen3.8-pi`.
 - The app does not claim the model is installed or downloaded unless the user's server
   responds.
 
-## Managed local Qwen3 in ZCode (3.17.159)
+## Managed local Qwen3 in ZCode (3.17.163)
 
 Settings → Model providers → Workspace intelligence → **Local model** now manages a
 local chat model, not just embeddings:
@@ -112,3 +112,9 @@ local chat model, not just embeddings:
 This managed path intentionally does **not** download the 54 GB Qwen3.8-27B-pi-adapted
 weights. That adapter still requires the external vLLM/llama.cpp server above, so ZCode
 cannot pretend the 27B model is installed or ready before the server answers.
+
+Runtime verification: on release 3.17.163, `qwen2.5:1.5b` was installed through
+Settings → Local model, registered as `Ollama (local)`, selected in the Composer, and
+answered `ok` in about 4 seconds. The Ollama server is started when the Local model
+settings open after an app restart; the installed-model list is read from Ollama
+manifests without starting the server.
