@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
+import { BUNDLED_SOURCE_SERVER_TARGETS } from "./bundled-remote-assets-targets.mjs";
 import { shouldReuseBundledRelease } from "./bundled-remote-assets-reuse.mjs";
 
 /**
@@ -14,25 +15,13 @@ import { shouldReuseBundledRelease } from "./bundled-remote-assets-reuse.mjs";
  * подключение работало без CDN, bundled-архив Source Server кладётся в ресурсы
  * приложения и затем загружается на remote host существующим транспортом.
  *
- * Скрипт строит release только для текущей платформы (host → server target) и
- * складывает его в packages/desktop/bundled-remote-assets/releases/<version>.
+ * Скрипт строит release для ВСЕХ удалённых целей (linux/darwin × x64/arm64),
+ * независимо от платформы сборки. Иначе macOS-приложение несёт только
+ * darwin-arm64 и падает на подключении к Linux с
+ * "Source Server descriptor is missing target: linux-x64".
  */
 const desktopPackageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(desktopPackageRoot, "../..");
-const targetByPlatform = {
-  "linux-x64": "linux-x64",
-  "linux-arm64": "linux-arm64",
-  "darwin-x64": "darwin-x64",
-  "darwin-arm64": "darwin-arm64",
-};
-
-const target = targetByPlatform[`${process.platform}-${process.arch}`];
-if (!target) {
-  console.log(
-    `[bundled-remote-assets] no Source Server target for ${process.platform}-${process.arch}; skipping`,
-  );
-  process.exit(0);
-}
 
 const version = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")).version;
 const sourceReleaseDir = join(desktopPackageRoot, "mock-cdn", "releases", version);
@@ -56,6 +45,12 @@ async function sha256File(path) {
   return hash.digest("hex");
 }
 
+async function archiveFingerprint(path) {
+  const fileStat = await stat(path).catch(() => null);
+  if (!fileStat?.isFile()) return null;
+  return { sizeBytes: fileStat.size, sha256: await sha256File(path) };
+}
+
 async function reusedRelease() {
   const descriptorFile = join(bundledReleaseDir, "source-server-release.json");
   const text = await readFile(descriptorFile, "utf8").catch(() => null);
@@ -63,18 +58,20 @@ async function reusedRelease() {
   try {
     const descriptor = JSON.parse(text);
     const recordedRevision = (await readFile(bundledRevisionFile, "utf8").catch(() => "")).trim();
-    const archive = descriptor.archives?.find((entry) => entry.target === target);
-    if (!archive) return false;
-    const archivePath = join(bundledReleaseDir, archive.fileName);
-    const fileStat = await stat(archivePath).catch(() => null);
-    if (!fileStat?.isFile()) return false;
+    const archives = {};
+    for (const target of BUNDLED_SOURCE_SERVER_TARGETS) {
+      const archive = descriptor.archives?.find((entry) => entry.target === target);
+      if (!archive) return false;
+      const fingerprint = await archiveFingerprint(join(bundledReleaseDir, archive.fileName));
+      if (!fingerprint) return false;
+      archives[target] = fingerprint;
+    }
     return shouldReuseBundledRelease({
       descriptor,
-      target,
+      targets: BUNDLED_SOURCE_SERVER_TARGETS,
       expectedRevision: sourceRevision,
       recordedRevision,
-      archiveSizeBytes: fileStat.size,
-      archiveSha256: await sha256File(archivePath),
+      archives,
     });
   } catch {
     return false;
@@ -86,18 +83,12 @@ if (await reusedRelease()) {
   process.exit(0);
 }
 
-console.log(`[bundled-remote-assets] staging Source Server ${version} for ${target}`);
+console.log(
+  `[bundled-remote-assets] staging Source Server ${version} for ${BUNDLED_SOURCE_SERVER_TARGETS.join(", ")}`,
+);
 const stage = spawnSync(
   "pnpm",
-  [
-    "--filter",
-    "@zcode/server-cli",
-    "exec",
-    "tsx",
-    "src/packaging/stageRemoteAssetsCli.ts",
-    "--target",
-    target,
-  ],
+  ["--filter", "@zcode/server-cli", "exec", "tsx", "src/packaging/stageRemoteAssetsCli.ts"],
   { cwd: repoRoot, stdio: "inherit", env: process.env },
 );
 if (stage.error) throw stage.error;

@@ -19,13 +19,17 @@ if (!artifactPath) {
 }
 
 const absoluteArtifactPath = resolve(artifactPath);
+// Fork bundles Source Server archives for every remote target (four archives,
+// ~86 MiB each) so SSH works without a CDN. The artifact grows accordingly;
+// keep the guard high enough for that matrix while still catching runaway
+// bundles.
 const limitsMb = {
-  default: 500,
-  ".dmg": 500,
-  ".zip": 500,
-  ".exe": 500,
-  ".appimage": 500,
-  ".deb": 500,
+  default: 800,
+  ".dmg": 800,
+  ".zip": 800,
+  ".exe": 800,
+  ".appimage": 800,
+  ".deb": 800,
 };
 
 function formatMiB(bytes) {

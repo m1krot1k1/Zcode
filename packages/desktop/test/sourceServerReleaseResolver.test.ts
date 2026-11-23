@@ -42,6 +42,37 @@ async function writeRelease(root: string, contents: string): Promise<string> {
   return releaseDir;
 }
 
+function multiTargetDescriptor(entries: Array<{ target: string; contents: string }>) {
+  return {
+    schemaVersion: 1,
+    version: ZCODE_VERSION,
+    archives: entries.map(({ target, contents }) => ({
+      target,
+      version: ZCODE_VERSION,
+      fileName: `zcode-server-${target}.tar.gz`,
+      sha256: sha256(contents),
+      sizeBytes: Buffer.byteLength(contents),
+      urls: [`zcode-server-${target}.tar.gz`],
+    })),
+  };
+}
+
+async function writeMultiTargetRelease(
+  root: string,
+  entries: Array<{ target: string; contents: string }>,
+): Promise<string> {
+  const releaseDir = join(root, "releases", ZCODE_VERSION);
+  await mkdir(releaseDir, { recursive: true });
+  for (const entry of entries) {
+    await writeFile(join(releaseDir, `zcode-server-${entry.target}.tar.gz`), entry.contents);
+  }
+  await writeFile(
+    join(releaseDir, "source-server-release.json"),
+    JSON.stringify(multiTargetDescriptor(entries)),
+  );
+  return releaseDir;
+}
+
 describe("Source Server release resolver", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -104,6 +135,31 @@ describe("Source Server release resolver", () => {
       sha256: sha256(contents),
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("resolves a Linux target from a bundle that also carries the macOS host archive", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-source-release-multi-"));
+    const contents = "linux-source-server";
+    const releaseDir = await writeMultiTargetRelease(root, [
+      { target: "darwin-arm64", contents: "darwin-arm64-archive" },
+      { target: "darwin-x64", contents: "darwin-x64-archive" },
+      { target: "linux-arm64", contents: "linux-arm64-archive" },
+      { target: "linux-x64", contents },
+    ]);
+
+    const release = await resolveSourceServerReleaseAsset(
+      probe,
+      { bundledReleaseDir: root },
+      { ...target, assetInstallMode: "remote-download" },
+    );
+
+    expect(release).toMatchObject({
+      localArchivePath: join(releaseDir, "zcode-server-linux-x64.tar.gz"),
+      target: "linux-x64",
+      version: ZCODE_VERSION,
+      sha256: sha256(contents),
+      sizeBytes: Buffer.byteLength(contents),
+    });
   });
 
   it("fails closed without a staged local development descriptor", async () => {
