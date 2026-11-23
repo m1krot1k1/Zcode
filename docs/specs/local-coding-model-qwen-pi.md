@@ -1,6 +1,6 @@
 # Recommended local coding model: Qwen3.8-27B-pi-adapted
 
-Status: active (2026-11-23, release 3.17.163)
+Status: active (2026-11-23, release 3.17.164)
 
 The product already supports any OpenAI-compatible local server through the ordinary
 provider form. This note records the recommended open-weights coding model and the exact
@@ -94,7 +94,7 @@ Base URL: `http://127.0.0.1:9931/v1`; model id: `qwen3.8-pi`.
 - The app does not claim the model is installed or downloaded unless the user's server
   responds.
 
-## Managed local Qwen3 in ZCode (3.17.163)
+## Managed local Qwen3 in ZCode (3.17.164)
 
 Settings → Model providers → Workspace intelligence → **Local model** now manages a
 local chat model, not just embeddings:
