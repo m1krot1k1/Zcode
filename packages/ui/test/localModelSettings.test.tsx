@@ -86,7 +86,7 @@ describe("Local model settings", () => {
         enabled: true,
         properties: expect.objectContaining({ supportsToolCall: true }),
       }),
-      false,
+      true,
     );
     expect(onRefresh).toHaveBeenCalled();
   });

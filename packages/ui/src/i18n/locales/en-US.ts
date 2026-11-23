@@ -6559,12 +6559,15 @@ const enUS: Record<string, string> = {
   "settings.localModel.download": "Download",
   "settings.localModel.addToComposer": "Add to composer",
   "settings.localModel.minMemory": "Needs at least {memory} RAM",
+  "settings.localModel.installedTitle": "Installed locally",
   "settings.localModel.customTitle": "Custom Ollama model",
   "settings.localModel.customPlaceholder": "qwen3:8b or hf.co/user/model:Q4_K_M",
   "settings.localModel.customHint":
     "Any model supported by Ollama. The model is registered in ZCode automatically.",
   "settings.localModel.invalidModel": "Enter a valid Ollama model name.",
   "settings.localModel.downloadFailed": "Could not download the model",
+  "settings.localModel.providerFailed":
+    "The model downloaded, but ZCode could not add it to the composer.",
   "settings.localModel.ready": "{model} is installed and available in the composer.",
   "settings.localModel.composerHint":
     "After download, pick the Ollama (local) provider in the composer model selector. Local models keep prompts on this machine.",

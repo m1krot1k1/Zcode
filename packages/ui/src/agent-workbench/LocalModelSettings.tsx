@@ -219,7 +219,7 @@ export function LocalModelSettings({
     }
     const alreadyAdded = ollamaProvider?.models.some((candidate) => candidate.modelId === model.id);
     if (!alreadyAdded) {
-      await addPersonalModel(providerId, model.id, localModelConfig(model), false);
+      await addPersonalModel(providerId, model.id, localModelConfig(model), true);
     }
     await onRefresh();
   };
@@ -247,7 +247,12 @@ export function LocalModelSettings({
         });
         return;
       }
-      await ensureProviderModel(model);
+      try {
+        await ensureProviderModel(model);
+      } catch {
+        setMessage({ text: copy("settings.localModel.providerFailed"), ok: false });
+        return;
+      }
       await refreshRuntime();
       setMessage({
         text: copy("settings.localModel.ready", { model: model.label }),
@@ -288,13 +293,18 @@ export function LocalModelSettings({
         });
         return;
       }
-      await ensureProviderModel({
-        id,
-        label: id,
-        downloadBytes: 0,
-        minRamBytes: 0,
-        contextWindow: 32_768,
-      });
+      try {
+        await ensureProviderModel({
+          id,
+          label: id,
+          downloadBytes: 0,
+          minRamBytes: 0,
+          contextWindow: 32_768,
+        });
+      } catch {
+        setMessage({ text: copy("settings.localModel.providerFailed"), ok: false });
+        return;
+      }
       await refreshRuntime();
       setMessage({ text: copy("settings.localModel.ready", { model: id }), ok: true });
     } catch {
@@ -437,6 +447,46 @@ export function LocalModelSettings({
           );
         })}
       </div>
+
+      {installed.size > 0 ? (
+        <div className="space-y-2" data-testid="local-model-installed">
+          <p className="text-ui-sm font-medium">{copy("settings.localModel.installedTitle")}</p>
+          {[...installed].map((id) => {
+            const catalogModel = LOCAL_CHAT_MODELS.find(
+              (candidate) => normalizeModelId(candidate.id) === id,
+            );
+            const model = catalogModel ?? {
+              id,
+              label: id,
+              downloadBytes: 0,
+              minRamBytes: 0,
+              contextWindow: 32_768,
+            };
+            return (
+              <div
+                key={id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2"
+              >
+                <span className="text-ui-sm">{model.label}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void download(model)}
+                >
+                  {busy === model.id ? (
+                    <LoaderCircle className="mr-1 size-3.5 animate-spin" />
+                  ) : (
+                    <Check className="mr-1 size-3.5" />
+                  )}
+                  {copy("settings.localModel.addToComposer")}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="rounded-lg border border-border bg-card p-3">
         <p className="mb-2 flex items-center gap-1 text-ui-sm font-medium">

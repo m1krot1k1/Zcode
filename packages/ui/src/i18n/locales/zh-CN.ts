@@ -6120,11 +6120,13 @@ const zhCN: Record<string, string> = {
   "settings.localModel.download": "下载",
   "settings.localModel.addToComposer": "添加到 composer",
   "settings.localModel.minMemory": "至少需要 {memory} RAM",
+  "settings.localModel.installedTitle": "本地已安装",
   "settings.localModel.customTitle": "自定义 Ollama 模型",
   "settings.localModel.customPlaceholder": "qwen3:8b 或 hf.co/user/model:Q4_K_M",
   "settings.localModel.customHint": "支持 Ollama 的任意模型，ZCode 会自动注册提供方和模型。",
   "settings.localModel.invalidModel": "请输入有效的 Ollama 模型名。",
   "settings.localModel.downloadFailed": "无法下载模型",
+  "settings.localModel.providerFailed": "模型已下载，但 ZCode 无法将其添加到 composer。",
   "settings.localModel.ready": "{model} 已安装并可在 composer 中使用。",
   "settings.localModel.composerHint":
     "下载后在 composer 的模型选择器中选择 Ollama (local)；本地模型不会把提示发送到云端。",
