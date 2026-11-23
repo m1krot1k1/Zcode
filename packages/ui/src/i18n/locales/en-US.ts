@@ -6557,6 +6557,7 @@ const enUS: Record<string, string> = {
     "About {size} download. Runs locally; code never leaves this machine.",
   "settings.localModel.memoryUnknown": "unknown",
   "settings.localModel.download": "Download",
+  "settings.localModel.downloading": "Downloading…",
   "settings.localModel.addToComposer": "Add to composer",
   "settings.localModel.minMemory": "Needs at least {memory} RAM",
   "settings.localModel.installedTitle": "Installed locally",

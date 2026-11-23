@@ -13,6 +13,7 @@ export type {
   CodeWorkspaceRef,
   EmbeddingProvider,
   LocalEmbeddingRuntimeStatus,
+  LocalEmbeddingDownload,
   LocalEmbeddingInstallResult,
   LocalEmbeddingPullResult,
   LocalEmbeddingPort,

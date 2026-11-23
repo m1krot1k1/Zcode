@@ -17,6 +17,7 @@ import type {
   CodeWorkspaceRef,
   EmbeddingProvider,
   LocalEmbeddingRuntimeStatus,
+  LocalEmbeddingDownload,
 } from "./contract.js";
 
 const LOCAL_ENDPOINT = "http://127.0.0.1:11434/api/embed";
@@ -51,6 +52,10 @@ export function EmbeddingProviderSettings({
   const [localBusy, setLocalBusy] = useState<"install" | "pull" | "use" | null>(null);
   const [localMessage, setLocalMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const localRuntime = useMemo(() => resolveLocalRuntimeApi(codeIndex), [codeIndex]);
+  const activeDownloads =
+    localStatus?.downloads?.filter(
+      (download) => download.state === "downloading" || download.state === "verifying",
+    ) ?? [];
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +101,12 @@ export function EmbeddingProviderSettings({
     void refreshLocalStatus();
     // Only load once; install/pull actions refresh it explicitly.
   }, [localRuntime]);
+
+  useEffect(() => {
+    if (activeDownloads.length === 0 && localBusy !== "pull") return;
+    const timer = window.setInterval(() => void refreshLocalStatus(), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeDownloads.length, localBusy, refreshLocalStatus]);
 
   if (!codeIndex || !workspaceRef) return null;
 
@@ -297,6 +308,13 @@ export function EmbeddingProviderSettings({
   const configured = status?.embedding.configured === true;
   const statusLabel = copy(`settings.embedding.phase.${status?.embedding.phase ?? "pending"}`);
   const recommendedModel = localStatus?.recommended.model;
+  const downloadFor = (modelId: string): LocalEmbeddingDownload | undefined =>
+    localStatus?.downloads?.find((download) => download.model === modelId);
+  const downloadPercent = (download: LocalEmbeddingDownload | undefined): number | null => {
+    if (!download?.totalBytes || download.totalBytes <= 0) return null;
+    return Math.min(100, Math.round(((download.completedBytes ?? 0) / download.totalBytes) * 100));
+  };
+  const recommendedDownload = recommendedModel ? downloadFor(recommendedModel) : undefined;
   const localModelInstalled =
     recommendedModel !== undefined &&
     (localStatus?.models.some((model) => model.id.split(":")[0] === recommendedModel) ?? false);
@@ -343,6 +361,34 @@ export function EmbeddingProviderSettings({
                 })}
               </p>
               <p className="text-ui-xs text-muted-foreground">{localStatus.recommended.reason}</p>
+              {recommendedDownload && recommendedDownload.state !== "failed" ? (
+                <div className="space-y-1" data-testid="local-embedding-download-progress">
+                  <div className="flex items-center justify-between text-ui-xs text-muted-foreground">
+                    <span>
+                      {recommendedDownload.statusText ??
+                        copy("settings.embedding.local.downloading")}
+                    </span>
+                    <span>
+                      {downloadPercent(recommendedDownload) !== null
+                        ? `${downloadPercent(recommendedDownload)}%`
+                        : recommendedDownload.completedBytes
+                          ? formatBytes(recommendedDownload.completedBytes)
+                          : ""}
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-surface">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width]"
+                      style={{ width: `${downloadPercent(recommendedDownload) ?? 15}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              {recommendedDownload?.state === "failed" ? (
+                <p className="text-ui-xs text-destructive">
+                  {recommendedDownload.error ?? copy("settings.embedding.local.downloadFailed")}
+                </p>
+              ) : null}
             </>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
@@ -367,7 +413,7 @@ export function EmbeddingProviderSettings({
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={localBusy !== null}
+                disabled={localBusy !== null || activeDownloads.length > 0}
                 onClick={() => void downloadLocalModel()}
               >
                 {localBusy === "pull" ? (

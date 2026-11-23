@@ -142,6 +142,10 @@ export function LocalModelSettings({
   const [busy, setBusy] = useState<"install" | string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [customModel, setCustomModel] = useState("");
+  const activeDownloads =
+    runtime?.downloads?.filter(
+      (download) => download.state === "downloading" || download.state === "verifying",
+    ) ?? [];
 
   const refreshRuntime = useCallback(async () => {
     if (!localRuntime) {
@@ -165,6 +169,12 @@ export function LocalModelSettings({
   useEffect(() => {
     void refreshRuntime();
   }, [refreshRuntime]);
+
+  useEffect(() => {
+    if (activeDownloads.length === 0 && busy === null) return;
+    const timer = window.setInterval(() => void refreshRuntime(), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeDownloads.length, busy, refreshRuntime]);
 
   const installed = useMemo(() => {
     const ids = new Set((runtime?.models ?? []).map((model) => normalizeModelId(model.id)));
@@ -351,13 +361,49 @@ export function LocalModelSettings({
       </header>
       <p className="text-ui-sm text-muted-foreground">{copy("settings.localModel.description")}</p>
 
+      {activeDownloads.map((download) => {
+        const percent =
+          download.totalBytes && download.totalBytes > 0
+            ? Math.min(
+                100,
+                Math.round(((download.completedBytes ?? 0) / download.totalBytes) * 100),
+              )
+            : null;
+        return (
+          <div
+            key={download.model}
+            className="space-y-1 rounded-lg border border-border bg-card p-3"
+            data-testid={`local-model-download-${download.model}`}
+          >
+            <div className="flex items-center justify-between gap-2 text-ui-xs text-muted-foreground">
+              <span className="truncate">
+                {download.model} · {download.statusText ?? copy("settings.localModel.downloading")}
+              </span>
+              <span>
+                {percent !== null
+                  ? `${percent}%`
+                  : download.completedBytes
+                    ? formatBytes(download.completedBytes)
+                    : ""}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-surface">
+              <div
+                className="h-full rounded-full bg-primary transition-[width]"
+                style={{ width: `${percent ?? 15}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+
       {!runtime?.installed ? (
         <div className="rounded-lg border border-border bg-card p-3">
           <Button
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy !== null}
+            disabled={busy !== null || activeDownloads.length > 0}
             onClick={() => void installRuntime()}
           >
             {busy === "install" ? (
@@ -393,7 +439,7 @@ export function LocalModelSettings({
           <Button
             type="button"
             size="sm"
-            disabled={busy !== null}
+            disabled={busy !== null || activeDownloads.length > 0}
             onClick={() => void download(recommended)}
           >
             {busy === recommended.id ? (
@@ -436,7 +482,7 @@ export function LocalModelSettings({
                 type="button"
                 size="sm"
                 variant={isInstalled ? "outline" : "default"}
-                disabled={busy !== null}
+                disabled={busy !== null || activeDownloads.length > 0}
                 onClick={() => void download(model)}
               >
                 {busy === model.id ? (
@@ -479,7 +525,7 @@ export function LocalModelSettings({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={busy !== null}
+                  disabled={busy !== null || activeDownloads.length > 0}
                   onClick={() => void download(model)}
                 >
                   {busy === model.id ? (
@@ -511,7 +557,7 @@ export function LocalModelSettings({
           <Button
             type="button"
             variant="outline"
-            disabled={busy !== null || !customModel.trim()}
+            disabled={busy !== null || activeDownloads.length > 0 || !customModel.trim()}
             onClick={() => void downloadCustom()}
           >
             {busy === customModel.trim() ? (

@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { getZCodeDataRootDir } from "../paths.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import type {
+  LocalEmbeddingDownload,
   LocalEmbeddingInstallResult,
   LocalEmbeddingPullResult,
   LocalEmbeddingRuntimeStatus,
@@ -199,6 +200,7 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
   let installing: Promise<LocalEmbeddingInstallResult> | undefined;
   let starting: Promise<boolean> | undefined;
   const pulls = new Map<string, Promise<LocalEmbeddingPullResult>>();
+  const downloads = new Map<string, LocalEmbeddingDownload>();
   let disposed = false;
 
   const managedBinaryPath = (): string => join(toolsRoot, "runtime", binaryName(platform));
@@ -397,22 +399,115 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
       if (!(await ensureServer())) {
         return { status: "failed", model, diagnostic: "runtime-start-failed" };
       }
-      const result = await run(binary, ["pull", model], PULL_TIMEOUT_MS, serverEnvironment());
-      if (result.timedOut) return { status: "failed", model, diagnostic: "download-timeout" };
-      if (result.code !== 0) {
-        return {
-          status: "failed",
-          model,
-          diagnostic: (result.stderr.trim() || result.stdout.trim() || "download-failed").slice(
-            0,
-            240,
-          ),
-        };
+      downloads.set(model, {
+        model,
+        state: "downloading",
+        completedBytes: 0,
+        totalBytes: 0,
+        statusText: "starting",
+      });
+      // Prefer Ollama's streaming HTTP pull: it gives completed/total bytes and keeps
+      // running in the Host when the settings page unmounts. CLI pull remains a fallback
+      // for older servers that do not expose /api/pull streaming.
+      let httpStarted = false;
+      let httpFailure: string | undefined;
+      try {
+        const response = await fetchImpl(`${OLLAMA_ENDPOINT}/api/pull`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: model, stream: true }),
+          signal: AbortSignal.timeout(PULL_TIMEOUT_MS),
+        });
+        if (response.ok && response.body) {
+          httpStarted = true;
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let success = false;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (value) buffer += decoder.decode(value, { stream: true });
+            let newline = buffer.indexOf("\n");
+            while (newline >= 0) {
+              const line = buffer.slice(0, newline).trim();
+              buffer = buffer.slice(newline + 1);
+              newline = buffer.indexOf("\n");
+              if (!line) continue;
+              let event: {
+                status?: unknown;
+                completed?: unknown;
+                total?: unknown;
+                error?: unknown;
+              };
+              try {
+                event = JSON.parse(line) as typeof event;
+              } catch {
+                continue;
+              }
+              if (typeof event.error === "string" && event.error.trim()) {
+                httpFailure = event.error.trim().slice(0, 240);
+              }
+              const completed = Number(event.completed);
+              const total = Number(event.total);
+              const statusText = typeof event.status === "string" ? event.status : undefined;
+              const current = downloads.get(model);
+              downloads.set(model, {
+                model,
+                state: statusText?.includes("verifying") ? "verifying" : "downloading",
+                ...(Number.isFinite(completed)
+                  ? { completedBytes: Math.max(0, completed) }
+                  : current?.completedBytes !== undefined
+                    ? { completedBytes: current.completedBytes }
+                    : {}),
+                ...(Number.isFinite(total)
+                  ? { totalBytes: Math.max(0, total) }
+                  : current?.totalBytes !== undefined
+                    ? { totalBytes: current.totalBytes }
+                    : {}),
+                ...(statusText ? { statusText } : {}),
+                ...(httpFailure ? { state: "failed", error: httpFailure } : {}),
+              });
+              if (statusText === "success") success = true;
+            }
+            if (done) break;
+          }
+          if (httpFailure) throw new Error(httpFailure);
+          if (!success) throw new Error("pull-stream-ended");
+        }
+      } catch (error) {
+        if (httpStarted) {
+          const diagnostic = (error instanceof Error ? error.message : String(error)).slice(0, 240);
+          downloads.set(model, { model, state: "failed", error: diagnostic });
+          return { status: "failed", model, diagnostic };
+        }
+        // Network/HTTP capability failure: fall through to CLI pull below.
+        httpFailure = error instanceof Error ? error.message : String(error);
+      }
+      if (!httpStarted) {
+        const result = await run(binary, ["pull", model], PULL_TIMEOUT_MS, serverEnvironment());
+        if (result.timedOut) {
+          downloads.set(model, { model, state: "failed", error: "download-timeout" });
+          return { status: "failed", model, diagnostic: "download-timeout" };
+        }
+        if (result.code !== 0) {
+          const diagnostic = (
+            result.stderr.trim() ||
+            result.stdout.trim() ||
+            httpFailure ||
+            "download-failed"
+          ).slice(0, 240);
+          downloads.set(model, { model, state: "failed", error: diagnostic });
+          return { status: "failed", model, diagnostic };
+        }
       }
       const installed = await probe();
       const present =
         installed.running && installed.models.some((entry) => normalizeModelId(entry.id) === model);
-      if (!present) return { status: "failed", model, diagnostic: "model-not-listed" };
+      if (!present) {
+        downloads.set(model, { model, state: "failed", error: "model-not-listed" });
+        return { status: "failed", model, diagnostic: "model-not-listed" };
+      }
+      downloads.delete(model);
       log.info("Local embedding model installed", { model });
       return { status: "installed", model };
     })().finally(() => {
@@ -432,6 +527,7 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
           installed: false,
           running: false,
           models: diskModels,
+          downloads: [...downloads.values()],
           totalMemoryBytes,
           recommended,
         };
@@ -446,6 +542,7 @@ export function createLocalEmbeddingRuntime(options: LocalEmbeddingRuntimeOption
         running: probed.running,
         ...(version ? { version } : {}),
         models: [...models.values()],
+        downloads: [...downloads.values()],
         totalMemoryBytes,
         recommended,
       };

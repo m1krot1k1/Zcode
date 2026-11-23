@@ -1,3 +1,12 @@
+export interface LocalEmbeddingDownload {
+  readonly model: string;
+  readonly state: "downloading" | "verifying" | "failed";
+  readonly completedBytes?: number;
+  readonly totalBytes?: number;
+  readonly statusText?: string;
+  readonly error?: string;
+}
+
 /** A local embedding runtime managed by the Host (currently Ollama). */
 export interface LocalEmbeddingRuntimeStatus {
   readonly runtime: "ollama";
@@ -7,6 +16,8 @@ export interface LocalEmbeddingRuntimeStatus {
   /** Host RAM used for local model recommendations; optional for older Hosts. */
   readonly totalMemoryBytes?: number;
   readonly models: ReadonlyArray<{ readonly id: string; readonly sizeBytes?: number }>;
+  /** Active/failed pulls; survives settings navigation while the Host is alive. */
+  readonly downloads?: ReadonlyArray<LocalEmbeddingDownload>;
   readonly recommended: {
     readonly model: string;
     readonly dimensions: number;

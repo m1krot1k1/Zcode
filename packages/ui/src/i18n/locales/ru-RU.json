@@ -376,6 +376,7 @@
   "settings.localModel.recommendedReason": "Скачивание около {size}. Работает локально; код не покидает эту машину.",
   "settings.localModel.memoryUnknown": "неизвестно",
   "settings.localModel.download": "Скачать",
+  "settings.localModel.downloading": "Скачивание…",
   "settings.localModel.addToComposer": "Добавить в composer",
   "settings.localModel.minMemory": "Нужно не менее {memory} RAM",
   "settings.localModel.installedTitle": "Установлены локально",

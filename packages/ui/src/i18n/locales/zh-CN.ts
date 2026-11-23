@@ -6118,6 +6118,7 @@ const zhCN: Record<string, string> = {
   "settings.localModel.recommendedReason": "下载约 {size}。完全本地运行，代码不会离开本机。",
   "settings.localModel.memoryUnknown": "未知",
   "settings.localModel.download": "下载",
+  "settings.localModel.downloading": "下载中…",
   "settings.localModel.addToComposer": "添加到 composer",
   "settings.localModel.minMemory": "至少需要 {memory} RAM",
   "settings.localModel.installedTitle": "本地已安装",

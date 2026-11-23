@@ -310,6 +310,7 @@ export {
   type EmbeddingTestResult,
 } from "./code-intelligence/contract.js";
 export type {
+  LocalEmbeddingDownload,
   LocalEmbeddingInstallResult,
   LocalEmbeddingPort,
   LocalEmbeddingPullResult,
