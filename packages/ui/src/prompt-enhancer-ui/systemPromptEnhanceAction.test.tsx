@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PromptEnhanceResult } from "@zcode/shared";
 
 const enhancer = vi.hoisted(() => ({
@@ -12,6 +12,8 @@ const enhancer = vi.hoisted(() => ({
   error: undefined as { code: string; message: string } | undefined,
 }));
 
+const usePromptEnhancerMock = vi.hoisted(() => vi.fn());
+
 const optionalServices = vi.hoisted(() => ({
   current: { promptEnhancerService: {} } as { promptEnhancerService?: unknown } | undefined,
 }));
@@ -20,7 +22,7 @@ vi.mock("@/hooks/useServices.js", () => ({
   useOptionalServices: () => optionalServices.current,
 }));
 vi.mock("@/hooks/usePromptEnhancer.js", () => ({
-  usePromptEnhancer: () => enhancer,
+  usePromptEnhancer: usePromptEnhancerMock,
 }));
 vi.mock("@/i18n/IntlProvider.js", () => ({
   useZCodeIntl: () => ({
@@ -57,6 +59,10 @@ function renderAction(onApply = vi.fn()) {
   return onApply;
 }
 
+beforeEach(() => {
+  usePromptEnhancerMock.mockReturnValue(enhancer);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -66,6 +72,43 @@ afterEach(() => {
 });
 
 describe("SystemPromptEnhanceAction", () => {
+  it("prefers the target-scoped service over the ambient settings host", () => {
+    // SSH 场景：设置页可能渲染在本地 host 的 ServiceProvider 下，但正在编辑的 agent
+    // 属于远端 workspace。Кнопка обязана использовать сервис target-скоупа.
+    const targetEnhancer = {
+      enhance: vi.fn(),
+      cancel: vi.fn(async () => {}),
+      onStreamDelta: vi.fn(() => () => {}),
+    };
+    const ambientEnhancer = {
+      enhance: vi.fn(),
+      cancel: vi.fn(async () => {}),
+      onStreamDelta: vi.fn(() => () => {}),
+    };
+    optionalServices.current = { promptEnhancerService: ambientEnhancer };
+
+    render(
+      <SystemPromptEnhanceAction
+        workspacePath="/srv/app"
+        workspaceIdentity="ssh:prod:/srv/app"
+        draftText={DRAFT}
+        onApply={vi.fn()}
+        services={{ promptEnhancerService: targetEnhancer } as never}
+      />,
+    );
+
+    expect(usePromptEnhancerMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        promptEnhancerService: targetEnhancer,
+        workspacePath: "/srv/app",
+        workspaceIdentity: "ssh:prod:/srv/app",
+      }),
+    );
+    expect(usePromptEnhancerMock).not.toHaveBeenLastCalledWith(
+      expect.objectContaining({ promptEnhancerService: ambientEnhancer }),
+    );
+  });
+
   it("renders nothing when the prompt enhancer service is unavailable", () => {
     optionalServices.current = undefined;
     renderAction();

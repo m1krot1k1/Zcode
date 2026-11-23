@@ -58,6 +58,23 @@ accept or reject the result.**
    capability suggestions with live install status and `skills.sh` provenance. The only
    side effect is the declared auto-install, and it is visible per row.
 
+## Target-host routing (2026-11-23)
+
+The system-instruction enhancer must run on the host that owns the target workspace,
+not on the ambient settings host.
+
+- `SubagentsSection` resolves the target scope through
+  `useWorkspaceServicesResolution(targetWorkspacePath, …, targetWorkspaceIdentity)` and
+  passes that accessor to `SubagentForm`.
+- `SubagentForm` passes the accessor to `SystemPromptEnhanceAction`.
+- `SystemPromptEnhanceAction` prefers the supplied accessor's
+  `promptEnhancerService` and falls back to the ambient provider only when no
+  target-scoped accessor is available (previews/tests).
+- The request carries `targetWorkspacePath`/`targetWorkspaceIdentity`, so model
+  selection, provider configuration, skills/subagents and any host-owned MCP execution
+  stay on the SSH server. The local scenario resolves to the local host and keeps its
+  previous behavior.
+
 ## Acceptance
 
 - A short "rename the button" draft selects `TAG`.
@@ -80,6 +97,10 @@ accept or reject the result.**
 - An automatically installed suggestion can be removed from the row after one inline
   confirmation.
 - Existing streaming/cancel/mention-protection tests stay green.
+- With an SSH workspace selected, the system-prompt enhance request is sent to the
+  remote host's `promptEnhancerService` even when the settings page is rendered under
+  the local host; a target-scoped accessor wins over the ambient one.
+- With a local workspace, the request still goes to the local host.
 
 ## Evidence
 
@@ -90,6 +111,7 @@ accept or reject the result.**
 - `packages/ui/src/prompt-enhancer-ui/enhancePromptButton.test.tsx`
 - `packages/ui/src/prompt-enhancer-ui/EnhancePromptDetails.test.tsx`
 - `packages/ui/src/prompt-enhancer-ui/useSuggestedSkillAutoInstall.test.tsx`
+- `packages/ui/src/prompt-enhancer-ui/systemPromptEnhanceAction.test.tsx`
 - `apps/zcode-cli/packages/cli/tests/enhance-command.test.ts`
 
 ## Capability Resolver follow-up

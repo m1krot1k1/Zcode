@@ -8,7 +8,7 @@ import {
   type SkillSummary,
   type SubAgentConfig,
 } from "@zcode/shared";
-import type { ModelSelectionView } from "@zcode/services";
+import type { IServiceAccessor, ModelSelectionView } from "@zcode/services";
 import type { ModelSelectFooterAction, ModelSelectGroup } from "@/ModelConfigSelect.js";
 import { ModelConfigSelect } from "@/ModelConfigSelect.js";
 import { Button } from "@/components/ui/button.js";
@@ -71,6 +71,7 @@ export function SubagentForm({
   onScopeKeyChange,
   systemPromptWorkspacePath,
   workspaceIdentity,
+  services,
 }: {
   initial?: AgentSummary;
   modelSelectionView?: ModelSelectionView | null;
@@ -91,6 +92,8 @@ export function SubagentForm({
   /** Workspace для действия «Улучшить системный промпт»; без него действие скрыто. */
   systemPromptWorkspacePath?: string | null;
   workspaceIdentity?: string;
+  /** Target-scoped accessor (local или SSH/remote) для улучшения системного промпта. */
+  services?: IServiceAccessor | null;
 }) {
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView, "subagent");
   const { intl } = useZCodeIntl();
@@ -602,6 +605,7 @@ export function SubagentForm({
             {...(workspaceIdentity ? { workspaceIdentity } : {})}
             draftText={systemPrompt}
             onApply={setSystemPrompt}
+            services={services}
           />
         ) : null}
         {promptError ? <p className="text-ui-base text-destructive">{promptError}</p> : null}

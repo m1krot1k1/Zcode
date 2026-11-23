@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { LoaderCircle, WandSparkles } from "lucide-react";
+import type { IServiceAccessor } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { usePromptEnhancer } from "@/hooks/usePromptEnhancer.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
@@ -19,6 +20,12 @@ export interface SystemPromptEnhanceActionProps {
   draftText: string;
   disabled?: boolean;
   onApply: (enhancedText: string) => void;
+  /**
+   * Target-scoped accessor (local or SSH/remote). Settings pages can be rendered under
+   * the local host even when the edited agent belongs to a remote workspace; the
+   * ambient provider must not win in that case.
+   */
+  services?: IServiceAccessor | null;
 }
 
 export function SystemPromptEnhanceAction({
@@ -27,10 +34,11 @@ export function SystemPromptEnhanceAction({
   draftText,
   disabled = false,
   onApply,
+  services,
 }: SystemPromptEnhanceActionProps) {
   const { intl } = useZCodeIntl();
-  const services = useOptionalServices();
-  const service = services?.promptEnhancerService;
+  const ambientServices = useOptionalServices();
+  const service = services?.promptEnhancerService ?? ambientServices?.promptEnhancerService;
   const enhancer = usePromptEnhancer({
     promptEnhancerService: service ?? {
       enhance: () => Promise.reject(new Error("prompt enhancer is unavailable")),
