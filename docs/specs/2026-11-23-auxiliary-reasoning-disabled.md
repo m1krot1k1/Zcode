@@ -29,7 +29,8 @@
 
 ## Владелец и порядок
 
-Владелец маппинга — `config/provider/zcode-builtin.json`,
+Владелец маппинга — `config/provider/zcode-builtin.json` и
+`config/provider/zcode-builtin.test.json` (Preview собирается с `ZCODE_ENV=test`),
 `modelConfigRules.providerSiteRules`. Prompt enhancer только передаёт выбранный
 `reasoningLevel`; provider adapter применяет CEL-map к телу запроса.
 
