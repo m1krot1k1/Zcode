@@ -91,3 +91,46 @@ describe("Local model settings", () => {
     expect(onRefresh).toHaveBeenCalled();
   });
 });
+
+describe("Local model installed list", () => {
+  it("does not offer embedding-only models as chat models", async () => {
+    const codeIndex = {
+      localRuntime: async (request: { action: string }) => {
+        if (request.action !== "status") throw new Error("unexpected action");
+        return {
+          action: "status",
+          status: {
+            runtime: "ollama" as const,
+            installed: true,
+            running: true,
+            totalMemoryBytes: 32 * 1024 ** 3,
+            models: [{ id: "bge-m3" }, { id: "qwen2.5:1.5b" }],
+            recommended: {
+              model: "nomic-embed-text",
+              dimensions: 768,
+              downloadBytes: 274_000_000,
+              reason: "embedding fixture",
+            },
+          },
+        };
+      },
+    } as unknown as CodeIntelligenceService;
+
+    render(
+      <ZCodeIntlProvider initialLocale="en-US">
+        <LocalModelSettings
+          codeIndex={codeIndex}
+          workspaceRef={workspaceRef}
+          modelProviders={[]}
+          createPersonalProvider={vi.fn(async () => ({ providerId: "local-provider" }))}
+          addPersonalModel={vi.fn(async () => ({}))}
+          onRefresh={vi.fn(async () => {})}
+        />
+      </ZCodeIntlProvider>,
+    );
+
+    const installed = await screen.findByTestId("local-model-installed");
+    expect(installed.textContent).toContain("qwen2.5:1.5b");
+    expect(installed.textContent).not.toContain("bge-m3");
+  });
+});

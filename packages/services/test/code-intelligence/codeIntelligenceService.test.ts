@@ -249,6 +249,21 @@ describe("code intelligence embedding configuration", () => {
     await expect(service.getStatus({ workspacePath })).resolves.toMatchObject({ state: "ready" });
   });
 
+  it("persists embedding settings under the index root, not the process cwd", async () => {
+    const { workspacePath, indexRootDir, service } = await createTestService();
+    await service.setEmbeddingConfig({
+      workspacePath,
+      provider: "ollama",
+      endpoint: "http://127.0.0.1:11434/api/embed",
+      model: "bge-m3",
+    });
+    const raw = await readFile(join(indexRootDir, "embedding-settings.json"), "utf8");
+    expect(raw).toContain("bge-m3");
+    await expect(service.getStatus({ workspacePath })).resolves.toMatchObject({
+      embedding: { configured: true, provider: "ollama", model: "bge-m3" },
+    });
+  });
+
   it("exposes the managed Ollama runtime through the flat RPC function property", async () => {
     const { service } = await createTestService();
     expect(typeof service.localRuntime).toBe("function");

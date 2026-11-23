@@ -73,6 +73,13 @@ function normalizeModelId(id: string): string {
     .toLowerCase();
 }
 
+/** Embedding-only Ollama models must never be offered as chat models in Composer. */
+function isEmbeddingModelId(id: string): boolean {
+  return /(?:^|[/:])(?:bge(?:[-:]|$)|nomic-embed|mxbai-embed|all-minilm|snowflake-arctic-embed|text-embedding|embeddinggemma|e5-|gte-|jina-embed)/iu.test(
+    id,
+  );
+}
+
 function pickRecommended(totalMemoryBytes: number | undefined): LocalChatModel {
   const memory = totalMemoryBytes && totalMemoryBytes > 0 ? totalMemoryBytes : 16 * GB;
   const fitting = LOCAL_CHAT_MODELS.filter((model) => memory >= model.minRamBytes);
@@ -180,6 +187,10 @@ export function LocalModelSettings({
     const ids = new Set((runtime?.models ?? []).map((model) => normalizeModelId(model.id)));
     return ids;
   }, [runtime]);
+  const installedChatModels = useMemo(
+    () => [...installed].filter((id) => !isEmbeddingModelId(id)),
+    [installed],
+  );
 
   const recommended = useMemo(
     () => pickRecommended(runtime?.totalMemoryBytes),
@@ -501,10 +512,10 @@ export function LocalModelSettings({
         })}
       </div>
 
-      {installed.size > 0 ? (
+      {installedChatModels.length > 0 ? (
         <div className="space-y-2" data-testid="local-model-installed">
           <p className="text-ui-sm font-medium">{copy("settings.localModel.installedTitle")}</p>
-          {[...installed].map((id) => {
+          {installedChatModels.map((id) => {
             const catalogModel = LOCAL_CHAT_MODELS.find(
               (candidate) => normalizeModelId(candidate.id) === id,
             );

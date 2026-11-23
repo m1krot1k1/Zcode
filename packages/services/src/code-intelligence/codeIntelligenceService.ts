@@ -149,7 +149,7 @@ export function createCodeIntelligenceService(
     key: string,
     workerStatus: WorkerStatusPayload | undefined,
   ): Promise<CodeIndexStatus["embedding"]> => {
-    const settings = await readEmbeddingSettings(credentialService, key);
+    const settings = await readEmbeddingSettings(credentialService, key, indexRootDir);
     const configured = Boolean(settings.endpoint && settings.model);
     // Фаза из воркера авторитетнее статической: она отражает фактический исход последнего
     // прохода (включая сбой провайдера), а не только наличие настроек.
@@ -525,7 +525,7 @@ export function createCodeIntelligenceService(
       if (!cleared && params.endpoint && params.model) {
         validateEmbeddingConfig(params.provider, params.endpoint, params.model);
       }
-      await writeEmbeddingSettings(credentialService, workspace.key, params);
+      await writeEmbeddingSettings(credentialService, workspace.key, params, indexRootDir);
       await client
         .embeddingConfig({
           ...refOf(params),
