@@ -34,6 +34,8 @@ async function main(): Promise<void> {
     workspaceIdentityMapper,
     migrationFailedPathCount,
     virtualProjects: true,
+    // createServerHostServices регистрирует ICodeIntelligenceService в этом же процессе.
+    codeIntelligence: true,
     topicResourcePeers,
     ...(host ? { host } : {}),
     ...(staticRoot ? { staticRoot, spaFallback: true } : {}),

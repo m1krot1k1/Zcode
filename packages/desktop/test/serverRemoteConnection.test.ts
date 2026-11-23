@@ -152,6 +152,31 @@ describe("server remote connection", () => {
     return server;
   }
 
+  it("exposes the remote code index only when the server advertises the capability", async () => {
+    const withIndex = await startLoopbackServer(new ServiceCollection(), 0, {
+      serverId: "indexed",
+      codeIntelligence: true,
+    });
+    const indexedAddress = await waitForListening(withIndex);
+    const indexedConnection = await connectServerRemote({
+      kind: "server",
+      url: `http://127.0.0.1:${indexedAddress.port}`,
+    });
+    disposables.push(indexedConnection);
+    expect(indexedConnection.services.codeIntelligenceService).toBeDefined();
+
+    const withoutIndex = await startLoopbackServer(new ServiceCollection(), 0, {
+      serverId: "plain",
+    });
+    const plainAddress = await waitForListening(withoutIndex);
+    const plainConnection = await connectServerRemote({
+      kind: "server",
+      url: `http://127.0.0.1:${plainAddress.port}`,
+    });
+    disposables.push(plainConnection);
+    expect(plainConnection.services.codeIntelligenceService).toBeUndefined();
+  });
+
   // 远端 Server 支持 POSIX；Windows 运行器通过结构化错误单测覆盖 ELOOP 映射。
   it.each(process.platform === "win32" ? ["ENOENT"] : ["ENOENT", "ELOOP"])(
     "真实远端 File RPC 保留 %s，目录校验失败不关闭共享连接",

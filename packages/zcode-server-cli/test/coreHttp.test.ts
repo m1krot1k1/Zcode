@@ -312,6 +312,7 @@ describe("standalone Server Core ingress", () => {
         desktopContinuous: true,
         websocketRpc: true,
         processResourceTelemetry: true,
+        codeIntelligence: true,
       },
     });
 

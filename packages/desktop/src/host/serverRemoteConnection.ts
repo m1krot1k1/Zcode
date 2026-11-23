@@ -44,6 +44,8 @@ interface ServerRemoteConnectionOptions {
   topicResourceChannel?: IServerChannel;
   fetchImpl?: typeof fetch;
   onClose?: (event: { code: number; reason: string }) => void;
+  /** Включается только если Server объявил capability codeIntelligence. */
+  codeIntelligenceService?: boolean;
 }
 
 export interface ServerRemoteDuplexConnectionOptions {
@@ -184,6 +186,7 @@ function createNodeWebSocketServiceConnection(
   socket: WebSocket,
   onClose?: ServerRemoteConnectionOptions["onClose"],
   topicResourceChannel?: IServerChannel,
+  codeIntelligenceService?: boolean,
 ): { services: IServiceAccessor; dispose(): void } {
   const protocol = new SocketProtocol(wrapNodeWebSocket(socket, onClose));
   const client = new ChannelClient(protocol);
@@ -207,7 +210,11 @@ function createNodeWebSocketServiceConnection(
   // Source Server владеет OpenCode CLI рядом с workspace; запрашиваем его ACP канал
   // через ту же аутентифицированную RPC-сессию, что и остальные server-authoritative services.
   return {
-    services: new RemoteServiceAccess(client, { openCodeAcpRuntime: true, cursorCliRuntime: true }),
+    services: new RemoteServiceAccess(client, {
+      openCodeAcpRuntime: true,
+      cursorCliRuntime: true,
+      ...(codeIntelligenceService ? { codeIntelligenceService: true } : {}),
+    }),
     dispose,
   };
 }
@@ -307,6 +314,7 @@ function connectNodeWebSocket(
           socket,
           options.onClose,
           options.topicResourceChannel,
+          options.codeIntelligenceService,
         ),
       });
     });
@@ -331,11 +339,17 @@ export async function connectServerRemote(
     options.fetchImpl ?? fetch,
     options.signal,
   );
+  // Code-index доступен только если Server явно объявил capability: старые Server
+  // не получают ленивый proxy, который падал бы на первом вызове.
+  const connectionOptions: ServerRemoteConnectionOptions = {
+    ...options,
+    codeIntelligenceService: serverInfo.capabilities.codeIntelligence === true,
+  };
   const { socket, rpc } = await connectNodeWebSocket(
     endpoints.hostWsUrl,
     target,
     capability,
-    options,
+    connectionOptions,
   );
 
   try {
@@ -407,6 +421,7 @@ export async function connectServerRemoteOverDuplex(
           webSocket,
           options.onClose,
           options.topicResourceChannel,
+          serverInfo.data.capabilities.codeIntelligence === true,
         );
       },
     });

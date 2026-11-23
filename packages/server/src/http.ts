@@ -142,6 +142,8 @@ interface HttpServerOptions {
   topicResourcePeers?: TopicResourcePeers;
   serverId?: string;
   virtualProjects?: boolean;
+  /** Source Server регистрирует ICodeIntelligenceService и объявляет его клиентам. */
+  codeIntelligence?: boolean;
   migrationFailedPathCount?: number;
   workspaceIdentityMapper?: SourceServerWorkspaceIdentityMapper;
   name?: string;
@@ -200,6 +202,7 @@ function createServerInfo(options: HttpServerOptions): ServerRemoteInfo {
       websocketRpc: true,
       ...(options.virtualProjects ? { virtualProjects: true } : {}),
       processResourceTelemetry: true,
+      ...(options.codeIntelligence ? { codeIntelligence: true } : {}),
     },
   });
 }

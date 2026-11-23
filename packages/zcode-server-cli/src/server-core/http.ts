@@ -231,6 +231,9 @@ export async function createCoreHttpServer(
       websocketRpc: true,
       virtualProjects: true,
       processResourceTelemetry: true,
+      // createServerHostServices регистрирует ICodeIntelligenceService в этом процессе;
+      // клиент включает code-index proxy только по этому флагу.
+      codeIntelligence: true,
     },
   });
   // 裸 Set 无法落实 expiresAt，未消费的 capability 会一直有效并持续累积。

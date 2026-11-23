@@ -99,6 +99,32 @@ describe("server info HTTP endpoint", () => {
     });
   });
 
+  it("announces code intelligence only when the serving process registers it", async () => {
+    const withIndex = createHttpServer(new ServiceCollection(), 0, {
+      serverId: "indexed",
+      codeIntelligence: true,
+    });
+    servers.push(withIndex);
+    const indexedAddress = await waitForListening(withIndex);
+    const indexedResponse = await fetch(
+      `http://127.0.0.1:${indexedAddress.port}/api/server-info`,
+    );
+    expect(await indexedResponse.json()).toMatchObject({
+      serverId: "indexed",
+      capabilities: { codeIntelligence: true },
+    });
+
+    const withoutIndex = createHttpServer(new ServiceCollection(), 0, {
+      serverId: "plain",
+    });
+    servers.push(withoutIndex);
+    const plainAddress = await waitForListening(withoutIndex);
+    const plainResponse = await fetch(`http://127.0.0.1:${plainAddress.port}/api/server-info`);
+    const plainBody = await plainResponse.json();
+    expect(plainBody).toMatchObject({ serverId: "plain" });
+    expect(plainBody.capabilities).not.toHaveProperty("codeIntelligence");
+  });
+
   it("requires the lite token for protected API routes", async () => {
     const server = createHttpServer(new ServiceCollection(), 0, {
       authToken: "secret-token",

@@ -42,6 +42,9 @@ export const serverRemoteInfoSchema = z.object({
     virtualProjects: z.literal(true).optional(),
     // 旧 Server 缺少新增 dynamic event，必须先声明能力再订阅，避免异常打进对端读循环。
     processResourceTelemetry: z.boolean().optional(),
+    // 远端 Host 是否注册了 ICodeIntelligenceService。客户端只有看到该能力才创建
+    // code-index 代理，避免对旧 Server 暴露一个首次调用就失败的仪表盘能力。
+    codeIntelligence: z.literal(true).optional(),
   }),
 });
 
@@ -65,6 +68,7 @@ export const serverRemoteInfoOutputSchema = z
         virtualProjects: z.literal(true).optional(),
         // 输入和严格输出保持同一能力合同，否则新 Server 会在监听前被自身 schema 拒绝。
         processResourceTelemetry: z.boolean().optional(),
+        codeIntelligence: z.literal(true).optional(),
       })
       .strict(),
   })
