@@ -5,7 +5,6 @@ import type {
   UncensoredSettingsService,
   UncensoredSettingsStorePort,
   UncensoredSettingsWorkspace,
-  UncensoredSettingsWrite,
 } from "./contract.js";
 
 /**
