@@ -56,8 +56,16 @@ function supportsRegistryApiFormat(
   // Cursor CLI публикуется Host-ом как обычный local-auth Provider с api.type "cursor-cli";
   // других комбинаций у него нет, поэтому допускаем только эту пару.
   if (providerId === "cursor") return accessType === "local-auth" && apiFormat === "cursor-cli";
-  // 仅剩 glm（ZCode Agent）provider；三方 CLI 的 api format 差异已随 provider 下线。
-  return isZCodeAgentProvider(selectedProvider);
+  // Cursor/OpenCode selectedProvider describes the active local CLI, not the only
+  // provider allowed in the catalog. Standard OpenAI/Anthropic registry providers must
+  // remain selectable while a CLI is active; otherwise a downloaded local model
+  // disappears from the composer until the user switches to the ZCode agent.
+  return (
+    isZCodeAgentProvider(selectedProvider) ||
+    apiFormat === "openai-chat-completions" ||
+    apiFormat === "anthropic-messages" ||
+    apiFormat === "openai-responses"
+  );
 }
 
 export function buildRegistryModelSelectGroups(

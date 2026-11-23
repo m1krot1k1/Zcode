@@ -348,3 +348,35 @@ describe("registry 模型上下文徽标", () => {
     expect(items[1]!.badgeLabel).toBeUndefined();
   });
 });
+
+describe("registry provider visibility", () => {
+  it("keeps standard personal providers selectable while Cursor is the active CLI", () => {
+    const view: ModelSelectionView = {
+      revision: 1,
+      providers: [
+        {
+          providerId: "new-provider",
+          providerName: "Ollama (local)",
+          config: {
+            access: { type: "api-key", apiKey: "ollama" },
+            api: { type: "openai-chat-completions", baseUrl: "http://127.0.0.1:11434/v1" },
+          },
+          models: [
+            {
+              modelId: "qwen2.5:1.5b",
+              config: { optionSpecs: { reasoningLevel: { values: ["disabled"], map: "{}" } } },
+            },
+          ],
+        },
+      ],
+    };
+    const groups = buildRegistryModelSelectGroups("cursor", view);
+    expect(groups).toEqual([
+      expect.objectContaining({
+        key: "registry-provider:new-provider",
+        label: "Ollama (local)",
+        items: [expect.objectContaining({ name: "qwen2.5:1.5b" })],
+      }),
+    ]);
+  });
+});

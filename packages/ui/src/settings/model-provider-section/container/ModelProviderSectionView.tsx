@@ -132,6 +132,9 @@ export function ModelProviderSectionView({
             addPersonalModel={addPersonalModel}
             onRefresh={async () => {
               await refresh();
+              // The composer groups are rebuilt from ModelSelectionView; refresh both so a
+              // just-downloaded local model appears without restarting the app.
+              await modelSelectionService.getView();
             }}
           />
         ) : selectedNavItem?.type === "codeIntelligence" ? (
