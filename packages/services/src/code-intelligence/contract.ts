@@ -1,6 +1,11 @@
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
-import type { LocalEmbeddingPort } from "./localEmbeddingContract.js";
+import type {
+  LocalEmbeddingInstallResult,
+  LocalEmbeddingPort,
+  LocalEmbeddingPullResult,
+  LocalEmbeddingRuntimeStatus,
+} from "./localEmbeddingContract.js";
 
 export type CodeIndexState = "unindexed" | "indexing" | "ready" | "degraded";
 export type CodeIndexMatchKind = "lexical" | "semantic";
@@ -14,6 +19,16 @@ export type EmbeddingErrorCode =
   | "not-found"
   | "rate-limited"
   | "provider-error";
+
+export type LocalRuntimeRequest =
+  | { readonly action: "status" }
+  | { readonly action: "install" }
+  | { readonly action: "pull"; readonly model: string };
+
+export type LocalRuntimeResult =
+  | { readonly action: "status"; readonly status: LocalEmbeddingRuntimeStatus }
+  | { readonly action: "install"; readonly result: LocalEmbeddingInstallResult }
+  | { readonly action: "pull"; readonly result: LocalEmbeddingPullResult };
 
 export interface CodeWorkspaceRef {
   workspacePath: string;
@@ -220,6 +235,14 @@ export interface CodeIntelligenceService {
 
   /** Managed local embedding runtime attached to this code index, when the Host supports it. */
   readonly localEmbeddings?: LocalEmbeddingPort;
+  /**
+   * Flat RPC surface for the managed Ollama runtime.
+   *
+   * `ProxyChannel` maps only top-level function properties; a nested
+   * `localEmbeddings.getStatus` turns into a function in the renderer. This function-typed
+   * property avoids growing the contract method surface while staying callable over RPC.
+   */
+  readonly localRuntime?: (request: LocalRuntimeRequest) => Promise<LocalRuntimeResult>;
 
   /** Set/clear an embedding provider without returning or persisting API-key material in the index. */
   setEmbeddingConfig(

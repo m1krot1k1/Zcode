@@ -8,6 +8,7 @@ type ModelConfigInput = ProviderSettingsFormProvider["models"][number]["personal
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { resolveLocalRuntimeApi } from "./localRuntimeApi.js";
 
 const OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
 const OLLAMA_PROVIDER_NAME = "Ollama (local)";
@@ -134,21 +135,25 @@ export function LocalModelSettings({
     (id: string, values?: Record<string, string | number>) => intl.formatMessage({ id }, values),
     [intl],
   );
+  const localRuntime = useMemo(() => resolveLocalRuntimeApi(codeIndex), [codeIndex]);
   const [runtime, setRuntime] = useState<Awaited<
-    ReturnType<NonNullable<CodeIntelligenceService["localEmbeddings"]>["getStatus"]>
+    ReturnType<NonNullable<typeof localRuntime>["getStatus"]>
   > | null>(null);
   const [busy, setBusy] = useState<"install" | string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [customModel, setCustomModel] = useState("");
 
   const refreshRuntime = useCallback(async () => {
-    if (!codeIndex?.localEmbeddings) return;
+    if (!localRuntime) {
+      setRuntime(null);
+      return;
+    }
     try {
-      setRuntime(await codeIndex.localEmbeddings.getStatus());
+      setRuntime(await localRuntime.getStatus());
     } catch {
       setRuntime(null);
     }
-  }, [codeIndex]);
+  }, [localRuntime]);
 
   useEffect(() => {
     void refreshRuntime();
@@ -177,11 +182,11 @@ export function LocalModelSettings({
   );
 
   const installRuntime = async () => {
-    if (!codeIndex?.localEmbeddings) return;
+    if (!localRuntime) return;
     setBusy("install");
     setMessage(null);
     try {
-      const result = await codeIndex.localEmbeddings.install();
+      const result = await localRuntime.install();
       if (result.status === "failed") {
         setMessage({
           text: `${copy("settings.localModel.installFailed")}: ${result.diagnostic}`,
@@ -220,12 +225,12 @@ export function LocalModelSettings({
   };
 
   const download = async (model: LocalChatModel) => {
-    if (!codeIndex?.localEmbeddings) return;
+    if (!localRuntime) return;
     setBusy(model.id);
     setMessage(null);
     try {
       if (!runtime?.installed) {
-        const installedRuntime = await codeIndex.localEmbeddings.install();
+        const installedRuntime = await localRuntime.install();
         if (installedRuntime.status === "failed") {
           setMessage({
             text: `${copy("settings.localModel.installFailed")}: ${installedRuntime.diagnostic}`,
@@ -234,7 +239,7 @@ export function LocalModelSettings({
           return;
         }
       }
-      const result = await codeIndex.localEmbeddings.pull(model.id);
+      const result = await localRuntime.pull(model.id);
       if (result.status === "failed") {
         setMessage({
           text: `${copy("settings.localModel.downloadFailed")}: ${result.diagnostic}`,
@@ -256,7 +261,7 @@ export function LocalModelSettings({
   };
 
   const downloadCustom = async () => {
-    if (!codeIndex?.localEmbeddings) return;
+    if (!localRuntime) return;
     const id = customModel.trim();
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._:-]*)?$/u.test(id)) {
       setMessage({ text: copy("settings.localModel.invalidModel"), ok: false });
@@ -266,7 +271,7 @@ export function LocalModelSettings({
     setMessage(null);
     try {
       if (!runtime?.installed) {
-        const installedRuntime = await codeIndex.localEmbeddings.install();
+        const installedRuntime = await localRuntime.install();
         if (installedRuntime.status === "failed") {
           setMessage({
             text: `${copy("settings.localModel.installFailed")}: ${installedRuntime.diagnostic}`,
@@ -275,7 +280,7 @@ export function LocalModelSettings({
           return;
         }
       }
-      const result = await codeIndex.localEmbeddings.pull(id);
+      const result = await localRuntime.pull(id);
       if (result.status === "failed") {
         setMessage({
           text: `${copy("settings.localModel.downloadFailed")}: ${result.diagnostic}`,
@@ -299,7 +304,7 @@ export function LocalModelSettings({
     }
   };
 
-  if (!codeIndex?.localEmbeddings || !workspaceRef) {
+  if (!localRuntime || !workspaceRef) {
     return (
       <section className="max-w-3xl space-y-2" data-testid="local-model-settings">
         <h2 className="text-ui-lg font-semibold">{copy("settings.localModel.title")}</h2>

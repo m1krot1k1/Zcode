@@ -249,6 +249,15 @@ describe("code intelligence embedding configuration", () => {
     await expect(service.getStatus({ workspacePath })).resolves.toMatchObject({ state: "ready" });
   });
 
+  it("exposes the managed Ollama runtime through the flat RPC function property", async () => {
+    const { service } = await createTestService();
+    expect(typeof service.localRuntime).toBe("function");
+    await expect(service.localRuntime!({ action: "status" })).resolves.toMatchObject({
+      action: "status",
+      status: { runtime: "ollama", installed: expect.any(Boolean) },
+    });
+  });
+
   it("returns indexing status without waiting for the busy worker", async () => {
     const { workspacePath, root } = await createTestService();
     await writeFile(join(workspacePath, "held.ts"), "export const held = true;\n", "utf8");

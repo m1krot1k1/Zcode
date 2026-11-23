@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Check, Cpu, Database, Download, LoaderCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { resolveLocalRuntimeApi } from "./localRuntimeApi.js";
 import type {
   CodeIndexStatus,
   CodeIntelligenceService,
@@ -49,6 +50,7 @@ export function EmbeddingProviderSettings({
   const [localStatus, setLocalStatus] = useState<LocalEmbeddingRuntimeStatus | null>(null);
   const [localBusy, setLocalBusy] = useState<"install" | "pull" | "use" | null>(null);
   const [localMessage, setLocalMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const localRuntime = useMemo(() => resolveLocalRuntimeApi(codeIndex), [codeIndex]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,9 +76,9 @@ export function EmbeddingProviderSettings({
   }, [codeIndex, copy, workspaceRef]);
 
   const refreshLocalStatus = useCallback(async () => {
-    if (!codeIndex?.localEmbeddings) return;
+    if (!localRuntime) return;
     try {
-      const next = await codeIndex.localEmbeddings.getStatus();
+      const next = await localRuntime.getStatus();
       setLocalStatus(next);
       if (!endpoint.trim() && !model.trim()) {
         setProvider("ollama");
@@ -87,13 +89,13 @@ export function EmbeddingProviderSettings({
       // Older Hosts may not expose the local-runtime channel; the manual form still works.
       setLocalStatus(null);
     }
-  }, [codeIndex, endpoint, model]);
+  }, [localRuntime, endpoint, model]);
 
   useEffect(() => {
-    if (!codeIndex?.localEmbeddings) return;
+    if (!localRuntime) return;
     void refreshLocalStatus();
     // Only load once; install/pull actions refresh it explicitly.
-  }, [codeIndex]);
+  }, [localRuntime]);
 
   if (!codeIndex || !workspaceRef) return null;
 
@@ -194,11 +196,11 @@ export function EmbeddingProviderSettings({
   };
 
   const installLocal = async () => {
-    if (!codeIndex?.localEmbeddings) return;
+    if (!localRuntime) return;
     setLocalBusy("install");
     setLocalMessage(null);
     try {
-      const result = await codeIndex.localEmbeddings.install();
+      const result = await localRuntime.install();
       if (result.status === "failed") {
         setLocalMessage({
           text: `${copy("settings.embedding.local.installFailed")}: ${result.diagnostic}`,
@@ -219,12 +221,12 @@ export function EmbeddingProviderSettings({
   };
 
   const downloadLocalModel = async () => {
-    if (!codeIndex?.localEmbeddings || !workspaceRef || !localStatus) return;
+    if (!localRuntime || !workspaceRef || !localStatus) return;
     const modelId = localStatus.recommended.model;
     setLocalBusy("pull");
     setLocalMessage(null);
     try {
-      const result = await codeIndex.localEmbeddings.pull(modelId);
+      const result = await localRuntime.pull(modelId);
       if (result.status === "failed") {
         setLocalMessage({
           text: `${copy("settings.embedding.local.downloadFailed")}: ${result.diagnostic}`,
@@ -255,15 +257,14 @@ export function EmbeddingProviderSettings({
   };
 
   const useInstalledLocalModel = async () => {
-    const localEmbeddings = codeIndex?.localEmbeddings;
-    if (!localEmbeddings || !workspaceRef || !localStatus) return;
+    if (!localRuntime || !workspaceRef || !localStatus) return;
     const modelId = localStatus.recommended.model;
     setLocalBusy("use");
     setLocalMessage(null);
     try {
       // Pull is idempotent for an installed model and also starts the local server,
       // so "Use" works after an app restart when the child server is no longer running.
-      const pulled = await localEmbeddings.pull(modelId);
+      const pulled = await localRuntime.pull(modelId);
       if (pulled.status === "failed") {
         setLocalMessage({
           text: `${copy("settings.embedding.local.downloadFailed")}: ${pulled.diagnostic}`,

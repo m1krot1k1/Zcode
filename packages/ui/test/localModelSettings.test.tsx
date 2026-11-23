@@ -34,7 +34,11 @@ describe("Local model settings", () => {
     });
     const pull = vi.fn(async (model: string) => ({ status: "installed" as const, model }));
     const codeIndex = {
-      localEmbeddings: { getStatus, install, pull },
+      localRuntime: async (request: { action: string; model?: string }) => {
+        if (request.action === "status") return { action: "status", status: await getStatus() };
+        if (request.action === "install") return { action: "install", result: await install() };
+        return { action: "pull", result: await pull(request.model ?? "") };
+      },
     } as unknown as CodeIntelligenceService;
     const createPersonalProvider = vi.fn(async () => ({ providerId: "local-provider" }));
     const addPersonalModel = vi.fn(async () => ({}));

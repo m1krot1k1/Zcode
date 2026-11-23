@@ -497,6 +497,13 @@ export function createCodeIntelligenceService(
       install: () => localEmbedding.install(),
       pull: (model) => localEmbedding.pull(model),
     },
+    async localRuntime(request) {
+      if (request.action === "status")
+        return { action: "status", status: await localEmbedding.getStatus() };
+      if (request.action === "install")
+        return { action: "install", result: await localEmbedding.install() };
+      return { action: "pull", result: await localEmbedding.pull(request.model) };
+    },
 
     async testEmbeddingConfig(params): Promise<EmbeddingTestResult> {
       const workspace = resolveWorkspace(params);
