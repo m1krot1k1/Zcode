@@ -3738,8 +3738,8 @@
             },
             "optionSpecs": {
               "reasoningLevel": {
-                "values": ["low", "high", "max"],
-                "map": "{\"reasoning_effort\": reasoningLevel}"
+                "values": ["disabled", "low", "high", "max"],
+                "map": "reasoningLevel == \"disabled\" ? {\"reasoning_effort\": \"none\"} : {\"reasoning_effort\": reasoningLevel}"
               },
               "maxOutputTokens": {
                 "max": 384000,
@@ -3767,8 +3767,8 @@
             },
             "optionSpecs": {
               "reasoningLevel": {
-                "values": ["low", "high", "max"],
-                "map": "{\"reasoning_effort\": reasoningLevel}"
+                "values": ["disabled", "low", "high", "max"],
+                "map": "reasoningLevel == \"disabled\" ? {\"reasoning_effort\": \"none\"} : {\"reasoning_effort\": reasoningLevel}"
               },
               "maxOutputTokens": {
                 "max": 32000,
@@ -3796,8 +3796,8 @@
             },
             "optionSpecs": {
               "reasoningLevel": {
-                "values": ["high", "max"],
-                "map": "{\"reasoning_effort\": reasoningLevel}"
+                "values": ["disabled", "high", "max"],
+                "map": "reasoningLevel == \"disabled\" ? {\"reasoning_effort\": \"none\"} : {\"reasoning_effort\": reasoningLevel}"
               },
               "maxOutputTokens": {
                 "max": 384000,
@@ -3825,8 +3825,8 @@
             },
             "optionSpecs": {
               "reasoningLevel": {
-                "values": ["low", "high", "max"],
-                "map": "{\"reasoning_effort\": reasoningLevel}"
+                "values": ["disabled", "low", "high", "max"],
+                "map": "reasoningLevel == \"disabled\" ? {\"reasoning_effort\": \"none\"} : {\"reasoning_effort\": reasoningLevel}"
               },
               "maxOutputTokens": {
                 "max": 384000,
@@ -3854,8 +3854,8 @@
             },
             "optionSpecs": {
               "reasoningLevel": {
-                "values": ["low", "high", "max"],
-                "map": "{\"reasoning_effort\": reasoningLevel}"
+                "values": ["disabled", "low", "high", "max"],
+                "map": "reasoningLevel == \"disabled\" ? {\"reasoning_effort\": \"none\"} : {\"reasoning_effort\": reasoningLevel}"
               },
               "maxOutputTokens": {
                 "max": 384000,

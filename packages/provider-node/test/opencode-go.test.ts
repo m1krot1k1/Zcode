@@ -180,13 +180,25 @@ describe("OpenCode unified API-key Provider", () => {
     },
   );
 
+  it("deepseek-v4.1-flash отключает reasoning через reasoning_effort none", () => {
+    expect(patch(rules.resolve(input("deepseek-v4.1-flash")), "disabled")).toEqual({
+      reasoning_effort: "none",
+      max_tokens: 4096,
+    });
+    // Явные уровни не подменяются: основной turn сохраняет прежнее поведение.
+    expect(patch(rules.resolve(input("deepseek-v4.1-flash")), "high")).toEqual({
+      reasoning_effort: "high",
+      max_tokens: 4096,
+    });
+  });
+
   it.each([
     ["glm-5.2", ["high", "max"], 1000000, 131072],
     ["glm-5.1", ["enabled"], 202752, 32768],
     ["kimi-k3", ["max"], 1048576, 131072],
     ["kimi-k2.7-code", ["enabled"], 262144, 262144],
-    ["deepseek-v4-pro", ["high", "max"], 1000000, 384000],
-    ["deepseek-v4.1-flash-free", ["low", "high", "max"], 200000, 32000],
+    ["deepseek-v4-pro", ["disabled", "high", "max"], 1000000, 384000],
+    ["deepseek-v4.1-flash-free", ["disabled", "low", "high", "max"], 200000, 32000],
     ["hy3", ["none", "low", "high"], 256000, 128000],
     ["hy4-preview", ["none", "high"], 1024000, 64000],
   ] as const)("%s 使用 Go 能力而不是同名原厂默认", (id, levels, context, max) => {
