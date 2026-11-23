@@ -1511,6 +1511,7 @@ modules:
       - cursor-agent-settings
       - shared
       - ui
+      - uncensored-settings
     publicEntrypoints:
       - packages/ui/src/settings/model-provider-section/container/index.ts
       - packages/ui/src/settings/model-provider-section/container/contract.ts
@@ -2443,6 +2444,49 @@ modules:
       - packages/shared/src/subagent-catalog/contract.ts
     layers:
       domain: .
+  # uncensored-settings：由 architecture:adopt 登记
+  - id: uncensored-settings
+    roots:
+      - packages/services/src/uncensored-settings
+    managed: true
+    requires:
+      - code-intelligence
+      - services
+      - shared
+    publicEntrypoints:
+      - packages/services/src/uncensored-settings/index.ts
+      - packages/services/src/uncensored-settings/contract.ts
+    layers:
+      adapters: .
+    owner: conversation
+  # cli-uncensored-takeover：由 architecture:adopt 登记
+  - id: cli-uncensored-takeover
+    roots:
+      - apps/zcode-cli/packages/core/src/runtime/uncensored-takeover
+    managed: true
+    requires:
+      - shared
+      - zcode-cli
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/runtime/uncensored-takeover/index.ts
+      - apps/zcode-cli/packages/core/src/runtime/uncensored-takeover/contract.ts
+    layers:
+      adapters: .
+    owner: agent
+  # ui-uncensored-takeover：由 architecture:adopt 登记
+  - id: ui-uncensored-takeover
+    roots:
+      - packages/ui/src/v4/uncensored-takeover
+    managed: true
+    requires:
+      - shared
+      - ui
+    publicEntrypoints:
+      - packages/ui/src/v4/uncensored-takeover/index.ts
+      - packages/ui/src/v4/uncensored-takeover/contract.ts
+    layers:
+      ui: .
+    owner: settings
 
 exceptions:
   # Two focused helpers added with the root-auto and crash-resume specs. Keep the

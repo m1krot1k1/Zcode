@@ -31,6 +31,7 @@ export function useModelProviderSectionNavigation({
     codingPlanDisconnectProviderId,
     setCodingPlanStatusSyncProviderId,
     codeIntelligenceService,
+    uncensoredSettingsService,
     codeIndexWorkspaceRef,
     entitledAccountProviderIds,
     providerSettingsView,
@@ -145,6 +146,8 @@ export function useModelProviderSectionNavigation({
       selectedNodeKey,
       setSelectedNodeKey,
       codeIntelligenceAvailable: Boolean(codeIntelligenceService && codeIndexWorkspaceRef),
+      // Пункт скрыт на Web/mobile/старом Host без порта, вместо падения формы.
+      uncensoredSettingsAvailable: Boolean(uncensoredSettingsService && codeIndexWorkspaceRef),
       intl,
     });
   const selectedPlanAccessKey =

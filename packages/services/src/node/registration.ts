@@ -17,6 +17,7 @@ import { createClientConfigService } from "../client-config/clientConfigService.
 import { IClientScenesService } from "../client-scenes/clientScenes.js";
 import { createClientScenesService } from "../client-scenes/clientScenesService.js";
 import { ICodeIntelligenceService } from "../code-intelligence/contract.js";
+import { IUncensoredSettingsService } from "../uncensored-settings/contract.js";
 import { createPromptEnhancerService, IPromptEnhancerService } from "../prompt-enhancer/index.js";
 import {
   createPromptEnhancerCapabilityIndexProvider,
@@ -174,6 +175,7 @@ export function registerLocalServices(args: LocalServicesBundle): ServiceCollect
     pluginUiAppToolsService,
     subagentsService,
     codeIntelligenceService,
+    uncensoredSettingsService,
     codingPlanSubscriptionService,
     projectService,
     remoteProjectService,
@@ -488,6 +490,9 @@ export function registerLocalServices(args: LocalServicesBundle): ServiceCollect
     )
     .register(ISubagentsService, subagentsService)
     .register(ICodeIntelligenceService, codeIntelligenceService)
+    // Только getConfig/updateConfig: host-only readTakeoverConfig остаётся в store,
+    // который получает Agent service, и в renderer-канал не попадает.
+    .register(IUncensoredSettingsService, uncensoredSettingsService)
     .register(
       IPromptEnhancerService,
       createPromptEnhancerService({

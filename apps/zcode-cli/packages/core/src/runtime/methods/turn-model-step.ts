@@ -786,6 +786,7 @@ async function runModelBackedTurnStepImpl(
       assistantCreatedAt,
       assistantMessageId,
       modelTraceContext,
+      querySource,
       result,
     });
   }

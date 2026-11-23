@@ -274,7 +274,8 @@ export const editToolEntry: ToolEntry = {
     readOnly: false,
     destructive: false,
     concurrentSafe: false,
-    timeoutMs: 30000,
+    // См. Write: 30s таймаут срабатывал после успешного изменения файла.
+    timeoutMs: 300_000,
     maxOutputBytes: 1_000_000,
     sideEffectScope: "workspace",
     riskLevel: "medium",
@@ -310,8 +311,8 @@ export const editToolEntry: ToolEntry = {
     },
   },
   timeout: {
-    defaultMs: 30000,
-    maxMs: 30000,
+    defaultMs: 300_000,
+    maxMs: 600_000,
     allowCallOverride: false,
   },
   cancellation: {

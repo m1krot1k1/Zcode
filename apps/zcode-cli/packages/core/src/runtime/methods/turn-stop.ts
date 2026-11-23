@@ -16,6 +16,7 @@ import {
   systemReminderAttachmentEntry,
 } from "../../agent/message-history.js";
 import { runAgentAutoRepairGate } from "../auto-repair-loop/index.js";
+import { runUncensoredTakeoverGate } from "./uncensored-takeover-gate.js";
 
 interface AssistantPersistenceAnchor {
   latestAssistantMessageId: AgentRuntimeInternal["latestAssistantMessageId"];
@@ -182,6 +183,8 @@ export async function finishModelStepWithoutToolCalls(
     assistantCreatedAt: number;
     assistantMessageId: MessageId;
     modelTraceContext: TraceContext;
+    /** Route identity computed once in turn-model-step; the takeover gate accepts main_turn only. */
+    querySource: string;
     result: RuntimeModelTextResult;
   },
 ): Promise<"continue" | "break"> {
@@ -211,6 +214,16 @@ export async function finishModelStepWithoutToolCalls(
       state.turnMachine.complete(state.modelResponse, "success"),
     );
     return "break";
+  }
+  // Uncensored takeover: a provider refusal of one attributed task item is handed to a
+  // fallback model and the main model continues the remaining items in the same turn.
+  if (
+    await runUncensoredTakeoverGate.call(this, state, {
+      querySource: options.querySource,
+      result: options.result,
+    })
+  ) {
+    return "continue";
   }
   // Этап 4.5b: `enableAutoRepairLoop` — единственная точка, где решение «ход
   // завершён» ещё можно отменить. Проверки идут после персиста assistant, но до

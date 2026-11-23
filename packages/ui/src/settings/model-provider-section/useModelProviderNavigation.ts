@@ -69,6 +69,8 @@ interface UseModelProviderNavigationOptions {
   subscribedTeamProducts?: EnterpriseCodingPlanProductDisplay[];
   showPurchasedTeamPlanFallback?: boolean;
   codeIntelligenceAvailable?: boolean;
+  /** Отдельная доступность порта uncensored-настроек: старый Host/Web его не публикует. */
+  uncensoredSettingsAvailable?: boolean;
   selectedNodeKey: string | null;
   setSelectedNodeKey: (key: string | null) => void;
   intl: ReturnType<typeof useZCodeIntl>["intl"];
@@ -89,6 +91,7 @@ export function useModelProviderNavigation({
   subscribedTeamProducts = [],
   showPurchasedTeamPlanFallback = false,
   codeIntelligenceAvailable = false,
+  uncensoredSettingsAvailable = false,
   selectedNodeKey,
   setSelectedNodeKey,
   intl,
@@ -276,7 +279,7 @@ export function useModelProviderNavigation({
           },
         ],
       },
-      ...(codeIntelligenceAvailable
+      ...(codeIntelligenceAvailable || uncensoredSettingsAvailable
         ? [
             {
               id: "workspace-intelligence" as const,
@@ -284,16 +287,31 @@ export function useModelProviderNavigation({
                 id: "settings.modelProvider.workspaceIntelligenceTitle",
               }),
               items: [
-                {
-                  key: "workspace-intelligence:local-model",
-                  type: "codeIntelligence" as const,
-                  label: intl.formatMessage({ id: "settings.localModel.navigationLabel" }),
-                },
-                {
-                  key: "workspace-intelligence:embeddings",
-                  type: "codeIntelligence" as const,
-                  label: intl.formatMessage({ id: "settings.embedding.navigationLabel" }),
-                },
+                ...(codeIntelligenceAvailable
+                  ? [
+                      {
+                        key: "workspace-intelligence:local-model",
+                        type: "codeIntelligence" as const,
+                        label: intl.formatMessage({ id: "settings.localModel.navigationLabel" }),
+                      },
+                      {
+                        key: "workspace-intelligence:embeddings",
+                        type: "codeIntelligence" as const,
+                        label: intl.formatMessage({ id: "settings.embedding.navigationLabel" }),
+                      },
+                    ]
+                  : []),
+                ...(uncensoredSettingsAvailable
+                  ? [
+                      {
+                        key: "workspace-intelligence:uncensored-models",
+                        type: "codeIntelligence" as const,
+                        label: intl.formatMessage({
+                          id: "settings.uncensored.navigationLabel",
+                        }),
+                      },
+                    ]
+                  : []),
               ],
             },
           ]
@@ -304,6 +322,7 @@ export function useModelProviderNavigation({
   }, [
     customProviders,
     codeIntelligenceAvailable,
+    uncensoredSettingsAvailable,
     legacyOpenCodeProviders,
     regularCustomProviders,
     codingPlanItems,

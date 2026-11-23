@@ -34,6 +34,7 @@ import {
   zcodeTopicResourceCancelParamsSchema,
 } from "@zcode/shared";
 import { createTopicResourceBridge } from "./topicResourceBridge.js";
+import { handleUncensoredGetConfigRequest } from "./zcodeAgentServiceSessionMethods.js";
 import { logger } from "./zcodeAgentServiceSupport.js";
 import { pluginUiToolResultNotificationSchema } from "@zcode/shared/mcp-apps";
 import { providerRuntimeHeadersRequestKey } from "./zcodeAgentServiceParams.js";
@@ -418,6 +419,12 @@ export function createWireClientHelpers(
         }
         if (request.method === zcodeProtocolMethods.subagentsReadRuntimeConfig) {
           handleSubagentsReadRuntimeConfigRequest(client, workspace, request);
+          return;
+        }
+        if (request.method === zcodeProtocolMethods.uncensoredGetConfig) {
+          // Trusted CLI reverse RPC: the handler reads the secret only while
+          // building this response; the renderer channel stays masked.
+          handleUncensoredGetConfigRequest({ options }, client, workspace, request);
           return;
         }
         if (request.method === zcodeProtocolMethods.channelReply) {

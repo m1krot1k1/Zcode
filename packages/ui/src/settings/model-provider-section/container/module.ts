@@ -4,7 +4,14 @@
  */
 export const uiModelProviderContainerModule = {
   id: "ui-model-provider-container",
-  requires: ["agent-workbench", "opencode-agent-settings", "cursor-agent-settings", "shared", "ui"],
+  requires: [
+    "agent-workbench",
+    "opencode-agent-settings",
+    "cursor-agent-settings",
+    "shared",
+    "ui",
+    "uncensored-settings",
+  ],
   provides: ["ui-model-provider-container"],
   publicEntrypoints: ["index.ts", "contract.ts"],
 } as const;

@@ -3,7 +3,7 @@ import type {
   CuaOperationWorkspaceTarget,
 } from "./cuaOperationTurnTracker.js";
 import type { BrowserAmbientContextExecutor } from "./zcodeAgentBrowserAmbientContext.js";
-import type { CodeIntelligenceService } from "../code-intelligence/contract.js";
+import type { CodeIntelligenceService, UncensoredSettingsStore } from "../code-intelligence/contract.js";
 import type { IAccountRequestAuthService } from "#src/model-provider/accountRequestAuthService.js";
 import type { IDisposable } from "@zcode/rpc";
 import type { IOffPeakTaskService } from "#src/session/offPeakTask.js";
@@ -428,6 +428,11 @@ export interface CreateZCodeAgentServiceOptions extends Omit<
   }) => Promise<SubagentRuntimeConfig>;
   /** Host-owned index access; each request is bound to the connected workspace. */
   codeIntelligenceService?: CodeIntelligenceService;
+  /**
+   * Host-only store for the trusted CLI reverse RPC `uncensored/getConfig`.
+   * Never exposed through the renderer channel: only `readTakeoverConfig` is used.
+   */
+  uncensoredSettingsStore?: UncensoredSettingsStore;
   sessionRuntimePreferencesAuthority?: "local" | "external";
   prepareProjectExecution?: (
     projectId: string,

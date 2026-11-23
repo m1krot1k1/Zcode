@@ -14,6 +14,7 @@ import {
 } from "./server-types.js";
 import { runSessionModelConfigMutation } from "../zcode-protocol-v4/model-config-mutation.js";
 import { createProviderRuntimeHeadersPort } from "./provider-runtime-headers.js";
+import { createUncensoredConfigPort } from "./uncensored-config.js";
 import { offPeakLifecycleNotificationSchema } from "@zcode/shared";
 import { V4_NOTIFICATIONS } from "@zcode/shared/zcode-protocol-v4";
 
@@ -74,6 +75,10 @@ export async function createWorkspaceZCodeApp(
 ): Promise<ZCodeApp> {
   const providerRuntimeHeadersPort =
     options.providerRuntimeHeadersPort ?? createProviderRuntimeHeadersPort(context, workspace);
+  const uncensoredTakeover =
+    options.runtimeConfig?.uncensoredTakeover ?? {
+      configPort: createUncensoredConfigPort(context),
+    };
   return context.deps.createZCodeApp({
     ...options,
     onOffPeakLifecycleEvent: (event) =>
@@ -104,6 +109,7 @@ export async function createWorkspaceZCodeApp(
       // Electron/Protocol 主会话之前没有像 CLI/TUI 那样显式开启模型流式，
       // 导致主 turn 退回 generateText 非流式请求，遇到返回 SSE 的兼容端点会按 JSON 解析失败。
       modelStreaming: options.runtimeConfig?.modelStreaming ?? "on",
+      uncensoredTakeover,
     },
   });
 }

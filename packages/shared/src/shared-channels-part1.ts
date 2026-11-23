@@ -167,6 +167,8 @@ export const ServiceChannels = {
   Subagents: "subagents",
   /** 本地代码索引、符号图与代码搜索服务 */
   CodeIntelligence: "code-intelligence",
+  /** Host-owned uncensored-model settings (URL, write-only key flag, ordered models). */
+  UncensoredSettings: "uncensored-settings",
   /** Нативное улучшение пользовательских и системных промптов (`Enhance Prompt`). */
   PromptEnhancer: "prompt-enhancer",
   /** Предиктивное Tab-автодополнение в композере (ghost-text). */

@@ -271,6 +271,7 @@ export {
   zcodeMessagePartUpsertedEventPayloadSchema,
   zcodeMessageRemovedEventPayloadSchema,
   zcodeMessageUpsertedEventPayloadSchema,
+  zcodeModelRefusalEventPayloadSchema,
   zcodePermissionRequestedEventPayloadSchema,
   zcodePermissionResolvedEventPayloadSchema,
   zcodeProtocolErrorDetailSchema,
@@ -313,6 +314,7 @@ export type {
 } from "./schema-file-transaction.js";
 export type {
   ZCodeComputerUseOperationEvent,
+  ZCodeModelRefusalEventPayload,
   ZCodeSessionEvent,
   ZCodeSessionEventType,
   ZCodeSessionSubscribeParams,
@@ -719,5 +721,24 @@ export {
   zcodeProtocolSessionMethodContracts,
   zcodeStoragePathReadySchema,
   zcodeStoragePreparationFrameSchema,
+  zcodeUncensoredGetConfigParamsSchema,
+  zcodeUncensoredGetConfigResultSchema,
+  zcodeUncensoredModelEntrySchema,
+  zcodeUncensoredProviderConfigSchema,
+  zcodeUncensoredProviderStatusSchema,
+  zcodeUncensoredProviderWriteSchema,
+  zcodeUncensoredSettingsStatusSchema,
+  zcodeUncensoredSettingsWriteSchema,
 } from "./schema-methods.js";
-export type { ZCodeProtocolMethod, ZCodeProtocolSessionMethodContract } from "./schema-methods.js";
+export type {
+  ZCodeProtocolMethod,
+  ZCodeProtocolSessionMethodContract,
+  ZCodeUncensoredGetConfigParams,
+  ZCodeUncensoredGetConfigResult,
+  ZCodeUncensoredModelEntry,
+  ZCodeUncensoredProviderConfig,
+  ZCodeUncensoredProviderStatus,
+  ZCodeUncensoredProviderWrite,
+  ZCodeUncensoredSettingsStatus,
+  ZCodeUncensoredSettingsWrite,
+} from "./schema-methods.js";

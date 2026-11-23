@@ -114,6 +114,8 @@ export const zcodeSessionEventTypeSchema = z.enum([
   "part.upserted",
   "part.removed",
   "model.streaming",
+  // Durable refusal of one attributed task item; emitted once before takeover attempts.
+  "model.refusal",
   "tool.updated",
   "permission.requested",
   "permission.resolved",
@@ -463,6 +465,18 @@ export const zcodeSessionClosedEventPayloadSchema = z
   })
   .strict();
 
+/** `model.refusal`: exactly the refused item plus the normalized provider reason. */
+export const zcodeModelRefusalEventPayloadSchema = z
+  .object({
+    taskId: nonEmptyString,
+    itemIndex: z.number().int().nonnegative(),
+    itemText: z.string().min(1).max(4000),
+    reason: nonEmptyString,
+  })
+  .strict();
+
+export type ZCodeModelRefusalEventPayload = z.infer<typeof zcodeModelRefusalEventPayloadSchema>;
+
 function zcodeSessionEventEnvelopeFor<T extends ZCodeSessionEventType>(
   type: T,
   payload: z.ZodTypeAny,
@@ -491,6 +505,7 @@ export const zcodeSessionEventSchema = z.discriminatedUnion("type", [
   zcodeSessionEventEnvelopeFor("part.upserted", zcodeMessagePartUpsertedEventPayloadSchema),
   zcodeSessionEventEnvelopeFor("part.removed", zcodeMessagePartRemovedEventPayloadSchema),
   zcodeSessionEventEnvelopeFor("model.streaming", zcodeModelStreamingEventPayloadSchema),
+  zcodeSessionEventEnvelopeFor("model.refusal", zcodeModelRefusalEventPayloadSchema),
   zcodeSessionEventEnvelopeFor("tool.updated", zcodeToolUpdatedEventPayloadSchema),
   zcodeSessionEventEnvelopeFor("permission.requested", zcodePermissionRequestedEventPayloadSchema),
   zcodeSessionEventEnvelopeFor("permission.resolved", zcodePermissionResolvedEventPayloadSchema),

@@ -553,6 +553,7 @@ export async function runModelTextRequest(
     ...(contextUsageBreakdown.length > 0 ? { contextUsageBreakdown } : {}),
     finishReason,
     providerMetadata,
+    ...(rawFinishReason !== undefined ? { rawFinishReason } : {}),
     reasoning: reasoning.length > 0 ? reasoning : undefined,
     text,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,

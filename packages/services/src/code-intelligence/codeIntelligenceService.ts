@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { isAbsolute, join, resolve } from "node:path";
 import { getZCodeDataRootDir } from "../paths.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
@@ -11,7 +10,7 @@ import type {
 } from "./contract.js";
 import { createWorkspaceWatcherRegistry } from "./workspaceWatcher.js";
 import { IndexWorkerClient } from "./worker/workerClient.js";
-import { workspaceIdentityOf } from "./worker/workspaceIdentity.js";
+import { workspaceIdentityOf, workspaceKeyOf } from "./worker/workspaceIdentity.js";
 import {
   searchFromWorker,
   statusFromWorker,
@@ -118,7 +117,7 @@ export function createCodeIntelligenceService(
     if (!params.workspacePath.trim() || !isAbsolute(params.workspacePath))
       throw new Error("Workspace path must be absolute.");
     const identity = workspaceIdentityOf(params);
-    const key = createHash("sha256").update(identity).digest("hex").slice(0, 32);
+    const key = workspaceKeyOf(params);
     const root = resolve(params.workspacePath);
     return { identity, key, root };
   };

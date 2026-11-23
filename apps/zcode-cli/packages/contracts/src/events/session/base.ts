@@ -15,6 +15,17 @@ export interface SessionEvent {
   payload: unknown;
 }
 
+/**
+ * Strict payload of `model_refusal`: one attributed task item plus the normalized
+ * provider finish reason. Mirrors `zcodeModelRefusalEventPayloadSchema` in @zcode/shared.
+ */
+export interface ModelRefusalPayload {
+  taskId: string;
+  itemIndex: number;
+  itemText: string;
+  reason: string;
+}
+
 export const SessionEventType = {
   SessionCreated: "session_created",
   SessionResumed: "session_resumed",
@@ -115,6 +126,8 @@ export const SessionEventType = {
   CheckpointCreated: "checkpoint_created",
   TargetChanged: "target_changed",
   TargetCompletionVerification: "target_completion_verification",
+  // Durable refusal of one attributed task item; emitted once before takeover attempts.
+  ModelRefusal: "model_refusal",
   SubagentSpawned: "subagent_spawned",
   SubagentMessage: "subagent_message",
   SubagentStopped: "subagent_stopped",

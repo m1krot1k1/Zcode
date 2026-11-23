@@ -119,6 +119,12 @@ export interface ReactiveCompactLoopContext {
 
 export interface TurnRequestState {
   entries: readonly RuntimeMessageEntry[];
+  /**
+   * Turn-owned ledger of real tool-result entries committed during this turn. Compaction may
+   * replace `entries`, so takeover fragments are read from this explicit marker, never from a
+   * numeric offset that compaction could shift.
+   */
+  currentTurnToolResults: RuntimeMessageEntry[];
   outputTokenContinuationCount: number;
 }
 

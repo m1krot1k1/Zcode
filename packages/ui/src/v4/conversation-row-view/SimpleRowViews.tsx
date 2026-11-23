@@ -12,6 +12,7 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning.js";
 import { RowShell } from "@/v4/conversation-row-view/RowShell.js";
+import { UncensoredTakeoverCard } from "@/v4/uncensored-takeover/index.js";
 
 export const ArtifactRowView = memo(function ArtifactRowView({ row }: { row: ArtifactRow }) {
   return (
@@ -80,6 +81,14 @@ export const TurnHeaderRowView = memo(function TurnHeaderRowView({ row }: { row:
 });
 
 export const SubagentRowView = memo(function SubagentRowView({ row }: { row: SubagentRow }) {
+  // takeover 行携带投影后的完整事实，直接用同一张卡片渲染；裸行仍走兜底摘要。
+  if (row.takeover) {
+    return (
+      <RowShell rowId={row.rowId}>
+        <UncensoredTakeoverCard takeover={row.takeover} />
+      </RowShell>
+    );
+  }
   // subagent 行已经和 Agent/Task 工具行配对渲染；裸行只保留异常兜底摘要，
   // 避免再生成一个“子会话”卡片或第二套下钻入口。
   const summary = (

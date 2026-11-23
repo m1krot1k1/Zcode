@@ -51,19 +51,19 @@ export async function settleToolResults(
   // 根因：工具调用已进入历史，但旧逻辑在异步保存之后逐项加入结果；中途失败会
   // 留下缺失结果的调用。整批真实结果必须在任何异步收尾之前同步进入两份模型历史。
   // 这只保证当前进程历史完整，恢复锚点仍以各项持久化成功为前提。
-  commitTurnRequestEntries(
-    this,
-    state.turnRequestState,
-    results.map((result) =>
-      createRuntimeToolResultEntry(
-        result.toolCallId,
-        result.toolName,
-        modelContentForToolResult(result),
-        isErrorForToolResult(result),
-        toolCallById.get(result.toolCallId)?.modelCallWrapper,
-      ),
+  const toolResultEntries = results.map((result) =>
+    createRuntimeToolResultEntry(
+      result.toolCallId,
+      result.toolName,
+      modelContentForToolResult(result),
+      isErrorForToolResult(result),
+      toolCallById.get(result.toolCallId)?.modelCallWrapper,
     ),
   );
+  commitTurnRequestEntries(this, state.turnRequestState, toolResultEntries);
+  // Uncensored-takeover needs current-turn tool results even after compaction rewrites the
+  // request entry array; capture them on the turn-owned ledger at the single commit site.
+  state.turnRequestState.currentTurnToolResults.push(...toolResultEntries);
   for (const result of results) {
     recordBrowserTurnToolResult({
       output: result.output,

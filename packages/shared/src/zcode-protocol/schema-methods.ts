@@ -95,6 +95,8 @@ export const zcodeProtocolMethods = {
   sessionSetMode: "session/setMode",
   workspaceReadPresentation: "workspace/readPresentation",
   workspaceHookTrustGrant: "workspace/hooks/trustGrant",
+  // CLI → Host: read the Host-owned uncensored model configuration over the trusted stdio channel.
+  uncensoredGetConfig: "uncensored/getConfig",
   // 进程级 Account Provider Config 与 workspace 运行目录分离。
   providerUpdateAccountConfig: "provider/updateAccountConfig",
   providerUpdateRuntimeCatalog: "provider/updateRuntimeCatalog",
@@ -197,6 +199,83 @@ export const zcodeProtocolMethods = {
 export type ZCodeProtocolMethod = (typeof zcodeProtocolMethods)[keyof typeof zcodeProtocolMethods];
 
 export const zcodeProtocolEmptyResultSchema = z.object({}).strict();
+
+// uncensored/getConfig：CLI 反向 RPC 读取 Host 所属的 uncensored 模型配置。
+// 响应携带 write-only 的 apiKey，只允许走受信 stdio 通道；UI 走宿主服务接口，不调用该方法。
+export const zcodeUncensoredModelEntrySchema = z
+  .object({
+    id: z.string().min(1).max(256),
+    enabled: z.boolean(),
+  })
+  .strict();
+
+export const zcodeUncensoredGetConfigParamsSchema = z
+  .object({
+    workspacePath: z.string().min(1).max(32768),
+    workspaceIdentity: z.string().min(1).max(32768).optional(),
+  })
+  .strict();
+
+/** Провайдер в ответе CLI: apiKey — write-only секрет, только для受信 stdio. */
+export const zcodeUncensoredProviderConfigSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(200),
+    apiUrl: z.string().min(1).max(2048),
+    apiKey: z.string().max(4096).nullable(),
+    models: z.array(zcodeUncensoredModelEntrySchema).max(50),
+  })
+  .strict();
+
+export const zcodeUncensoredGetConfigResultSchema = z
+  .object({
+    providers: z.array(zcodeUncensoredProviderConfigSchema).max(20),
+  })
+  .strict();
+
+export type ZCodeUncensoredModelEntry = z.infer<typeof zcodeUncensoredModelEntrySchema>;
+export type ZCodeUncensoredGetConfigParams = z.infer<typeof zcodeUncensoredGetConfigParamsSchema>;
+export type ZCodeUncensoredProviderConfig = z.infer<typeof zcodeUncensoredProviderConfigSchema>;
+export type ZCodeUncensoredGetConfigResult = z.infer<typeof zcodeUncensoredGetConfigResultSchema>;
+
+/** Host-facing provider status: never carries the secret, only its configured flag. */
+export const zcodeUncensoredProviderStatusSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(200),
+    apiUrl: z.string().min(1).max(2048),
+    apiKeyConfigured: z.boolean(),
+    models: z.array(zcodeUncensoredModelEntrySchema).max(50),
+  })
+  .strict();
+
+export const zcodeUncensoredSettingsStatusSchema = z
+  .object({
+    providers: z.array(zcodeUncensoredProviderStatusSchema).max(20),
+  })
+  .strict();
+
+/** Full-record settings write; `apiKey` absent keeps that provider's secret, null deletes it. */
+export const zcodeUncensoredProviderWriteSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(200),
+    apiUrl: z.string().min(1).max(2048),
+    apiKey: z.string().max(4096).nullable().optional(),
+    models: z.array(zcodeUncensoredModelEntrySchema).max(50),
+  })
+  .strict();
+
+export const zcodeUncensoredSettingsWriteSchema = z
+  .object({
+    providers: z.array(zcodeUncensoredProviderWriteSchema).max(20),
+  })
+  .strict();
+
+export type ZCodeUncensoredProviderStatus = z.infer<typeof zcodeUncensoredProviderStatusSchema>;
+export type ZCodeUncensoredProviderWrite = z.infer<typeof zcodeUncensoredProviderWriteSchema>;
+export type ZCodeUncensoredSettingsStatus = z.infer<typeof zcodeUncensoredSettingsStatusSchema>;
+export type ZCodeUncensoredSettingsWrite = z.infer<typeof zcodeUncensoredSettingsWriteSchema>;
 
 // 最新 V4 主链已不再依赖旧版全量方法表；这里仅保留仍被兼容测试和 browser broker
 // 消费的最小契约集合，避免重新引入已移除的 legacy 方法。

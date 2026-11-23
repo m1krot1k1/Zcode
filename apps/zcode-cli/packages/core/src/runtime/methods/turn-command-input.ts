@@ -391,6 +391,7 @@ export function createTurnLoopState(
       // Turn 只借一次 canonical 成员集合，之后由显式 commit 推进；entry 本身
       // 遵循 MessageHistory 的不可变约定。
       entries: [...runtime.messageHistory.borrowReadOnlyRuntimeEntries()],
+      currentTurnToolResults: [],
       outputTokenContinuationCount: 0,
     },
     toolDisallowlist: options?.toolDisallowlist,

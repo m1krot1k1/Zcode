@@ -285,7 +285,9 @@ export const writeToolEntry: ToolEntry = {
     readOnly: false,
     destructive: false,
     concurrentSafe: false,
-    timeoutMs: 30000,
+    // Файловая операция может ждать блокировку/fsync на большом или сетевом томе.
+    // 30s давали ложный tool_timeout уже после успешной записи.
+    timeoutMs: 300_000,
     maxOutputBytes: 1_000_000,
     sideEffectScope: "workspace",
     riskLevel: "medium",
@@ -321,8 +323,8 @@ export const writeToolEntry: ToolEntry = {
     },
   },
   timeout: {
-    defaultMs: 30000,
-    maxMs: 30000,
+    defaultMs: 300_000,
+    maxMs: 600_000,
     allowCallOverride: false,
   },
   cancellation: {

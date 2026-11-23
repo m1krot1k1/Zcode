@@ -121,6 +121,11 @@ export interface IServiceAccessor {
   readonly subagentsService: ISubagentsService;
   /** Optional on hosts without local workspace filesystem access. */
   readonly codeIntelligenceService?: CodeIntelligenceService;
+  /**
+   * Host-owned uncensored-model settings; absent on Web/mobile/old hosts so the
+   * settings section stays hidden instead of calling a missing channel.
+   */
+  readonly uncensoredSettingsService?: import("./uncensored-settings/contract.js").UncensoredSettingsService;
   /** Ghost-text автодополнение; проксируется и на удалённый Host. */
   readonly chatAutocompleteService?: ChatAutocompleteService;
   /** Проактивная подсказка следующей задачи; отсутствует, если Host не зарегистрировал канал. */

@@ -2,7 +2,8 @@
 // и клиентские подписки (dynamic workflow, off-peak).
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { BuildContext, CoreServices, ProviderServices } from "./bundles.js";
-import { createCodeIntelligenceService } from "../code-intelligence/index.js";
+import { createCodeIntelligenceService, createUncensoredSettingsStore } from "../code-intelligence/index.js";
+import { createUncensoredSettingsService } from "../uncensored-settings/index.js";
 import { createCodingPlanSubscriptionService } from "../coding-plan-subscription/codingPlanSubscriptionService.js";
 import { createCommandsService } from "../commands/commandsService.js";
 import { createHooksService } from "../hooks/hooksService.js";
@@ -166,9 +167,21 @@ export function createFeatureServices(args: BuildContext & CoreServices & Provid
     claimAppToolCallForUi: (params) => agentService().claimAppToolCallForUi(params),
     resolveAppToolCallForUi: (params) => agentService().resolveAppToolCallForUi(params),
   });
+  // Единственный корень настроек и индекса code intelligence: настройки
+  // нецензурированной модели пишутся рядом с индексом, а не в cwd.
+  const codeIntelligenceRootDir = join(projectDataRoot(), "code-intelligence");
   const codeIntelligenceService = createCodeIntelligenceService({
-    indexRootDir: join(projectDataRoot(), "code-intelligence"),
+    indexRootDir: codeIntelligenceRootDir,
     credentialService,
+  });
+  const uncensoredSettingsStore = createUncensoredSettingsStore({
+    indexRootDir: codeIntelligenceRootDir,
+    credentialStore: credentialService,
+  });
+  // Renderer-канал получает только getConfig/updateConfig; host-only store
+  // отдельно уходит в Agent service для доверенного uncensored/getConfig.
+  const uncensoredSettingsService = createUncensoredSettingsService({
+    store: uncensoredSettingsStore,
   });
   const _commandsService = createCommandsService({ isDesktopRuntime: true });
   const _hooksService = createHooksService({
@@ -224,6 +237,8 @@ export function createFeatureServices(args: BuildContext & CoreServices & Provid
     pluginUiAppToolsService,
     subagentsService,
     codeIntelligenceService,
+    uncensoredSettingsService,
+    uncensoredSettingsStore,
     modelSelectionReadinessSource,
     agentAccountProviderConfigSource,
     codingPlanSubscriptionService,

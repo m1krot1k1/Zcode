@@ -1,4 +1,5 @@
 import type { CompactBoundaryPayload } from "../../compact/index.js";
+import type { ModelRefusalPayload } from "./base.js";
 import type { HookRunLifecyclePayload } from "../../hooks/index.js";
 import type { CheckpointCreatedPayload, RewindTriggeredPayload } from "../../rewind/index.js";
 import type {
@@ -115,6 +116,7 @@ export type SessionEventPayload =
   | ModelSelectedPayload
   | TurnExecutionModelFallbackPayload
   | ModelStreamingPayload
+  | ModelRefusalPayload
   | StreamingToolLedgerPayload
   | StreamRecoveryAnchorPayload
   | StreamRecoveryStartedPayload

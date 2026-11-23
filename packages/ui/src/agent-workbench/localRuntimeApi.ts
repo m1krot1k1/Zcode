@@ -13,14 +13,28 @@ export interface LocalRuntimeApi {
   pull(model: string): Promise<LocalEmbeddingPullResult>;
 }
 
+function fromNested(
+  nested: NonNullable<CodeIntelligenceService["localEmbeddings"]>,
+): LocalRuntimeApi {
+  return {
+    ...nested,
+    start: typeof nested.start === "function" ? () => nested.start() : async () => false,
+  };
+}
+
 /**
  * RPC exposes only top-level function properties. The nested `localEmbeddings` object is
  * still accepted for direct service tests and older Hosts, but a renderer proxy turns it
  * into a function, so prefer the flat `localRuntime(request)` surface.
+ *
+ * `localEmbeddings` lets a remote workspace use the **local** managed runtime: the target
+ * code-index service owns workspace config, while install/pull/status stay on this machine.
  */
 export function resolveLocalRuntimeApi(
   service: CodeIntelligenceService | null | undefined,
+  localEmbeddings?: CodeIntelligenceService["localEmbeddings"],
 ): LocalRuntimeApi | null {
+  if (localEmbeddings) return fromNested(localEmbeddings);
   if (!service) return null;
   if (typeof service.localRuntime === "function") {
     const call = service.localRuntime.bind(service);
@@ -54,10 +68,7 @@ export function resolveLocalRuntimeApi(
     typeof nested.install === "function" &&
     typeof nested.pull === "function"
   ) {
-    return {
-      ...nested,
-      start: typeof nested.start === "function" ? () => nested.start() : async () => false,
-    };
+    return fromNested(nested);
   }
   return null;
 }

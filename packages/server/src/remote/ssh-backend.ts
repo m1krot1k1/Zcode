@@ -1,6 +1,7 @@
 import { Client as SSHClient } from "ssh2";
 import type { ConnectConfig } from "ssh2";
 import { createReadStream } from "node:fs";
+import { connect as netConnect } from "node:net";
 import type { Duplex } from "node:stream";
 import { posix } from "node:path";
 import { Emitter } from "@zcode/rpc";
@@ -98,6 +99,7 @@ export class SSHBackend implements IRemoteBackend {
   private disposed = false;
   private hasEverConnected = false;
   private disconnectReported = false;
+  private embeddingForwardInstalled = false;
   private readonly disconnectEmitter = new Emitter<RemoteDisconnectEvent>();
   readonly onDidDisconnect = this.disconnectEmitter.event;
 
@@ -162,6 +164,32 @@ export class SSHBackend implements IRemoteBackend {
         ) => void,
       );
     }
+    // Reverse-forward the managed local embedding endpoint (127.0.0.1:11434) so a
+    // remote code index uses this machine's Ollama without installing it on the server.
+    // The listener is registered once; forwardIn is re-requested after each reconnect.
+    (
+      this.client as unknown as {
+        on(
+          event: "tcp connection",
+          listener: (
+            details: { destPort: number },
+            accept: () => Duplex,
+            reject: () => void,
+          ) => void,
+        ): void;
+      }
+    ).on("tcp connection", (details, accept, reject) => {
+      if (details.destPort !== 11434) {
+        reject();
+        return;
+      }
+      const channel = accept();
+      const socket = netConnect({ host: "127.0.0.1", port: 11434 });
+      socket.on("error", () => channel.destroy());
+      channel.on("error", () => socket.destroy());
+      channel.pipe(socket);
+      socket.pipe(channel);
+    });
   }
 
   private assertNotDisposed(): void {
@@ -170,8 +198,7 @@ export class SSHBackend implements IRemoteBackend {
     }
   }
 
-  private async ensureConnected(): Promise<void> {
-    // 连接取消会先释放 backend，但迟到的 deploy/cleanup continuation 仍可能
+  private async ensureConnected(): Promise<void> {    // 连接取消会先释放 backend，但迟到的 deploy/cleanup continuation 仍可能
     // 调用 ensureConnected。ssh2 Client 支持 end 后再次 connect，必须在 backend 边界阻止旧凭据复活。
     this.assertNotDisposed();
     if (this.connected) return;
@@ -188,6 +215,7 @@ export class SSHBackend implements IRemoteBackend {
         this.connected = true;
         this.hasEverConnected = true;
         this.disconnectReported = false;
+        this.installLocalEmbeddingForward();
         resolve();
       };
       const handleConnectError = (error: unknown) => {
@@ -200,7 +228,31 @@ export class SSHBackend implements IRemoteBackend {
     });
   }
 
+  /**
+   * Best-effort reverse forward for the managed local embedding model. A server that
+   * forbids remote forwarding (or already binds 11434) keeps its own endpoint; the app
+   * never installs Ollama on the server.
+   */
+  private installLocalEmbeddingForward(): void {
+    if (this.embeddingForwardInstalled) return;
+    this.embeddingForwardInstalled = true;
+    (
+      this.client as unknown as {
+        forwardIn(
+          address: string,
+          port: number,
+          callback: (error?: Error) => void,
+        ): void;
+      }
+    ).forwardIn("127.0.0.1", 11434, (error) => {
+      if (!error) return;
+      this.embeddingForwardInstalled = false;
+      console.warn(`[ssh] local embedding forward unavailable: ${error.message}`);
+    });
+  }
+
   private reportDisconnect(reason: RemoteDisconnectReason, error?: Error): void {
+    this.embeddingForwardInstalled = false;
     const shouldReport =
       !this.disposed && !this.disconnectReported && (this.connected || this.hasEverConnected);
 
@@ -619,6 +671,15 @@ export class SSHBackend implements IRemoteBackend {
     // client 只由当前 backend 持有，监听器会随 client 一起回收；此处优先保证退役阶段不崩溃。
     this.client.off("close", this.onClientClose);
     this.client.off("end", this.onClientEnd);
+    try {
+      (
+        this.client as unknown as {
+          unforwardIn(address: string, port: number, callback: () => void): void;
+        }
+      ).unforwardIn("127.0.0.1", 11434, () => {});
+    } catch {
+      // Forward may never have been installed; disposal stays best-effort.
+    }
     this.client.end();
     this.connected = false;
     this.disconnectEmitter.dispose();

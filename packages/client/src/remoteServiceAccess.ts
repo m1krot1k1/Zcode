@@ -2,6 +2,7 @@ import { IGenUiService } from "@zcode/services";
 import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
 import {
   ICodeIntelligenceService,
+  IUncensoredSettingsService,
   IPromptEnhancerService,
   IChatAutocompleteService,
   IProactiveSuggestionService,
@@ -64,6 +65,7 @@ import {
   IWindowProjectChangesService,
   type WindowProjectDirectoryServices,
   type CodeIntelligenceService,
+  type UncensoredSettingsService,
   type IServiceAccessor,
   type PromptEnhancerService,
   type ChatAutocompleteService,
@@ -129,6 +131,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly subagentsService: ISubagentsService;
   /** Optional local Host code index; never exposed by Web/remote transports by default. */
   readonly codeIntelligenceService?: CodeIntelligenceService;
+  /** Optional Host-owned uncensored settings; absent on Web/mobile/old hosts. */
+  readonly uncensoredSettingsService?: UncensoredSettingsService;
   /** Нативное улучшение промптов; доступно на любом Host, где зарегистрирован канал. */
   readonly promptEnhancerService: PromptEnhancerService;
   readonly chatAutocompleteService: ChatAutocompleteService;
@@ -152,6 +156,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
       openCodeAcpRuntime?: boolean;
       cursorCliRuntime?: boolean;
       codeIntelligenceService?: boolean;
+      uncensoredSettingsService?: boolean;
     } = {},
   ) {
     // 远端工作区的 project 必须保留 Source 语义；只有显式能力才创建完整窗口目录组。
@@ -321,6 +326,13 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.codeIntelligenceService = options.codeIntelligenceService
       ? ProxyChannel.toService<CodeIntelligenceService>(
           channelClient.getChannel(ICodeIntelligenceService.channelName),
+        )
+      : undefined;
+    // Same opt-in as code intelligence: old/Web/mobile hosts keep the capability
+    // absent instead of creating a proxy that fails on first call.
+    this.uncensoredSettingsService = options.uncensoredSettingsService
+      ? ProxyChannel.toService<UncensoredSettingsService>(
+          channelClient.getChannel(IUncensoredSettingsService.channelName),
         )
       : undefined;
     if (options.cursorCliRuntime) {

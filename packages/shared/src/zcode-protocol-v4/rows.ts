@@ -296,6 +296,23 @@ export const subagentRowSchema = z.object({
   reasoningTokens: z.number().int().nonnegative().optional(),
   subtreeTotalDurationMs: z.number().int().nonnegative().optional(),
   subtreeToolUseCount: z.number().int().nonnegative().optional(),
+  /**
+   * Uncensored-model takeover facts for this subagent row. Additive and optional:
+   * rows produced without a takeover keep the previous shape.
+   */
+  takeover: z
+    .object({
+      taskId: z.string().min(1),
+      itemIndex: z.number().int().nonnegative(),
+      itemText: z.string().min(1).max(4000),
+      providerId: z.string().min(1).nullable().optional(),
+      providerName: z.string().min(1).nullable().optional(),
+      modelId: z.string().min(1).nullable(),
+      status: z.enum(["running", "done", "refused", "error", "no-enabled-models"]),
+      output: z.string().max(64_000),
+      reason: z.string().optional(),
+    })
+    .optional(),
 });
 export type SubagentRow = z.infer<typeof subagentRowSchema>;
 

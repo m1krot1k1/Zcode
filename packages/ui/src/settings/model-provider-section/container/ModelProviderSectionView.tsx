@@ -4,10 +4,12 @@ import {
 } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { logger } from "@/logger.js";
+import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { sanitizeProxyRouteForDisplay } from "@/settingsPageHelpers.js";
 import { EmbeddingProviderSettings, LocalModelSettings } from "@/agent-workbench/index.js";
 import { CursorAgentSettingsPanel } from "@/cursor-agent-settings/index.js";
 import { OpenCodeAgentSettingsPanel } from "@/opencode-agent-settings/index.js";
+import { UncensoredModelSettings } from "./UncensoredModelSettings.js";
 import { BIGMODEL_REGISTRATION_URL } from "../constants.js";
 import { ModelProviderSectionDetail } from "../Detail.js";
 import { refreshModelProviderSection } from "../modelProviderActions.js";
@@ -20,12 +22,15 @@ export function ModelProviderSectionView({
 }: {
   controller: ModelProviderSectionController;
 }) {
+  const baseServices = useBaseWorkspaceServices();
+  const localEmbeddings = baseServices.codeIntelligenceService?.localEmbeddings;
   const { environment, codingPlan, navigation, actions, presetLoading, customLoading } = controller;
   const {
     intl,
     platform,
     modelSelectionService,
     codeIntelligenceService,
+    uncensoredSettingsService,
     codeIndexWorkspaceRef,
     providerTemplates,
     modelProviders,
@@ -137,10 +142,17 @@ export function ModelProviderSectionView({
               await modelSelectionService.getView();
             }}
           />
+        ) : selectedNavItem?.type === "codeIntelligence" &&
+          selectedNavItem.key === "workspace-intelligence:uncensored-models" ? (
+          <UncensoredModelSettings
+            port={uncensoredSettingsService}
+            workspaceRef={codeIndexWorkspaceRef}
+          />
         ) : selectedNavItem?.type === "codeIntelligence" ? (
           <EmbeddingProviderSettings
             codeIndex={codeIntelligenceService}
             workspaceRef={codeIndexWorkspaceRef}
+            localEmbeddings={localEmbeddings}
           />
         ) : selectedNavItem?.type === "agentIntegration" &&
           selectedNavItem.integrationId === "opencode-cli" ? (

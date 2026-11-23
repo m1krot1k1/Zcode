@@ -680,6 +680,8 @@ export function mapSessionEventType(type: SessionEvent["type"]): ZCodeSessionEve
       return "message.upserted";
     case SessionEventType.ModelStreaming:
       return "model.streaming";
+    case SessionEventType.ModelRefusal:
+      return "model.refusal";
     case SessionEventType.ToolCallScheduled:
     case SessionEventType.ToolCallStarted:
     case SessionEventType.ToolCallProgress:
@@ -764,6 +766,8 @@ export function finalizeSessionEvent(
     case "part.removed":
       return { ...base, type };
     case "model.streaming":
+      return { ...base, type };
+    case "model.refusal":
       return { ...base, type };
     case "tool.updated":
       return { ...base, type };

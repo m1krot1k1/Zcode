@@ -43,6 +43,9 @@ import {
   zcodeSessionRuntimePreferencesResultSchema,
   zcodeSessionStateSnapshotSchema,
   zcodeSessionSubscribeResultSchema,
+  zcodeUncensoredGetConfigParamsSchema,
+  zcodeUncensoredGetConfigResultSchema,
+  type ZCodeProtocolRequest,
 } from "@zcode/shared";
 import { createBackgroundSessionEventCoalescer } from "#src/zcode-agent/zcodeSessionEventCoalescer.js";
 import {
@@ -50,7 +53,9 @@ import {
   providerRuntimeHeadersRequestKey,
   rememberBoundedEventId,
   sessionEventKey,
+  type CreateZCodeAgentServiceOptions,
 } from "./zcodeAgentServiceParams.js";
+import type { ZCodeProtocolClient } from "./zcodeProtocolClient.js";
 import { Emitter } from "@zcode/rpc";
 import { readTrustedZCodeAgentV4Connection } from "./zcodeAgentConnectionScope.js";
 import { supportsHistoryFirst } from "./independentPlanSupport.js";
@@ -728,4 +733,66 @@ export function createSessionMethods(
       return resyncV4Route(params, "conversation/");
     },
   };
+}
+
+/**
+ * Host-обработчик доверенного reverse RPC `uncensored/getConfig` (CLI → Host).
+ * Параметры проверяются strict-схемой; секрет читает только store непосредственно
+ * при сборке ответа. В логи попадают workspace key и факт наличия ключа, никогда
+ * само значение.
+ */
+export function handleUncensoredGetConfigRequest(
+  ctx: { options?: CreateZCodeAgentServiceOptions },
+  client: ZCodeProtocolClient,
+  workspace: ZCodeAgentWorkspaceTarget,
+  request: ZCodeProtocolRequest,
+): void {
+  void (async () => {
+    const parsed = zcodeUncensoredGetConfigParamsSchema.safeParse(request.params);
+    if (!parsed.success) {
+      await client.respondError(request.id, {
+        code: -32602,
+        message: "Invalid uncensored/getConfig params",
+      });
+      return;
+    }
+    const store = ctx.options?.uncensoredSettingsStore;
+    if (!store) {
+      await client.respondError(request.id, {
+        code: -32603,
+        message: "Uncensored settings are unavailable on this Host",
+      });
+      return;
+    }
+    const workspaceKey = resolveWorkspaceKey(workspace);
+    try {
+      const result = zcodeUncensoredGetConfigResultSchema.parse(
+        await store.readTakeoverConfig({
+          workspacePath: workspace.workspacePath,
+          ...(workspace.workspaceIdentity
+            ? { workspaceIdentity: workspace.workspaceIdentity }
+            : {}),
+        }),
+      );
+      await client.respond(request.id, result);
+      logger.info(undefined, "uncensored/getConfig served", {
+        providerCount: result.providers.length,
+        modelCount: result.providers.reduce(
+          (total, provider) => total + provider.models.length,
+          0,
+        ),
+        configuredKeyCount: result.providers.filter((provider) => provider.apiKey !== null).length,
+        workspaceKey,
+      });
+    } catch (error) {
+      logger.warn(undefined, "uncensored/getConfig failed", {
+        reason: error instanceof Error ? error.message : String(error),
+        workspaceKey,
+      });
+      await client.respondError(request.id, {
+        code: -32603,
+        message: "Uncensored settings are unavailable on this Host",
+      });
+    }
+  })().catch(() => undefined);
 }

@@ -32,8 +32,13 @@ export function useModelProviderSectionEnvironment(props: ModelProviderSectionPr
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const platform = usePlatform();
-  const { modelSelectionService, oauthService, credentialService, codeIntelligenceService } =
-    useServices();
+  const {
+    modelSelectionService,
+    oauthService,
+    credentialService,
+    codeIntelligenceService,
+    uncensoredSettingsService,
+  } = useServices();
   const codeIndexWorkspaceRef = useMemo(() => {
     const path = codeIndexWorkspacePath?.trim();
     if (!path) return undefined;
@@ -178,6 +183,7 @@ export function useModelProviderSectionEnvironment(props: ModelProviderSectionPr
     oauthService,
     credentialService,
     codeIntelligenceService,
+    uncensoredSettingsService,
     codeIndexWorkspaceRef,
     modelProviders,
     providerTemplates,

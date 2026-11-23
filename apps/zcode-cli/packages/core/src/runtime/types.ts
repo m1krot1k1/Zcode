@@ -118,6 +118,7 @@ import type {
   OutputStylePromptConfig,
 } from "./deps.js";
 import type { AgentProfile } from "../subagent/profile.js";
+import type { TakeoverFetch, UncensoredConfigPort } from "./uncensored-takeover/contract.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
 import type { IFileTransactionTaskRegistry } from "../tool/file-transaction/task-contract.js";
@@ -278,6 +279,14 @@ export interface AgentRuntimeConfig {
   };
   parentSessionId?: SessionId;
   taskType?: SessionTaskType;
+  /**
+   * Host-provided uncensored-model takeover of provider refusals. Missing means the feature
+   * is disabled (embedded runtimes and old Hosts keep the previous behavior).
+   */
+  uncensoredTakeover?: {
+    configPort: UncensoredConfigPort;
+    fetch?: TakeoverFetch;
+  };
   /**
    * Caller routing identity. Root/main sessions leave it undefined; subagent children
    * set their canonical profile name so Agent/Task admission and the visible catalog
@@ -1010,6 +1019,8 @@ export interface RuntimeModelTextResult {
   contextUsageBreakdown?: ContextUsageBreakdownItem[];
   finishReason: string;
   providerMetadata?: Record<string, unknown>;
+  /** Provider raw finish reason captured from metadata; refusal detection reads it. */
+  rawFinishReason?: string;
   reasoning?: ModelReasoningContentBlock[];
   text: string;
   toolCalls?: ModelToolCall[];

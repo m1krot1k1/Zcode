@@ -1,4 +1,9 @@
 import { ServiceChannels } from "@zcode/shared";
+import type {
+  ZCodeUncensoredGetConfigResult,
+  ZCodeUncensoredSettingsStatus,
+  ZCodeUncensoredSettingsWrite,
+} from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 import type {
   LocalEmbeddingInstallResult,
@@ -35,6 +40,37 @@ export type LocalRuntimeResult =
 export interface CodeWorkspaceRef {
   workspacePath: string;
   workspaceIdentity?: string;
+}
+
+/**
+ * Workspace identity for the uncensored takeover settings next to the index.
+ * The storage key repeats the code-intelligence rule:
+ * `workspaceIdentity?.trim() || workspacePath`, hashed with sha256.
+ */
+export interface UncensoredSettingsWorkspace {
+  workspacePath: string;
+  workspaceIdentity?: string;
+}
+
+/**
+ * Host-only persistence port for `uncensored-settings.json`.
+ *
+ * The single implementation lives in `uncensoredSettings.ts`. `readTakeoverConfig`
+ * is the only method that reads the credential secret, and only for the trusted
+ * CLI reverse-RPC response; the renderer-facing service never receives it.
+ */
+export interface UncensoredSettingsStore {
+  /** Status without the secret; corrupt or missing JSON degrades to defaults. */
+  read(workspace: UncensoredSettingsWorkspace): Promise<ZCodeUncensoredSettingsStatus>;
+  /** Full replacement of one workspace record; returns the persisted status. */
+  write(
+    workspace: UncensoredSettingsWorkspace,
+    write: ZCodeUncensoredSettingsWrite,
+  ): Promise<ZCodeUncensoredSettingsStatus>;
+  /** Host-only read that resolves the secret right before building the answer. */
+  readTakeoverConfig(
+    workspace: UncensoredSettingsWorkspace,
+  ): Promise<ZCodeUncensoredGetConfigResult>;
 }
 
 export interface CodeIndexStatus {

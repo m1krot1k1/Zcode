@@ -32,9 +32,15 @@ function formatBytes(bytes: number): string {
 export function EmbeddingProviderSettings({
   codeIndex,
   workspaceRef,
+  localEmbeddings,
 }: {
   codeIndex?: CodeIntelligenceService;
   workspaceRef?: CodeWorkspaceRef;
+  /**
+   * Managed runtime of the **local** Host. Remote workspaces keep their index/config on the
+   * server but install and run the embedding model on this machine.
+   */
+  localEmbeddings?: CodeIntelligenceService["localEmbeddings"];
 }) {
   const { intl } = useZCodeIntl();
   const copy = useCallback(
@@ -51,7 +57,10 @@ export function EmbeddingProviderSettings({
   const [localStatus, setLocalStatus] = useState<LocalEmbeddingRuntimeStatus | null>(null);
   const [localBusy, setLocalBusy] = useState<"install" | "pull" | "use" | null>(null);
   const [localMessage, setLocalMessage] = useState<{ text: string; ok: boolean } | null>(null);
-  const localRuntime = useMemo(() => resolveLocalRuntimeApi(codeIndex), [codeIndex]);
+  const localRuntime = useMemo(
+    () => resolveLocalRuntimeApi(codeIndex, localEmbeddings),
+    [codeIndex, localEmbeddings],
+  );
   const activeDownloads =
     localStatus?.downloads?.filter(
       (download) => download.state === "downloading" || download.state === "verifying",
