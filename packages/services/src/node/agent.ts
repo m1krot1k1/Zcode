@@ -309,7 +309,6 @@ export function createAgentServices(
               askUserQuestionAutoResolutionEnabled:
                 settings.askUserQuestionAutoResolutionEnabled !== false,
               promptDepth: resolvePromptDepthProfile(settings.promptDepth),
-              workingContextCeilingTokens: stage4Runtime.workingContextCeilingTokens,
               autoRepairLoopEnabled: stage4Runtime.enableAutoRepairLoop,
               autoRepairLoopLimits: stage4Runtime.autoRepairLoopLimits,
               sandboxMode: stage4.sandboxSettings.mode,

@@ -16,7 +16,6 @@ import { proactiveSuggestionSettingsSchema } from "../proactive-suggestion/contr
 /** Агентное ядро: глубина рассуждений, рабочий контекст и авторемонт. */
 export const agentCoreAdvancedSettingsSchema = z
   .object({
-    workingContextCeilingTokens: z.number().int().min(0).max(2_000_000).default(0),
     enableAutoRepairLoop: z.boolean().default(false),
     autoRepairLoopMaxIterations: z.number().int().min(1).max(12).default(4),
     autoRepairLoopMaxElapsedMs: z.number().int().min(10_000).max(900_000).default(180_000),
@@ -92,7 +91,6 @@ export type BrowserAssistantSettings = z.infer<typeof browserAssistantSettingsSc
 
 export const stage4SettingsObjectSchema = z.object({
   agentCoreAdvanced: agentCoreAdvancedSettingsSchema.default({
-    workingContextCeilingTokens: 0,
     enableAutoRepairLoop: false,
     autoRepairLoopMaxIterations: 4,
     autoRepairLoopMaxElapsedMs: 180_000,

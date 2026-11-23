@@ -314,36 +314,31 @@ function migrateToolGroupingChangesDefault(value: unknown): unknown {
   };
 }
 
-function migrateWorkingContextCeilingDefault(value: unknown): unknown {
+function stripLegacyWorkingContextCeiling(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return value;
   }
   const raw = value as Record<string, unknown>;
-  if (raw.workingContextCeilingMigrationVersion === 2) {
-    return value;
-  }
   const agentCore = raw.agentCoreAdvanced;
-  const nextCore =
-    agentCore && typeof agentCore === "object" && !Array.isArray(agentCore)
-      ? (agentCore as Record<string, unknown>)
-      : undefined;
-  // The old 80k/120k defaults were indistinguishable from a custom value. Version 2
-  // switches those installations to auto (0 = use the provider's model window); a
-  // genuinely custom ceiling survives the version gate.
-  const legacyCeiling = nextCore?.workingContextCeilingTokens;
-  const migrateToAuto = legacyCeiling === 80_000 || legacyCeiling === 120_000;
-  return {
-    ...raw,
-    ...(migrateToAuto
-      ? {
-          agentCoreAdvanced: {
-            ...nextCore,
-            workingContextCeilingTokens: 0,
-          },
-        }
-      : {}),
-    workingContextCeilingMigrationVersion: 2,
-  };
+  let next: Record<string, unknown> = raw;
+  if (
+    agentCore &&
+    typeof agentCore === "object" &&
+    !Array.isArray(agentCore) &&
+    "workingContextCeilingTokens" in agentCore
+  ) {
+    // Настройка удалена: старые setting.json не должны падать на strict-схеме
+    // agentCoreAdvanced. Поведение теперь всегда auto по окну модели.
+    const rest = { ...(agentCore as Record<string, unknown>) };
+    delete rest.workingContextCeilingTokens;
+    next = { ...next, agentCoreAdvanced: rest };
+  }
+  if ("workingContextCeilingMigrationVersion" in next) {
+    const rest = { ...next };
+    delete rest.workingContextCeilingMigrationVersion;
+    next = rest;
+  }
+  return next;
 }
 
 function migrateToolSearchDefault(value: unknown): unknown {
@@ -647,8 +642,6 @@ const appSettingsObjectSchema = z.object({
   toolSearchMode: appToolSearchModeSchema.default("off"),
   // One-time migration: the old default and an explicit opt-out were indistinguishable.
   toolSearchModeMigrationVersion: z.literal(1).default(1),
-  // One-time migration of the old 120k working-context default to 80k.
-  workingContextCeilingMigrationVersion: z.literal(2).default(2),
   // Инкремент 4.4: профиль глубины рассуждений. Владелец — настройки; рантайм читает его
   // при сборке системного промпта и при выборе thinking/maxOutputTokens. UI-переключатель
   // появится в 4.6, но схема и рантайм-поддержка готовы здесь.
@@ -688,7 +681,7 @@ export const appSettingsSchema = z.preprocess(
   (value) =>
     sanitizeEmbeddedBrowserViewportPreference(
       sanitizeDesktopWindowSize(
-        migrateWorkingContextCeilingDefault(
+        stripLegacyWorkingContextCeiling(
           migrateToolSearchDefault(
             migrateToolGroupingChangesDefault(
               migrateMessageStreamShowReasoningDefault(

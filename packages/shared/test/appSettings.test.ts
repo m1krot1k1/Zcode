@@ -82,25 +82,17 @@ describe("app settings", () => {
     }
   });
 
-  it("migrates legacy 80k/120k working context defaults to auto and preserves custom values", () => {
-    for (const legacy of [80_000, 120_000]) {
-      const migrated = appSettingsSchema.parse({
-        agentCoreAdvanced: { workingContextCeilingTokens: legacy },
-      });
-      expect(migrated.agentCoreAdvanced.workingContextCeilingTokens).toBe(0);
-      expect(migrated.workingContextCeilingMigrationVersion).toBe(2);
-    }
-
-    const custom = appSettingsSchema.parse({
-      agentCoreAdvanced: { workingContextCeilingTokens: 180_000 },
-      workingContextCeilingMigrationVersion: 1,
+  it("strips the removed working context ceiling setting from legacy settings", () => {
+    const migrated = appSettingsSchema.parse({
+      agentCoreAdvanced: {
+        workingContextCeilingTokens: 80_000,
+        enableAutoRepairLoop: true,
+      },
+      workingContextCeilingMigrationVersion: 2,
     });
-    expect(custom.agentCoreAdvanced.workingContextCeilingTokens).toBe(180_000);
-    expect(custom.workingContextCeilingMigrationVersion).toBe(2);
-
-    const fresh = appSettingsSchema.parse({});
-    expect(fresh.agentCoreAdvanced.workingContextCeilingTokens).toBe(0);
-    expect(fresh.workingContextCeilingMigrationVersion).toBe(2);
+    expect(migrated.agentCoreAdvanced).not.toHaveProperty("workingContextCeilingTokens");
+    expect(migrated.agentCoreAdvanced.enableAutoRepairLoop).toBe(true);
+    expect(migrated).not.toHaveProperty("workingContextCeilingMigrationVersion");
   });
 
   it("preserves an explicit startup reconnect preference while keeping old settings optional", () => {

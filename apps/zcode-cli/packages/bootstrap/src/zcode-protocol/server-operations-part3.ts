@@ -629,9 +629,6 @@ export async function resolveSessionStartupPreferences(
     workspaceBoundary: runtimePreferences.workspaceBoundary,
     // Этап 4.6: пробрасываем ровно то, что Host прислал; отсутствие поля — дефолт рантайма.
     ...(runtimePreferences.promptDepth ? { promptDepth: runtimePreferences.promptDepth } : {}),
-    ...(runtimePreferences.workingContextCeilingTokens
-      ? { workingContextCeilingTokens: runtimePreferences.workingContextCeilingTokens }
-      : {}),
     ...(runtimePreferences.autoRepairLoopEnabled !== undefined
       ? { autoRepairLoopEnabled: runtimePreferences.autoRepairLoopEnabled }
       : {}),

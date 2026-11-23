@@ -21,7 +21,6 @@ import { resolvePromptDepthProfile } from "../prompt-depth.js";
 describe("stage4 settings runtime projection", () => {
   it("подставляет дефолты для устаревшего setting.json без новых секций", () => {
     const resolved = resolveStage4Settings({});
-    expect(resolved.agentCoreAdvanced.workingContextCeilingTokens).toBe(0);
     // Ghost-подсказка включена по умолчанию; выключение — явный выбор пользователя.
     expect(resolved.chatAutocompleteSettings.enabled).toBe(true);
     expect(resolved.proactiveSuggestionSettings.enabled).toBe(true);
@@ -47,7 +46,6 @@ describe("stage4 settings runtime projection", () => {
     const settings = {
       ...resolveStage4Settings({}),
       agentCoreAdvanced: {
-        workingContextCeilingTokens: 240_000,
         enableAutoRepairLoop: true,
         autoRepairLoopMaxIterations: 6,
         autoRepairLoopMaxElapsedMs: 300_000,
@@ -70,7 +68,6 @@ describe("stage4 settings runtime projection", () => {
       },
     };
     const runtime = projectStage4SettingsToSessionPreferences(settings);
-    expect(runtime.workingContextCeilingTokens).toBe(240_000);
     expect(runtime.enableAutoRepairLoop).toBe(true);
     expect(runtime.autoRepairLoopLimits).toEqual({
       maxIterations: 6,

@@ -70,21 +70,18 @@ subagents. The result was expensive, slow, and only nominally specialized.
 
 ### Working context ceiling
 
-1. The default is auto (`workingContextCeilingTokens: 0`): use the full context window
-   reported by the provider, minus the output reserve and compaction buffer. A 1M model
+1. There is no user-facing working-context ceiling. Auto-compaction always uses the
+   provider model window minus the output reserve and the compaction buffer. A 1M model
    therefore compacts near 966k, not at an artificial 80k.
-2. The persisted 80k and 120k defaults migrate once to 0 under
-   `workingContextCeilingMigrationVersion: 2`; explicit custom values (for example 180k)
-   are preserved.
-3. A custom ceiling remains an opt-in Settings control for cost/latency; the default UI
-   shows "Auto — model window" and hides the numeric input unless the user enables a limit.
-4. The v4 session-runtime-preferences protocol schema accepts `0` (non-negative). A
-   positive-only schema rejects the auto value during draft `createSession` and surfaces
-   `fault.command.executionFailed`, so the wire contract is part of this rule.
+2. Legacy `workingContextCeilingTokens` and `workingContextCeilingMigrationVersion`
+   fields are stripped from existing `setting.json`; a stored 80k/120k value no longer
+   caps the context. There is no custom-limit mode.
+3. Settings no longer renders a context-ceiling control.
+4. The v4 session-runtime-preferences contract no longer carries
+   `workingContextCeilingTokens`; an old Host value is ignored by the non-strict schema.
 5. Observation masking is enabled by default: stale large Read/Bash/Grep/Edit observations
-   are replaced with target metadata and a digest in quantized groups. With auto it uses
-   the model-window threshold; an explicit lower ceiling still compacts earlier without
-   turning old tool output into a hard loss of identity.
+   are replaced with target metadata and a digest in quantized groups, using the
+   model-window threshold.
 6. Cache hit rate is already projected into Context Usage; no new provider API is
    invented when the provider does not expose prefix-cache usage.
 

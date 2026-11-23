@@ -503,7 +503,6 @@ export const zcodeSessionRuntimePreferencesResultSchema = z
     // Этап 4.6: настройки новых подсистем доезжают до runtimeConfig сессии.
     // Все поля опциональны: старый Host без них продолжает работать на дефолтах.
     promptDepth: z.enum(["standard", "deep", "max_reasoning"]).optional(),
-    workingContextCeilingTokens: z.number().int().nonnegative().max(2_000_000).optional(),
     autoRepairLoopEnabled: z.boolean().optional(),
     autoRepairLoopLimits: z
       .object({

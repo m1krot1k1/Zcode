@@ -232,9 +232,6 @@ export async function createRecord(
       // Этап 4.6: настройки новых подсистем из Host preferences. Передаём только
       // присутствующие значения, чтобы старый Host не сбрасывал дефолты рантайма.
       ...(startupPreferences.promptDepth ? { promptDepth: startupPreferences.promptDepth } : {}),
-      ...(startupPreferences.workingContextCeilingTokens !== undefined
-        ? { workingContextCeilingTokens: startupPreferences.workingContextCeilingTokens }
-        : {}),
       ...(startupPreferences.autoRepairLoopEnabled !== undefined
         ? { enableAutoRepairLoop: startupPreferences.autoRepairLoopEnabled }
         : {}),
@@ -335,9 +332,6 @@ export async function createRecord(
       ? { sandboxAllowNetwork: startupPreferences.sandboxAllowNetwork }
       : {}),
     ...(startupPreferences.promptDepth ? { promptDepth: startupPreferences.promptDepth } : {}),
-    ...(startupPreferences.workingContextCeilingTokens !== undefined
-      ? { workingContextCeilingTokens: startupPreferences.workingContextCeilingTokens }
-      : {}),
     ...(startupPreferences.autoRepairLoopEnabled !== undefined
       ? { autoRepairLoopEnabled: startupPreferences.autoRepairLoopEnabled }
       : {}),

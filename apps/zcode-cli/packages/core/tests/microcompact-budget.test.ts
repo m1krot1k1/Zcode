@@ -43,12 +43,6 @@ describe("Increment 4.1 (F-04): effective working context ceiling & quantized ca
       Math.floor(966_000 * 0.9),
     );
 
-    // Явное переопределение через конфиг рантайма принимается без жёсткого хардкода.
-    const overriddenAutoThreshold = getAutoCompactThreshold({
-      contextWindow: 1_000_000,
-      workingContextCeilingTokens: 180_000,
-    });
-    expect(overriddenAutoThreshold).toBe(180_000);
   });
 
   it("masks stale Read / Bash / Grep observations with target metadata + sha256 in quantized group steps", () => {

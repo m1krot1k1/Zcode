@@ -9,7 +9,6 @@ import type { Stage4Settings } from "./settings.js";
  */
 
 export interface SessionRuntimePreferencesPatch {
-  workingContextCeilingTokens: number;
   enableAutoRepairLoop: boolean;
   autoRepairLoopLimits: { maxIterations: number; maxElapsedMs: number };
   workspaceBoundary: "strict" | "ask" | "allow";
@@ -18,7 +17,7 @@ export interface SessionRuntimePreferencesPatch {
 
 export interface CliConfigRuntimePatch {
   /** Значения, которые пишутся в `<dataBaseDir>/cli/config.json`. */
-  compact: { workingContextCeilingTokens: number; enabled: boolean };
+  compact: { enabled: boolean };
   autoRepair: {
     enabled: boolean;
     maxIterations: number;
@@ -62,7 +61,6 @@ export function projectStage4SettingsToSessionPreferences(
   settings: Stage4Settings,
 ): SessionRuntimePreferencesPatch {
   return {
-    workingContextCeilingTokens: settings.agentCoreAdvanced.workingContextCeilingTokens,
     enableAutoRepairLoop: settings.agentCoreAdvanced.enableAutoRepairLoop,
     autoRepairLoopLimits: {
       maxIterations: settings.agentCoreAdvanced.autoRepairLoopMaxIterations,
@@ -77,7 +75,6 @@ export function projectStage4SettingsToSessionPreferences(
 export function projectStage4SettingsToCliConfig(settings: Stage4Settings): CliConfigRuntimePatch {
   return {
     compact: {
-      workingContextCeilingTokens: settings.agentCoreAdvanced.workingContextCeilingTokens,
       enabled: true,
     },
     autoRepair: {

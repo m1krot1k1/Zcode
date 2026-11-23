@@ -492,14 +492,6 @@ const zhCN: Record<string, string> = {
   "settings.stage4.promptDepth.standard": "标准",
   "settings.stage4.promptDepth.deep": "深入",
   "settings.stage4.promptDepth.max_reasoning": "最大推理",
-  "settings.stage4.workingContextCeiling": "工作上下文上限",
-  "settings.stage4.workingContextCeiling.description":
-    "默认使用提供商返回的完整模型上下文窗口。可手动限制以节省 token 并更早压缩历史。",
-  "settings.stage4.workingContextCeiling.auto": "自动 — 模型窗口",
-  "settings.stage4.workingContextCeiling.limit": "手动限制",
-  "settings.stage4.workingContextCeiling.limitValue": "工作上下文限制",
-  "settings.stage4.workingContextCeiling.limitValue.description":
-    "小于模型窗口：节省 token，但会更早压缩历史。",
   "settings.stage4.autoRepair": "自动修复循环",
   "settings.stage4.autoRepair.description": "交付结果前自动修复构建、lint 和测试错误。",
   "settings.stage4.autoRepair.iterations": "最大迭代次数",

@@ -18,8 +18,6 @@ export const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3;
 export interface AutoCompactPolicyConfig {
   enabled?: boolean;
   contextWindow?: number;
-  /** Настраиваемый рабочий потолок входного контекста (по умолчанию 140 000 для окон > 200K). */
-  workingContextCeilingTokens?: number;
   maxOutputTokens?: number;
   modelContextBudgetStrategy?: "legacy" | "preflight-v1";
   summaryReserveTokens?: number;
@@ -88,13 +86,9 @@ export function getAutoCompactOutputReserveTokens(config: AutoCompactPolicyConfi
 export function getAutoCompactThreshold(config: AutoCompactPolicyConfig = {}): number {
   const effectiveContextWindow = getEffectiveContextWindowSize(config);
   const buffer = positiveInt(config.bufferTokens) ?? AUTOCOMPACT_BUFFER_TOKENS;
-  const rawThreshold = Math.max(0, effectiveContextWindow - buffer);
-  const explicitCeiling = positiveInt(config.workingContextCeilingTokens);
-  if (explicitCeiling !== undefined && explicitCeiling > 0) {
-    return Math.min(rawThreshold, explicitCeiling);
-  }
-  // 0/undefined = auto: используем всё окно модели минус output reserve и buffer.
-  return rawThreshold;
+  // Всегда используем окно модели минус output reserve и buffer: отдельной
+  // пользовательской настройки потолка больше нет.
+  return Math.max(0, effectiveContextWindow - buffer);
 }
 
 export function shouldAutoCompact(input: {

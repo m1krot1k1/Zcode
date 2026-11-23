@@ -107,8 +107,7 @@ function resolveLocalMicrocompactConfig(
   config: AutoCompactPolicyConfig,
 ): LocalMicrocompactPolicyConfig {
   const fullCompactThreshold = getAutoCompactThreshold(config);
-  const softCap =
-    config.microcompact?.workingContextSoftCapTokens ?? config.workingContextCeilingTokens;
+  const softCap = config.microcompact?.workingContextSoftCapTokens;
   return {
     ...config.microcompact,
     // Observation masking — базовая гигиена контекста, а не опциональная роскошь:

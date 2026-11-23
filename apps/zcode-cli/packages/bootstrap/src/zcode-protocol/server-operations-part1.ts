@@ -81,7 +81,6 @@ export interface SessionStartupPreferences {
    * и inherit-ветка не ломались: отсутствие поля = дефолт runtime'а.
    */
   promptDepth?: "standard" | "deep" | "max_reasoning";
-  workingContextCeilingTokens?: number;
   autoRepairLoopEnabled?: boolean;
   autoRepairLoopLimits?: { maxIterations: number; maxElapsedMs: number };
   sandboxMode?: "auto" | "bwrap" | "seatbelt" | "off";
