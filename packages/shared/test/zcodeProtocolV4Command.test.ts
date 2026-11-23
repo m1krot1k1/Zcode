@@ -13,6 +13,7 @@ import {
   modelSelectionSchema,
   workflowRunSettingsRejectionReasonSchema,
 } from "../src/zcode-protocol-v4/index.js";
+import { zcodeSessionRuntimePreferencesResultSchema } from "../src/zcode-protocol/index.js";
 
 describe("zcode-protocol-v4 command", () => {
   it("parses a valid sendText envelope with typed payload", () => {
@@ -660,6 +661,14 @@ describe("zcode-protocol-v4 command", () => {
       issuedAt: 1000,
     });
     expect(result.ok).toBe(true);
+  });
+
+  it("accepts 0 workingContextCeilingTokens as auto in session runtime preferences", () => {
+    const parsed = zcodeSessionRuntimePreferencesResultSchema.parse({
+      nativeSearchEnhancementsEnabled: true,
+      workingContextCeilingTokens: 0,
+    });
+    expect(parsed.workingContextCeilingTokens).toBe(0);
   });
 
   it("parses createSession MCP runtime configuration", () => {

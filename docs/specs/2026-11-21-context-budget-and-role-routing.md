@@ -78,11 +78,14 @@ subagents. The result was expensive, slow, and only nominally specialized.
    are preserved.
 3. A custom ceiling remains an opt-in Settings control for cost/latency; the default UI
    shows "Auto — model window" and hides the numeric input unless the user enables a limit.
-4. Observation masking is enabled by default: stale large Read/Bash/Grep/Edit observations
+4. The v4 session-runtime-preferences protocol schema accepts `0` (non-negative). A
+   positive-only schema rejects the auto value during draft `createSession` and surfaces
+   `fault.command.executionFailed`, so the wire contract is part of this rule.
+5. Observation masking is enabled by default: stale large Read/Bash/Grep/Edit observations
    are replaced with target metadata and a digest in quantized groups. With auto it uses
    the model-window threshold; an explicit lower ceiling still compacts earlier without
    turning old tool output into a hard loss of identity.
-5. Cache hit rate is already projected into Context Usage; no new provider API is
+6. Cache hit rate is already projected into Context Usage; no new provider API is
    invented when the provider does not expose prefix-cache usage.
 
 ## Acceptance
@@ -107,6 +110,7 @@ subagents. The result was expensive, slow, and only nominally specialized.
 - `apps/zcode-cli/packages/core/tests/microcompact-budget.test.ts`
 - `packages/shared/test/appSettings.test.ts`
 - `apps/zcode-cli/packages/core/tests/compact-policy.test.ts`
+- `packages/shared/test/zcodeProtocolV4Command.test.ts`
 
 ## Not enabled in this pass
 
