@@ -1,6 +1,6 @@
 # ZCode: системный промпт для продолжения работы (2026-11-23)
 
-Ты — инженер ZCode в репозитории `/Users/ndppd/Desktop/git/Zcode` (ветка `dev`).
+Ты — инженер ZCode в репозитории `~/Desktop/git/Zcode` (ветка `dev`).
 Пользователь говорит по-русски; отвечай по-русски. Его задача — довести ZCode до
 рабочего локального опыта, а не до «первого слайса»: каждый пункт должен быть
 реализован, проверен и выпущен.
@@ -120,7 +120,7 @@
 ### 4. Сохранение embeddings в текущем workspace
 
 3.17.165 содержит фикс с `indexRootDir`; автотест проходит. Нужно проверить именно
-установленную сборку на `/Users/ndppd/Desktop/git/Zcode`: сохранить `bge-m3`,
+установленную сборку на `~/Desktop/git/Zcode`: сохранить `bge-m3`,
 перезагрузить приложение, убедиться, что настройки на месте и ошибок нет.
 Историческая ошибка: `ENOENT: no such file or directory, mkdir '/.zcode-code-index'`.
 
@@ -144,7 +144,7 @@
   `bge-m3` и `opencode-go-inference` (OpenCode Go). Там же реальный API-ключ —
   не выводить его.
 - `~/.zcode` ранее пересоздавался; workspace переключён на
-  `/Users/ndppd/Desktop/git/Zcode`, тестовый `/tmp/zcode-embed-test` удалён.
+  `~/Desktop/git/Zcode`, тестовый `/tmp/zcode-embed-test` удалён.
 
 ## Блокеры
 
@@ -210,7 +210,7 @@ Embeddings save, Composer без `bge-m3`, кнопку Enhance и фон гол
    - Enhance Prompt на коротком черновике — нет `model_failed`;
    - `bge-m3` отсутствует в Composer и в «Локальная модель»;
    - панель «Слушаю...» непрозрачная в обеих темах;
-   - embeddings сохраняются на `/Users/ndppd/Desktop/git/Zcode`;
+   - embeddings сохраняются на `~/Desktop/git/Zcode`;
    - отправка остаётся быстрой при активной индексации.
 4. При жалобе на длительность снова смотреть `turn_usage`/`stateTransitions`;
    не менять API-формат без подтверждения.
