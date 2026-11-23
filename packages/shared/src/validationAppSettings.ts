@@ -319,7 +319,7 @@ function migrateWorkingContextCeilingDefault(value: unknown): unknown {
     return value;
   }
   const raw = value as Record<string, unknown>;
-  if (raw.workingContextCeilingMigrationVersion === 1) {
+  if (raw.workingContextCeilingMigrationVersion === 2) {
     return value;
   }
   const agentCore = raw.agentCoreAdvanced;
@@ -327,19 +327,22 @@ function migrateWorkingContextCeilingDefault(value: unknown): unknown {
     agentCore && typeof agentCore === "object" && !Array.isArray(agentCore)
       ? (agentCore as Record<string, unknown>)
       : undefined;
+  // The old 80k/120k defaults were indistinguishable from a custom value. Version 2
+  // switches those installations to auto (0 = use the provider's model window); a
+  // genuinely custom ceiling survives the version gate.
+  const legacyCeiling = nextCore?.workingContextCeilingTokens;
+  const migrateToAuto = legacyCeiling === 80_000 || legacyCeiling === 120_000;
   return {
     ...raw,
-    // The old 120k default was indistinguishable from a custom value. Migrate it once;
-    // later explicit 120k or any other custom ceiling is preserved by the version gate.
-    ...(nextCore?.workingContextCeilingTokens === 120_000
+    ...(migrateToAuto
       ? {
           agentCoreAdvanced: {
             ...nextCore,
-            workingContextCeilingTokens: 80_000,
+            workingContextCeilingTokens: 0,
           },
         }
       : {}),
-    workingContextCeilingMigrationVersion: 1,
+    workingContextCeilingMigrationVersion: 2,
   };
 }
 
@@ -645,7 +648,7 @@ const appSettingsObjectSchema = z.object({
   // One-time migration: the old default and an explicit opt-out were indistinguishable.
   toolSearchModeMigrationVersion: z.literal(1).default(1),
   // One-time migration of the old 120k working-context default to 80k.
-  workingContextCeilingMigrationVersion: z.literal(1).default(1),
+  workingContextCeilingMigrationVersion: z.literal(2).default(2),
   // Инкремент 4.4: профиль глубины рассуждений. Владелец — настройки; рантайм читает его
   // при сборке системного промпта и при выборе thinking/maxOutputTokens. UI-переключатель
   // появится в 4.6, но схема и рантайм-поддержка готовы здесь.

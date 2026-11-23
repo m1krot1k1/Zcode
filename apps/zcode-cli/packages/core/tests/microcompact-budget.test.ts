@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_WORKING_CONTEXT_CEILING_TOKENS,
-  DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS,
   buildDefaultMicrocompactThreshold,
   getAutoCompactThreshold,
   maybeLocalMicrocompactMessages,
@@ -31,16 +29,19 @@ function buildToolRound(
 }
 
 describe("Increment 4.1 (F-04): effective working context ceiling & quantized cache-friendly microcompact", () => {
-  it("caps auto-compact and microcompact working thresholds at 80K even for 1M-context models", () => {
+  it("uses the full model window in auto mode and still honors an explicit lower ceiling", () => {
     const oneMillionAutoThreshold = getAutoCompactThreshold({
       contextWindow: 1_000_000,
     });
-    expect(oneMillionAutoThreshold).toBe(DEFAULT_WORKING_CONTEXT_CEILING_TOKENS);
-    expect(oneMillionAutoThreshold).toBe(80_000);
+    // 1M - 21K output reserve - 13K buffer.
+    expect(oneMillionAutoThreshold).toBe(966_000);
 
     const defaultMicroThreshold = buildDefaultMicrocompactThreshold(oneMillionAutoThreshold);
-    expect(defaultMicroThreshold).toBe(Math.floor(DEFAULT_WORKING_CONTEXT_CEILING_TOKENS * 0.9));
-    expect(defaultMicroThreshold).toBeLessThanOrEqual(DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS);
+    expect(defaultMicroThreshold).toBe(Math.floor(966_000 * 0.9));
+    // 0 — это auto, а не «порог ноль»: иначе microcompact маскировал бы всё сразу.
+    expect(buildDefaultMicrocompactThreshold(oneMillionAutoThreshold, 0)).toBe(
+      Math.floor(966_000 * 0.9),
+    );
 
     // Явное переопределение через конфиг рантайма принимается без жёсткого хардкода.
     const overriddenAutoThreshold = getAutoCompactThreshold({

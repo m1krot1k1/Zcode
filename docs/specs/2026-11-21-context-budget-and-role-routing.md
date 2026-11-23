@@ -70,13 +70,19 @@ subagents. The result was expensive, slow, and only nominally specialized.
 
 ### Working context ceiling
 
-1. The default working context ceiling is 80k tokens (was 120k).
-2. The old persisted 120k default migrates once to 80k; an explicit custom value and
-   a later explicit 120k are preserved by `workingContextCeilingMigrationVersion: 1`.
-3. Observation masking is already enabled by default: stale large Read/Bash/Grep/Edit
-   observations are replaced with target metadata and a digest in quantized groups, so
-   lowering the ceiling does not turn old tool output into a hard loss of identity.
-4. Cache hit rate is already projected into Context Usage; no new provider API is
+1. The default is auto (`workingContextCeilingTokens: 0`): use the full context window
+   reported by the provider, minus the output reserve and compaction buffer. A 1M model
+   therefore compacts near 966k, not at an artificial 80k.
+2. The persisted 80k and 120k defaults migrate once to 0 under
+   `workingContextCeilingMigrationVersion: 2`; explicit custom values (for example 180k)
+   are preserved.
+3. A custom ceiling remains an opt-in Settings control for cost/latency; the default UI
+   shows "Auto — model window" and hides the numeric input unless the user enables a limit.
+4. Observation masking is enabled by default: stale large Read/Bash/Grep/Edit observations
+   are replaced with target metadata and a digest in quantized groups. With auto it uses
+   the model-window threshold; an explicit lower ceiling still compacts earlier without
+   turning old tool output into a hard loss of identity.
+5. Cache hit rate is already projected into Context Usage; no new provider API is
    invented when the provider does not expose prefix-cache usage.
 
 ## Acceptance
@@ -100,10 +106,11 @@ subagents. The result was expensive, slow, and only nominally specialized.
 - `apps/zcode-cli/packages/core/tests/spawn-budget.test.ts`
 - `apps/zcode-cli/packages/core/tests/microcompact-budget.test.ts`
 - `packages/shared/test/appSettings.test.ts`
+- `apps/zcode-cli/packages/core/tests/compact-policy.test.ts`
 
 ## Not enabled in this pass
 
 Lazy MCP connection and isolation of autocomplete/proactive/memory model calls remain
 opt-in/A-B work: both can remove tools or starve background features, so they are not
 enabled blindly. ToolSearch deferral (P0.1) already removes deferred MCP schemas from
-the resident prompt, and observation masking is enabled with the lower 80k ceiling.
+the resident prompt, and observation masking is enabled ahead of the model-window auto-compaction threshold.

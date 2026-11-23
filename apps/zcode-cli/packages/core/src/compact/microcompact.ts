@@ -19,7 +19,6 @@ const DEFAULT_MICROCOMPACT_IDLE_THRESHOLD_MINUTES = 60;
 export const DEFAULT_MICROCOMPACT_MIN_TOKEN_SAVINGS = 256;
 export const DEFAULT_MICROCOMPACT_THRESHOLD_RATIO = 0.9;
 export const DEFAULT_MICROCOMPACT_THRESHOLD_BUFFER_TOKENS = 2_000;
-export const DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS = 80_000;
 export const DEFAULT_MICROCOMPACT_GROUP_QUANTUM = 4;
 export const DEFAULT_MICROCOMPACT_COMPACTABLE_TOOLS = [
   "Read",
@@ -37,7 +36,7 @@ export const DEFAULT_MICROCOMPACT_COMPACTABLE_TOOLS = [
 export interface LocalMicrocompactPolicyConfig {
   enabled?: boolean;
   thresholdTokens?: number;
-  /** Эффективный мягкий потолок рабочего контекста (по умолчанию 120 000 токенов даже для 1M-моделей). */
+  /** Мягкий потолок рабочего контекста; 0/undefined — использовать окно модели. */
   workingContextSoftCapTokens?: number;
   /** Шаг квантования токенного порога маскирования, исключающий перестройку префикса на каждом ходу. */
   maskingStepQuantumTokens?: number;
@@ -94,13 +93,19 @@ interface ToolResultCandidate {
 
 export function buildDefaultMicrocompactThreshold(
   autoCompactThreshold: number,
-  workingContextSoftCapTokens = DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS,
+  workingContextSoftCapTokens?: number,
 ): number {
   const ratioThreshold = Math.floor(autoCompactThreshold * DEFAULT_MICROCOMPACT_THRESHOLD_RATIO);
   const bufferThreshold = autoCompactThreshold - DEFAULT_MICROCOMPACT_THRESHOLD_BUFFER_TOKENS;
-  const softCap =
-    positiveInt(workingContextSoftCapTokens) ?? DEFAULT_WORKING_CONTEXT_SOFT_CAP_TOKENS;
-  return Math.max(0, Math.min(ratioThreshold, bufferThreshold, softCap));
+  const softCap = positiveInt(workingContextSoftCapTokens);
+  const effectiveSoftCap = softCap !== undefined && softCap > 0 ? softCap : undefined;
+  // 0/undefined = auto: мягкий потолок — само окно модели. Иначе microcompact
+  // срабатывал бы на 80K даже там, где модель и пользователь ожидают 1M.
+  const cappedThreshold =
+    effectiveSoftCap !== undefined
+      ? Math.min(ratioThreshold, bufferThreshold, effectiveSoftCap)
+      : Math.min(ratioThreshold, bufferThreshold);
+  return Math.max(0, cappedThreshold);
 }
 
 export function maybeLocalMicrocompactMessages<T extends LocalMicrocompactMessage>(input: {

@@ -21,7 +21,7 @@ import { resolvePromptDepthProfile } from "../prompt-depth.js";
 describe("stage4 settings runtime projection", () => {
   it("подставляет дефолты для устаревшего setting.json без новых секций", () => {
     const resolved = resolveStage4Settings({});
-    expect(resolved.agentCoreAdvanced.workingContextCeilingTokens).toBe(80_000);
+    expect(resolved.agentCoreAdvanced.workingContextCeilingTokens).toBe(0);
     // Ghost-подсказка включена по умолчанию; выключение — явный выбор пользователя.
     expect(resolved.chatAutocompleteSettings.enabled).toBe(true);
     expect(resolved.proactiveSuggestionSettings.enabled).toBe(true);

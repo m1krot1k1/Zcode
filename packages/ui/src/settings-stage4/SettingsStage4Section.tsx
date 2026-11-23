@@ -192,17 +192,38 @@ export function SettingsStage4Section({
             }))}
             onChange={(next) => void patch({ promptDepth: next })}
           />
-          <NumberSettingRow
+          <SelectSettingRow
             label={t("settings.stage4.workingContextCeiling")}
             description={t("settings.stage4.workingContextCeiling.description")}
-            value={agentCore.workingContextCeilingTokens}
-            min={48_000}
-            max={500_000}
-            step={1_000}
-            unit={t("settings.stage4.tokens")}
-            testId="settings-stage4-working-context"
-            onChange={(next) => updateAgentCore({ workingContextCeilingTokens: next })}
+            value={agentCore.workingContextCeilingTokens === 0 ? "auto" : "limit"}
+            testId="settings-stage4-working-context-mode"
+            options={[
+              {
+                value: "auto",
+                label: t("settings.stage4.workingContextCeiling.auto"),
+              },
+              {
+                value: "limit",
+                label: t("settings.stage4.workingContextCeiling.limit"),
+              },
+            ]}
+            onChange={(next) =>
+              updateAgentCore({ workingContextCeilingTokens: next === "auto" ? 0 : 180_000 })
+            }
           />
+          {agentCore.workingContextCeilingTokens > 0 ? (
+            <NumberSettingRow
+              label={t("settings.stage4.workingContextCeiling.limitValue")}
+              description={t("settings.stage4.workingContextCeiling.limitValue.description")}
+              value={agentCore.workingContextCeilingTokens}
+              min={48_000}
+              max={2_000_000}
+              step={1_000}
+              unit={t("settings.stage4.tokens")}
+              testId="settings-stage4-working-context"
+              onChange={(next) => updateAgentCore({ workingContextCeilingTokens: next })}
+            />
+          ) : null}
           <SwitchSettingRow
             label={t("settings.stage4.autoRepair")}
             description={t("settings.stage4.autoRepair.description")}

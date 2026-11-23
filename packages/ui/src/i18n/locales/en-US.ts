@@ -532,7 +532,12 @@ const enUS: Record<string, string> = {
   "settings.stage4.promptDepth.max_reasoning": "Max reasoning",
   "settings.stage4.workingContextCeiling": "Working context ceiling",
   "settings.stage4.workingContextCeiling.description":
-    "Tokens the agent keeps in the working window. Higher is steadier on big tasks but costs more per request.",
+    "By default the agent uses the model's full context window reported by the provider. Enable a limit to save tokens and compact earlier.",
+  "settings.stage4.workingContextCeiling.auto": "Auto — model window",
+  "settings.stage4.workingContextCeiling.limit": "Set a limit",
+  "settings.stage4.workingContextCeiling.limitValue": "Working context limit",
+  "settings.stage4.workingContextCeiling.limitValue.description":
+    "Smaller than the model window: saves tokens but compacts history earlier.",
   "settings.stage4.autoRepair": "Auto-repair loop",
   "settings.stage4.autoRepair.description":
     "Fix build, lint and test failures before handing the result over.",
