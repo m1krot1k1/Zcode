@@ -1,4 +1,14 @@
 {
   "version": 1,
-  "violations": []
+  "violations": [
+    {
+      "rule": "ui-implementation-import",
+      "file": "packages/ui/src/prompt-enhancer-ui/SystemPromptEnhanceAction.tsx",
+      "module": "ui-prompt-enhancer",
+      "detail": "packages/services/src/index.ts",
+      "message": "UI 层不能直接依赖 Repo、Runtime 或 Service 实现；通过本模块 contract/port 访问",
+      "fingerprint": "4e1bd6585ea52703",
+      "global": false
+    }
+  ]
 }
