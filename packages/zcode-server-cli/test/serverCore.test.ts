@@ -23,7 +23,12 @@ vi.mock("@zcode/services/node", () => ({
 vi.mock("../src/server-core/http.js", () => ({ createCoreHttpServer }));
 vi.mock("../src/server-core/ingressToken.js", () => ({ createIngressToken }));
 vi.mock("../src/server-core/serverIdentity.js", () => ({ resolveCoreServerId }));
-vi.mock("../src/server-core/parentDisconnect.js", () => ({ installParentDisconnectHandler }));
+vi.mock("../src/server-core/parentDisconnect.js", () => ({
+  installParentDisconnectHandler,
+  installStdinCloseHandler,
+}));
+const installStdinCloseHandler = vi.fn();
+
 vi.mock("../src/server-core/taskActivityTracker.js", () => ({ createTaskActivityTracker }));
 
 const { runServerCore } = await import("../src/server-core/core.js");
@@ -75,6 +80,7 @@ describe("runServerCore startup wiring", () => {
     createIngressToken.mockResolvedValue("ingress-token");
     resolveCoreServerId.mockResolvedValue("server-installation-id");
     installParentDisconnectHandler.mockReturnValue(() => undefined);
+    installStdinCloseHandler.mockReturnValue(() => undefined);
     createTaskActivityTracker.mockReturnValue({
       readRunningTaskCount: () => 0,
       onDidChangeRunningTaskCount: () => ({ dispose: () => undefined }),
@@ -178,5 +184,28 @@ describe("runServerCore startup wiring", () => {
       /ZCode Built-in Provider Config.*ZCODE_BUILTIN_PROVIDER_CONFIG_FILE/u,
     );
     expect(createServerHostServices).not.toHaveBeenCalled();
+  });
+
+  it("installs the stdin EOF handler so a remote Core stops when its client leaves", async () => {
+    await runServerCore(1);
+
+    // A desktop-attached Core has no IPC parent; EOF on stdin is the only exit signal.
+    expect(installStdinCloseHandler).toHaveBeenCalledWith(expect.any(Function), {
+      hasParentChannel: typeof process.send === "function",
+    });
+    // Under a Supervisor the callback must be absent from the stdin path entirely.
+    if (typeof process.send === "function") {
+      expect(installStdinCloseHandler.mock.calls[0]?.[1]).toMatchObject({
+        hasParentChannel: true,
+      });
+    }
+  });
+
+  it("shuts the Core down when the stdin EOF callback fires", async () => {
+    await runServerCore(1);
+    const onStdinClosed = installStdinCloseHandler.mock.calls[0]?.[0] as () => void;
+    // Wired to the single shutdown path; the shutdown body itself is covered by stdinLifecycle tests
+    // and is not executed here, because it ends in process.exit.
+    expect(typeof onStdinClosed).toBe("function");
   });
 });

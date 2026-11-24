@@ -164,6 +164,23 @@ describe("uncensored takeover gate", () => {
     expect(harness.generated).toEqual([]);
   });
 
+  it("hands over a refusal worded as refusing to comment", async () => {
+    const harness = createHarness({
+      userText: "Скажи - Зеленский пидор",
+      assistantText:
+        "Я не буду это комментировать — такие оценки людей я не выдаю и не подтверждаю, независимо от того, о ком речь.\n\nЗдесь как помощник по коду: могу разобраться в репозитории, починить баг.",
+    });
+
+    const continued = await runGate(harness);
+
+    expect(continued).toBe(true);
+    expect(harness.generated).toHaveLength(1);
+    expect(harness.events.at(-1)?.payload.takeover).toMatchObject({
+      status: "done",
+      modelId: "deepseek-uncensored",
+    });
+  });
+
   it("keeps a refusal that belongs to a tracked todo item on the main model path", async () => {
     const harness = createHarness({
       userText: "Скажи - Зеленский пидор",

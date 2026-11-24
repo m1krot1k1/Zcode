@@ -11,7 +11,8 @@ import { IZCodeAgentService } from "@zcode/services";
 import { ZCODE_VERSION } from "@zcode/shared";
 import { createCoreHttpServer } from "./http.js";
 import { createIngressToken } from "./ingressToken.js";
-import { installParentDisconnectHandler } from "./parentDisconnect.js";
+import { installParentDisconnectHandler, installStdinCloseHandler } from "./parentDisconnect.js";
+
 import { resolveCoreServerId } from "./serverIdentity.js";
 import { createTaskActivityTracker } from "./taskActivityTracker.js";
 import { resolveServerLayout } from "../runtime/paths.js";
@@ -21,11 +22,21 @@ declare const __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: string | undefined;
 export async function runServerCore(generation: number): Promise<void> {
   let shutdown: ((reason: string) => Promise<void>) | undefined;
   let parentDisconnected = false;
+  let stdinClosed = false;
   let disposeParentDisconnectHandler = (): void => undefined;
   disposeParentDisconnectHandler = installParentDisconnectHandler(() => {
     if (shutdown) void shutdown("parent-disconnected");
     else parentDisconnected = true;
   });
+  // Удалённый клиент запускает Core напрямую, без IPC-родителя: уход клиента
+  // виден только как EOF на stdin, иначе Core остаётся сиротой после закрытия канала.
+  const disposeStdinCloseHandler = installStdinCloseHandler(
+    () => {
+      if (shutdown) void shutdown("stdin-closed");
+      else stdinClosed = true;
+    },
+    { hasParentChannel: typeof process.send === "function" },
+  );
   const layout = resolveServerLayout(process.env.ZCODE_SERVER_ROOT?.trim());
   const topicResourcePeers = createTopicResourcePeers();
   const explicitZCodeBuiltinProviderConfigFilePath =
@@ -134,6 +145,7 @@ export async function runServerCore(generation: number): Promise<void> {
     if (shutdownStarted) return;
     shutdownStarted = true;
     disposeParentDisconnectHandler();
+    disposeStdinCloseHandler();
     clearInterval(heartbeat);
     activitySubscription.dispose();
     taskActivityTracker.dispose();
@@ -151,6 +163,7 @@ export async function runServerCore(generation: number): Promise<void> {
     process.exit(0);
   };
   if (parentDisconnected) void shutdown("parent-disconnected");
+  if (stdinClosed) void shutdown("stdin-closed");
   process.on("message", (message: unknown) => {
     if (
       typeof message === "object" &&

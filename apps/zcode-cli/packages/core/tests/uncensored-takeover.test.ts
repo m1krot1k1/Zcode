@@ -119,6 +119,7 @@ describe("detectTextRefusal", () => {
     "Не буду это делать.",
     "Я не стану это произносить.",
     "Это оскорбление, я такое не произношу.",
+    "Я не буду это комментировать — такие оценки людей я не выдаю и не подтверждаю, независимо от того, о ком речь.",
   ])("detects the Russian refusal %s", (text) => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
   });

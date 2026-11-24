@@ -19,3 +19,53 @@ export function installParentDisconnectHandler(
   source.once("disconnect", handler);
   return () => source.off("disconnect", handler);
 }
+
+interface StdinDisconnectSource {
+  isTTY?: boolean;
+  once(event: "end" | "close", listener: () => void): unknown;
+  off(event: "end" | "close", listener: () => void): unknown;
+  /** A pipe stdin starts paused; without flowing mode Node never delivers EOF. */
+  resume?(): unknown;
+}
+
+export interface StdinDisconnectOptions {
+  /**
+   * The parent IPC marker. A supervisor-launched Core is stopped explicitly over IPC and
+   * keeps its stdin unused, so watching it there would be both useless and unsafe.
+   */
+  hasParentChannel: boolean;
+  source?: StdinDisconnectSource;
+}
+
+/**
+ * Core, запущенный напрямую удалённым клиентом (`node zcode-server.cjs` через SSH/WSL),
+ * не имеет IPC-родителя: единственный признак того, что клиент ушёл, — EOF на stdin.
+ *
+ * Без этого хука закрытие канала оставляло Core сиротой: он продолжал держать
+ * HTTP/WebSocket, SQLite и задачи, хотя связь с клиентом уже невозможна.
+ * Действует только при отсутствии IPC-канала; Supervisor останавливает Core командой.
+ */
+export function installStdinCloseHandler(
+  onClose: () => void | Promise<void>,
+  options: StdinDisconnectOptions,
+): () => void {
+  if (options.hasParentChannel) return () => undefined;
+  const source = options.source ?? process.stdin;
+  // Терминал не сигнализирует EOF при закрытии окна; там работает SIGTERM/SIGINT.
+  if (source.isTTY === true) return () => undefined;
+  let closed = false;
+  const handler = (): void => {
+    if (closed) return;
+    closed = true;
+    void onClose();
+  };
+  source.once("end", handler);
+  source.once("close", handler);
+  // Pipe stdin is paused until someone reads it, and a paused stream never emits EOF.
+  // In this mode stdin carries no protocol data, it is the lifetime channel.
+  source.resume?.();
+  return () => {
+    source.off("end", handler);
+    source.off("close", handler);
+  };
+}
