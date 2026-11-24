@@ -5,6 +5,9 @@ Renderer-side voice dictation.
 - One owner: `voiceDictationController` holds the active capture, selected model
   and language, and the Lexical range it inserted. The Composer never starts a
   second capture or keeps a parallel transcript.
+- The controller also owns the setup state: dictation starts only after the user
+  picked an installed model themselves. The Composer control reads that state and
+  never decides on its own whether dictation may start.
 - The platform port is `IPlatformService.voiceDictation` (desktop only). Web and
   remote surfaces do not render the entry.
 - Live text is written through the existing Lexical editor handle

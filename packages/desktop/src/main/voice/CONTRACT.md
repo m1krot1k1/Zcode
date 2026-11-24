@@ -10,3 +10,5 @@ Main-process adapter for local dictation.
   persisted or logged.
 - The renderer accesses this adapter only through
   `IPlatformService.voiceDictation`.
+- The engine ships as `resources/voice/hex-service`; a package without it reports
+  the availability reason `binary-missing` and no dictation.

@@ -33,16 +33,21 @@ jobs:
             os: mac
             arch: arm64
             artifact: macos-arm64
+            voiceDictation: "1"
           - label: Windows x64
             runner: windows-2025
             os: win
             arch: x64
             artifact: windows-x64
+            # The Hex engine build for Windows is not verified in CI yet; the
+            # Windows package is built from a local engine instead.
+            voiceDictation: "0"
           - label: Linux AMD64
             runner: ubuntu-24.04
             os: linux
             arch: x64
             artifact: linux-x64
+            voiceDictation: "1"
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout tagged source
@@ -64,6 +69,22 @@ jobs:
           node -e 'const p=require("./package.json"); const tag=process.env.RELEASE_TAG; if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag) || `v${p.version}` !== tag) { console.error(`Release tag ${tag} does not match package version ${p.version}`); process.exit(1); }'
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Linux build dependencies for the Hex voice engine
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang pkg-config \
+            libasound2-dev libwayland-dev libxkbcommon-dev libdbus-1-dev \
+            libvulkan-dev glslc spirv-headers
+      - name: Install Rust for the Hex voice engine
+        if: matrix.voiceDictation == '1'
+        shell: bash
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Build offline Preview Desktop
         shell: bash
         env:
@@ -81,6 +102,7 @@ jobs:
           ZCODE_PREVIEW_IDENTITY: "1"
           ZCODE_ENABLE_MAC_SIGN: "0"
           ZCODE_ENABLE_MAC_NOTARIZE: "0"
+          ZCODE_ENABLE_VOICE_DICTATION: ${{ matrix.voiceDictation }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: pnpm bundle:desktop -- --os "${{ matrix.os }}" --arch "${{ matrix.arch }}"
       - name: Stage versioned Desktop artifacts

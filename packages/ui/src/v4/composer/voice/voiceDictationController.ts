@@ -12,6 +12,8 @@ export type VoiceDictationStatus = "idle" | "starting" | "listening" | "stopping
 export interface VoiceDictationState {
   readonly status: VoiceDictationStatus;
   readonly available: boolean;
+  /** The mandatory pre-setup is done: the user chose an installed model explicitly. */
+  readonly configured: boolean;
   readonly reason: string | null;
   readonly models: readonly VoiceSpeechModel[];
   readonly modelId: string | null;
@@ -32,6 +34,7 @@ const LANGUAGE_STORAGE_KEY = "zcode.voice.language";
 let state: VoiceDictationState = {
   status: "idle",
   available: false,
+  configured: false,
   reason: null,
   models: [],
   modelId: null,
@@ -83,6 +86,22 @@ function modelSupportsLanguage(model: VoiceSpeechModel, language: string): boole
     model.languages.includes("auto") ||
     model.languages.includes("*")
   );
+}
+
+/**
+ * The pre-setup counts as done only when the user picked a model themselves and
+ * that model is installed and still fits the current language. Auto-selecting a
+ * default model is not a setup, so the control stays inactive until the user
+ * acts in the voice settings.
+ */
+function isSetupComplete(
+  models: readonly VoiceSpeechModel[],
+  language: string,
+): boolean {
+  const storedModelId = readStored(MODEL_STORAGE_KEY);
+  if (!storedModelId) return false;
+  const stored = models.find((model) => model.id === storedModelId);
+  return stored?.installed === true && modelSupportsLanguage(stored, language);
 }
 
 function preferredModel(models: readonly VoiceSpeechModel[], language: string): string | null {
@@ -167,14 +186,21 @@ class VoiceDictationController {
           current?.installed === true && modelSupportsLanguage(current, state.language);
         const modelId = keepCurrent ? current.id : preferredModel(models, state.language);
         const selected = models.find((model) => model.id === modelId);
+        const language =
+          selected && !modelSupportsLanguage(selected, state.language)
+            ? (selected.languages[0] ?? state.language)
+            : state.language;
         setState({
           models,
           modelId,
-          language:
-            selected && !modelSupportsLanguage(selected, state.language)
-              ? (selected.languages[0] ?? state.language)
-              : state.language,
+          language,
         });
+      }
+      {
+        // The setup state follows the catalog: a removed model or a language
+        // the chosen model does not support makes the control inactive again.
+        const latest = getVoiceDictationState();
+        setState({ configured: isSetupComplete(latest.models, latest.language) });
       }
     } catch (error) {
       setState({
@@ -188,13 +214,20 @@ class VoiceDictationController {
   selectModel(modelId: string): void {
     const model = state.models.find((item) => item.id === modelId);
     writeStored(MODEL_STORAGE_KEY, modelId);
+    const previousLanguage = state.language;
+    const language =
+      model && !modelSupportsLanguage(model, state.language)
+        ? (model.languages[0] ?? state.language)
+        : state.language;
     setState({
       modelId,
-      language:
-        model && !modelSupportsLanguage(model, state.language)
-          ? (model.languages[0] ?? state.language)
-          : state.language,
+      language,
+      configured: isSetupComplete(state.models, language),
     });
+    if (language !== previousLanguage) {
+      // The model brought its own language; the catalog follows it.
+      void this.refresh(true);
+    }
   }
 
   selectLanguage(language: string): void {
@@ -230,11 +263,21 @@ class VoiceDictationController {
     const port = this.port;
     if (!port || (state.status !== "idle" && state.status !== "error")) return;
     const startToken = (this.startToken += 1);
-    if (state.models.length === 0 || !state.modelId) {
+    if (state.models.length === 0 || !state.modelId || !state.available) {
       await this.refresh(true);
       if (startToken !== this.startToken) return;
     }
     const latest = getVoiceDictationState();
+    if (!latest.available) {
+      // The engine is missing or failed; the settings surface explains the reason.
+      setState({ status: "idle", settingsOpen: true });
+      return;
+    }
+    if (!latest.configured) {
+      // Mandatory pre-setup: the user has to choose and install a model first.
+      setState({ status: "idle", settingsOpen: true, error: null });
+      return;
+    }
     const modelId = latest.modelId;
     if (!modelId) {
       setState({ status: "idle", settingsOpen: true, error: null });

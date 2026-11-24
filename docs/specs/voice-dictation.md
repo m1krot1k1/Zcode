@@ -1,6 +1,7 @@
 # Voice dictation (Hex engine)
 
-Status: macOS arm64 implementation verified against the bundled engine; Windows/Linux
+Status: macOS arm64 implementation verified against the bundled engine; the Linux x64
+engine is built from the same pinned commit and shipped in the packaged app. Windows
 build artifacts are produced by the same script but were not run in this checkout.
 Owner: Desktop Host. Applies to the local Desktop app; Web and remote workspaces expose no
 dictation surface.
@@ -18,7 +19,10 @@ annotation, and cloud speech providers.
 ## Product surface
 
 - A microphone button sits in the empty-state start composer and in the ordinary conversation Composer
-  toolbar. It starts and stops one dictation for the focused Composer only.
+  toolbar. It is always visible on Desktop — macOS, Windows and Linux behave identically — and it starts
+  and stops one dictation for the focused Composer only.
+- The button is inactive until the pre-setup is done: it is rendered muted, marked `aria-disabled`, and a
+  press opens the pre-setup dialog instead of starting a capture. The in-app shortcut behaves the same.
 - While dictating, an in-window overlay appears above the Composer: level meter, elapsed time, selected
   model/language, and Stop/Cancel. It never creates an OS-level floating window.
 - While the Settings tab is active, the overlay hides the moving activity indicator (pulse dot and
@@ -34,6 +38,18 @@ annotation, and cloud speech providers.
   replaced by the next partial for the same segment. On stop, the final transcript replaces the
   tentative tail. Cancel removes all text inserted by that dictation and keeps the prior draft.
 - Dictation never sends a message, never starts a turn, and never changes the selected Agent model.
+
+## Mandatory pre-setup
+
+- Dictation needs an explicit pre-setup on every platform: the user picks a language, picks a speech model,
+  and that model is installed. Until then the composer control stays inactive.
+- The pre-setup is never implicit. Auto-selecting a default model does not count as a setup, and the app
+  never starts a hidden download: the first press opens the pre-setup dialog.
+- The setup is remembered per renderer (selected model and language). It stops being valid when the chosen
+  model is removed or stops supporting the current language; the control returns to the inactive state and the
+  next press reopens the pre-setup.
+- The pre-setup dialog is the same surface as Settings › Voice; the composer control never opens a second
+  settings surface.
 
 ## Ownership and process model
 
@@ -87,6 +103,9 @@ sequenceDiagram
 - macOS builds must be signed with the app's Developer ID; the upstream Hex signature is not reused.
   Windows/Linux artifacts are produced by the platform CI job. The app reports a clear unavailable state
   when the binary is missing or cannot run, and never silently downloads an executable at runtime.
+- Every packaged Desktop build must ship `hex-service` for its own target. A build that declares voice
+  dictation (`ZCODE_ENABLE_VOICE_DICTATION=1`) prepares the engine for the target and fails when the engine
+  cannot be produced, so a release can no longer ship an app whose dictation control can never work.
 - Model downloads are performed by the bundled service through its `/models/{id}/prepare` endpoint,
   with the same bytes and progress events Hex itself uses. Download failures leave the previous model
   usable. Models are stored under the app data directory and are removable from Settings.
@@ -153,6 +172,10 @@ model picker remains only for the "no installed model" flow.
   when another app is focused unless the global toggle is explicitly enabled.
 - Permission denied, missing model, service crash, stream busy, and lease expiry each show a distinct,
   localized message; the Composer remains usable and no partial message is sent.
+- Pre-setup: on a fresh install the microphone control is visible but inactive; the first press opens the
+  pre-setup, the model downloads with progress, and only after that does a press start a capture.
+- Linux package: the packaged Linux app contains `resources/voice/hex-service` and reports voice dictation as
+  available instead of `binary-missing`.
 - Code-index descriptor regression: a 20k-file workspace can open while Hex is running; the Host keeps
   enough descriptors to spawn the Agent CLI and the dictation child.
 - Cross-platform: macOS arm64/x64, Windows x64/ARM64, and Linux x64/ARM64 builds either ship a verified
@@ -175,6 +198,18 @@ model picker remains only for the "no installed model" flow.
   Host retried. The Host now preloads an installed model and retries that bounded
   window; the overlay renders a localized model-load message instead of the raw
   Electron IPC wrapper.
-- Not verified here: Windows/Linux binaries, real-microphone TCC approval on a clean machine, and a
+- 2026-11-24, Linux x64: the patched Hex 3.4.0 service was built from the pinned commit with the
+  repository script; `packages/desktop/bundled-voice/linux-x64/hex-service` starts on this machine and
+  prints the `{"type":"ready",…}` line with a loopback URL and a bearer token.
+- 2026-11-24: `0001-embedded-shared-engine.patch` creates the shared engine per platform — macOS keeps
+  its warm transcriber, other platforms start the engine parked and load the model the host prepares.
+  The previous macOS-only `WarmTranscriber` reference did not compile outside macOS.
+- 2026-11-24: a Linux x64 package built with `pnpm bundle:desktop -- --os linux --arch x64` ships
+  `resources/voice/hex-service` (84 MB, plus the Hex license and the manifest) in the unpacked app,
+  the `.deb`, `.rpm`, `.pacman` and the AppImage; the packaged engine starts and prints the ready line.
+- 2026-11-24: the composer control is visible on every Desktop platform, inactive until the user chose
+  an installed model, and a press opens the voice settings; the renderer tests cover the inactive
+  state, the setup gate, and the missing-engine case.
+- Not verified here: the Windows engine build, real-microphone TCC approval on a clean machine, and a
   global hold shortcut. The current shortcut is in-app (hold ⌘⇧Space, tap twice to keep recording);
   a global toggle is a deliberate follow-up rather than a hidden partial path.

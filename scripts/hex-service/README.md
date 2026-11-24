@@ -18,10 +18,20 @@ exposes it to the renderer. Closing the Host's stdin terminates the service.
 - Patches:
   - `0001-embedded-shared-engine.patch`: creates and shares a
     `TranscriptionEngine` in `service --embedded`, loads prepared models into it,
-    and reports each model's `streams` capability from `GET /models`.
+    and reports each model's `streams` capability from `GET /models`. macOS keeps
+    its warm transcriber; other platforms start the engine parked and load the
+    model the host prepares, so the same service builds on Linux and Windows.
   - `0002-apple-intelligence-stub.patch`: stubs the FoundationModels Swift
     bridge so the service builds on macOS Command Line Tools installations.
     Dictation does not use Apple Intelligence.
+
+## Linux build requirements
+
+- Rust stable (`cargo`) plus a C/C++ toolchain with `cmake`.
+- `libasound2-dev`, `libwayland-dev`, `libxkbcommon-dev`, `libdbus-1-dev` for the
+  Wayland/XKB/DBus client and the ALSA capture path.
+- `libvulkan-dev`, `glslc` and `spirv-headers` for the Vulkan backend of the
+  bundled `transcribe.cpp` inference runtime.
 
 `prepare-hex-service.mjs` clones the pinned commit into `.zcode-runtime/hex/`,
 applies the patches, builds `hex-service` for the target platform, and writes a

@@ -7,6 +7,7 @@ type VoiceFixtureStatus = "idle" | "starting" | "listening" | "stopping" | "erro
 interface VoiceFixtureState {
   status: VoiceFixtureStatus;
   available: boolean;
+  configured: boolean;
   reason: string | null;
   models: Array<{
     id: string;
@@ -44,6 +45,7 @@ const mocks = vi.hoisted(() => {
   const createVoiceState = (): VoiceFixtureState => ({
     status: "error",
     available: true,
+    configured: true,
     reason: null,
     models: [
       {
@@ -131,7 +133,7 @@ vi.mock("./useVoiceDictation.js", () => ({
   useVoiceDictation: () => mocks.api,
 }));
 
-import { VoiceDictationOverlay } from "./VoiceDictationControls.js";
+import { VoiceDictationButton, VoiceDictationOverlay } from "./VoiceDictationControls.js";
 
 afterEach(() => {
   cleanup();
@@ -161,6 +163,57 @@ describe("voice dictation overlay settings action", () => {
 
     expect(screen.getByText("chat.voice.modelLoadFailed")).toBeTruthy();
     expect(screen.queryByText(/Error invoking remote method/u)).toBeNull();
+  });
+});
+
+describe("voice dictation trigger", () => {
+  it("stays visible but inactive until the pre-setup is done", () => {
+    mocks.setVoiceState({ status: "idle", configured: false });
+
+    render(<VoiceDictationButton />);
+
+    const trigger = screen.getByTestId("voice-dictation-trigger");
+    expect(trigger.getAttribute("data-active")).toBe("false");
+    expect(trigger.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("asks the controller to start so the setup surface opens instead of dictating", () => {
+    mocks.setVoiceState({ status: "idle", configured: false });
+
+    render(<VoiceDictationButton />);
+    fireEvent.click(screen.getByTestId("voice-dictation-trigger"));
+
+    expect(mocks.api.start).toHaveBeenCalledTimes(1);
+    expect(mocks.api.stop).not.toHaveBeenCalled();
+  });
+
+  it("is active once the model is set up", () => {
+    mocks.setVoiceState({ status: "idle", configured: true });
+
+    render(<VoiceDictationButton />);
+
+    const trigger = screen.getByTestId("voice-dictation-trigger");
+    expect(trigger.getAttribute("data-active")).toBe("true");
+    expect(trigger.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("stays visible when the engine is missing so the reason can be shown", () => {
+    mocks.setVoiceState({ status: "idle", available: false, configured: false });
+
+    render(<VoiceDictationButton />);
+
+    const trigger = screen.getByTestId("voice-dictation-trigger");
+    expect(trigger).toBeTruthy();
+    expect(trigger.getAttribute("data-active")).toBe("false");
+  });
+
+  it("stops an active dictation from the same control", () => {
+    mocks.setVoiceState({ status: "listening", configured: true, error: null });
+
+    render(<VoiceDictationButton />);
+    fireEvent.click(screen.getByTestId("voice-dictation-trigger"));
+
+    expect(mocks.api.stop).toHaveBeenCalledTimes(1);
   });
 });
 

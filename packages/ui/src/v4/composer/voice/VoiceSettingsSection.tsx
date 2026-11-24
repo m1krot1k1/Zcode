@@ -58,6 +58,15 @@ function VoiceSettingsSectionImpl() {
     <div className="space-y-4" data-testid="voice-settings-section">
       <SettingsGroupCard>
         <SettingsRow
+          label={intl.formatMessage({ id: "settings.voice.setupState" })}
+          description={
+            state.configured
+              ? intl.formatMessage({ id: "chat.voice.setupDone" })
+              : intl.formatMessage({ id: "chat.voice.setupRequired" })
+          }
+          control={<MicIcon className="size-4 text-foreground-subtle" aria-hidden />}
+        />
+        <SettingsRow
           label={intl.formatMessage({ id: "chat.voice.language" })}
           description={intl.formatMessage({ id: "settings.voice.description" })}
           control={

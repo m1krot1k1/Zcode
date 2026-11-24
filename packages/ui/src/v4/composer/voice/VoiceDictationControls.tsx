@@ -49,29 +49,26 @@ function VoiceDictationButtonImpl({ disabled }: { disabled: boolean }) {
   const intl = useZCodeIntl().intl;
   const api = useVoiceDictation();
   const { state } = api;
-  if (!state.available) return null;
   const busy = state.status === "starting" || state.status === "stopping";
   const listening = state.status === "listening";
-  const selected = state.models.find((model) => model.id === state.modelId);
+  // The control stays visible on every platform. It is inactive until the
+  // mandatory pre-setup is done; a press then opens the voice settings.
+  const active = state.available && state.configured;
   const label = listening
     ? intl.formatMessage({ id: "chat.voice.stop" })
     : intl.formatMessage({ id: "chat.voice.start" });
   const tooltip =
-    listening || busy ? label : `${label} · ${intl.formatMessage({ id: "chat.voice.hint" })}`;
+    listening || busy
+      ? label
+      : active
+        ? `${label} · ${intl.formatMessage({ id: "chat.voice.hint" })}`
+        : intl.formatMessage({ id: "chat.voice.setupRequired" });
   const onClick = () => {
     if (listening) {
       void api.stop();
       return;
     }
     if (busy) return;
-    if (!selected) {
-      void api.start();
-      return;
-    }
-    if (!selected.installed) {
-      api.setSettingsOpen(true);
-      return;
-    }
     void api.start();
   };
   return (
@@ -83,14 +80,17 @@ function VoiceDictationButtonImpl({ disabled }: { disabled: boolean }) {
         data-testid="voice-dictation-trigger"
         data-state={state.status}
         data-mode={state.mode ?? undefined}
+        data-active={active ? "true" : "false"}
         aria-label={label}
         aria-pressed={listening}
+        aria-disabled={!active}
         disabled={busy || (disabled && !listening)}
         onClick={onClick}
         className={cn(
           "group/voice h-7 w-fit justify-center gap-1 rounded-lg px-1.5 py-1.5 text-ui-base",
           "data-[composer-compact=true]:size-7 data-[composer-compact=true]:gap-0 data-[composer-compact=true]:p-0",
           listening && "text-[var(--color-danger)]",
+          !active && !listening && "text-foreground-subtle opacity-70",
         )}
       >
         {busy ? (

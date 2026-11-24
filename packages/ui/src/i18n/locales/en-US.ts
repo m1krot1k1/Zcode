@@ -9058,9 +9058,12 @@ const enUS: Record<string, string> = {
   "chat.voice.failed": "Voice input failed. Open Voice settings and retry.",
   "chat.voice.openSettings": "Open voice settings",
   "chat.voice.hint": "Hold ⌥ or tap twice",
+  "chat.voice.setupRequired": "Set up voice input first: pick a language and download a speech model.",
+  "chat.voice.setupDone": "Voice input is set up",
   "settings.modelProvider.apiFormat.autoHint":
     "Detected automatically when the connection is saved. You can override it.",
   "settings.voice.title": "Voice input",
+  "settings.voice.setupState": "Setup state",
   "settings.voice.description":
     "Local Hex dictation. Audio stays on this device; speech models download into the app.",
   "settings.voice.shortcut": "Hold Option (⌥) to record, or tap twice to keep recording.",
