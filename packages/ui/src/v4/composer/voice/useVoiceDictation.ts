@@ -6,6 +6,7 @@ import {
   subscribeVoiceDictation,
   type VoiceDictationState,
 } from "./voiceDictationController.js";
+import { matchesVoiceShortcut } from "./shortcut.js";
 
 export interface VoiceDictationApi {
   readonly state: VoiceDictationState;
@@ -18,12 +19,15 @@ export interface VoiceDictationApi {
   prepareModel(modelId: string, language: string): Promise<void>;
   refreshModels(): Promise<void>;
   setSettingsOpen(open: boolean): void;
+  setShortcut(shortcut: string): void;
+  setShortcutCapturing(capturing: boolean): void;
 }
 
 /**
- * In-app dictation shortcut: hold Option to talk, or tap twice to keep recording.
- * Listeners are installed once per renderer; every mounted Composer updates the
- * single active API reference instead of registering another keydown pair.
+ * In-app dictation shortcut: hold the bound key to talk, or tap twice to keep
+ * recording. The binding is user-configurable in Settings › Voice. Listeners are
+ * installed once per renderer; every mounted Composer updates the single active API
+ * reference instead of registering another keydown pair.
  */
 let activeDictationApi: VoiceDictationApi | null = null;
 let hotkeyInstalled = false;
@@ -37,11 +41,12 @@ function installVoiceDictationHotkey(): void {
     if (stopTimer) clearTimeout(stopTimer);
     stopTimer = null;
   };
-  const isDictationKey = (event: KeyboardEvent) =>
-    (event.code === "AltLeft" || event.code === "AltRight") &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    !event.shiftKey;
+  const isDictationKey = (event: KeyboardEvent) => {
+    const current = getVoiceDictationState();
+    // While the settings capture a new binding, the hotkey must stay silent.
+    if (current.capturingShortcut) return false;
+    return matchesVoiceShortcut(event, current.shortcut);
+  };
   const onKeyDown = (event: KeyboardEvent) => {
     if (!isDictationKey(event)) return;
     const current = activeDictationApi;
@@ -119,6 +124,8 @@ export function useVoiceDictation(): VoiceDictationApi {
     prepareModel: (modelId, language) => controller.prepareModel(modelId, language),
     refreshModels: () => controller.refresh(true),
     setSettingsOpen: (open) => controller.setSettingsOpen(open),
+    setShortcut: (shortcut) => controller.setShortcut(shortcut),
+    setShortcutCapturing: (capturing) => controller.setShortcutCapturing(capturing),
   };
   useVoiceDictationHotkey(api);
   return api;

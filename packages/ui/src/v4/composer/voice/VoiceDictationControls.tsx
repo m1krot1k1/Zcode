@@ -18,6 +18,7 @@ import { isSettingsTab } from "@/store/tabStore.js";
 import { cn } from "@/components/lib/utils.js";
 import { useVoiceDictation, type VoiceDictationApi } from "./useVoiceDictation.js";
 import { describeVoiceError } from "./voiceErrorMessages.js";
+import { formatShortcut } from "./shortcut.js";
 
 function formatBytes(value: number | null): string {
   if (!value || value <= 0) return "";
@@ -61,7 +62,10 @@ function VoiceDictationButtonImpl({ disabled }: { disabled: boolean }) {
     listening || busy
       ? label
       : active
-        ? `${label} · ${intl.formatMessage({ id: "chat.voice.hint" })}`
+        ? `${label} · ${intl.formatMessage(
+            { id: "chat.voice.hint" },
+            { shortcut: formatShortcut(state.shortcut) },
+          )}`
         : intl.formatMessage({ id: "chat.voice.setupRequired" });
   const onClick = () => {
     if (listening) {
@@ -120,15 +124,24 @@ export function VoiceDictationButton({ disabled = false }: { disabled?: boolean 
 function VoiceSettingsDialog({ api }: { api: VoiceDictationApi }) {
   const intl = useZCodeIntl().intl;
   const { state } = api;
-  const selected = state.models.find((model) => model.id === state.modelId);
-  const languages = selected?.languages ?? [];
+  // The catalog lists the languages of every model, not only of the selected one:
+  // a single model must not lock the language.
+  const languages =
+    state.languages.length > 0
+      ? state.languages
+      : (state.models.find((model) => model.id === state.modelId)?.languages ?? []);
   const progress = state.progress;
   return (
     <Dialog open={state.settingsOpen} onOpenChange={(open) => api.setSettingsOpen(open)}>
       <DialogContent className="max-w-xl" data-testid="voice-dictation-settings">
         <DialogHeader>
           <DialogTitle>{intl.formatMessage({ id: "chat.voice.settings" })}</DialogTitle>
-          <DialogDescription>{intl.formatMessage({ id: "chat.voice.hint" })}</DialogDescription>
+          <DialogDescription>
+            {intl.formatMessage(
+              { id: "chat.voice.hint" },
+              { shortcut: formatShortcut(state.shortcut) },
+            )}
+          </DialogDescription>
         </DialogHeader>
         {!state.available ? (
           <p className="text-ui-base text-foreground-subtle">

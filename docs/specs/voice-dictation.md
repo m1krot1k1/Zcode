@@ -31,6 +31,14 @@ annotation, and cloud speech providers.
 - The shortcut defaults to in-app hold-to-talk and double-tap-to-toggle. A Settings switch may register
   the toggle globally while ZCode is running; global hold-to-talk is not promised until the platform
   input bridge exists. The shortcut acts only on the active ZCode Composer.
+- The shortcut binding is user-configurable in Settings › Voice: either one modifier (the default is
+  `Alt`) or modifiers plus one key. The composer hint and the pre-setup dialog show the current
+  binding. A bare key is not accepted, so the binding can never swallow ordinary typing; Escape
+  cancels a pending capture, and the hotkey stays silent while a binding is being captured.
+- The language list offers every language the model catalog declares, not only the languages of the
+  selected model: one model must never lock the language, in the pre-setup dialog or in
+  Settings › Voice. The catalog is filtered by the current language, so the full catalog is what
+  defines the choice.
 - Settings › Voice owns: enabled state, shortcut mode, language, installed model, catalog download with
   progress, and disk usage. The catalog shows the provider's own name, languages, size, and whether the
   model can stream partial text.

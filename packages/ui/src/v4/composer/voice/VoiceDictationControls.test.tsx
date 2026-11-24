@@ -20,6 +20,9 @@ interface VoiceFixtureState {
   }>;
   modelId: string | null;
   language: string;
+  languages: string[];
+  shortcut: string;
+  capturingShortcut: boolean;
   mode: "streaming" | "rolling" | null;
   progress: null;
   error: string | null;
@@ -60,6 +63,9 @@ const mocks = vi.hoisted(() => {
     ],
     modelId: "parakeet_unified_en",
     language: "en",
+    languages: ["en"],
+    shortcut: "Alt",
+    capturingShortcut: false,
     mode: "streaming",
     progress: null,
     error:

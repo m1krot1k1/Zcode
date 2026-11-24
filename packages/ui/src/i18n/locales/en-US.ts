@@ -9057,7 +9057,7 @@ const enUS: Record<string, string> = {
   "chat.voice.inputMissing": "Focus the message input and try again.",
   "chat.voice.failed": "Voice input failed. Open Voice settings and retry.",
   "chat.voice.openSettings": "Open voice settings",
-  "chat.voice.hint": "Hold ⌥ or tap twice",
+  "chat.voice.hint": "Hold {shortcut} or tap twice",
   "chat.voice.setupRequired": "Set up voice input first: pick a language and download a speech model.",
   "chat.voice.setupDone": "Voice input is set up",
   "settings.modelProvider.apiFormat.autoHint":
@@ -9066,7 +9066,12 @@ const enUS: Record<string, string> = {
   "settings.voice.setupState": "Setup state",
   "settings.voice.description":
     "Local Hex dictation. Audio stays on this device; speech models download into the app.",
-  "settings.voice.shortcut": "Hold Option (⌥) to record, or tap twice to keep recording.",
+  "settings.voice.shortcut": "Keyboard shortcut",
+  "settings.voice.shortcutDescription":
+    "Hold the assigned key to talk, or tap twice to keep recording.",
+  "settings.voice.shortcutCapture": "Press keys…",
+  "settings.voice.shortcutUnset": "Not set",
+  "settings.voice.shortcutReset": "Reset",
   "settings.voice.localOnly": "Audio and text are processed only on this computer.",
   "chat.uncensoredTakeover.title": "Fallback model takeover",
   "chat.uncensoredTakeover.item": "Item {index}: {text}",

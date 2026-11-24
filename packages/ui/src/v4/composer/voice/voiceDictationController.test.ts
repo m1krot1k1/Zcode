@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDictationPort, VoiceSpeechModel } from "@zcode/shared";
-import {
-  getVoiceDictationController,
-  getVoiceDictationState,
-} from "./voiceDictationController.js";
+import { getVoiceDictationController, getVoiceDictationState } from "./voiceDictationController.js";
 
 const installedModel: VoiceSpeechModel = {
   id: "parakeet_unified_en",
@@ -85,5 +82,30 @@ describe("voice dictation pre-setup", () => {
 
     expect(port.start).not.toHaveBeenCalled();
     expect(getVoiceDictationState().settingsOpen).toBe(true);
+  });
+
+  it("offers the languages of the whole catalog, not only of one model", async () => {
+    const port = createPort();
+    port.listModels = vi.fn(async (language?: string) =>
+      language
+        ? [installedModel]
+        : [installedModel, { ...installedModel, id: "gigaam_ru", languages: ["ru", "en"] }],
+    );
+    const controller = getVoiceDictationController();
+    controller.configure(port);
+    await controller.refresh(true);
+
+    expect(getVoiceDictationState().languages).toEqual(["en", "ru"]);
+  });
+
+  it("stores a new shortcut and keeps it in the state", () => {
+    const controller = getVoiceDictationController();
+
+    controller.setShortcut("Control+Shift+Space");
+
+    expect(getVoiceDictationState().shortcut).toBe("Control+Shift+Space");
+    expect(window.localStorage.getItem("zcode.voice.shortcut")).toBe("Control+Shift+Space");
+
+    controller.setShortcut("Alt");
   });
 });

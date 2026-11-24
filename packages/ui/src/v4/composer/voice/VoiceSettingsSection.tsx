@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DownloadIcon, MicIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
-import { useVoiceDictation } from "./useVoiceDictation.js";
+import { useVoiceDictation, type VoiceDictationApi } from "./useVoiceDictation.js";
 import { describeVoiceError } from "./voiceErrorMessages.js";
+import { collectCatalogLanguages } from "./languages.js";
+import { DEFAULT_VOICE_SHORTCUT, formatShortcut, normalizeShortcutFromEvent } from "./shortcut.js";
 
 function formatBytes(value: number | null): string {
   if (!value || value <= 0) return "";
@@ -17,6 +19,64 @@ function formatBytes(value: number | null): string {
     unit += 1;
   }
   return `${amount >= 10 || unit === 0 ? Math.round(amount) : amount.toFixed(1)} ${units[unit]}`;
+}
+
+function VoiceShortcutControl({ api }: { api: VoiceDictationApi }) {
+  const { intl } = useZCodeIntl();
+  const { state } = api;
+  const [capturing, setCapturing] = useState(false);
+
+  useEffect(() => {
+    if (!capturing) return;
+    // The dictation hotkey reads this flag and stays silent while a binding is captured.
+    api.setShortcutCapturing(true);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Escape") {
+        event.preventDefault();
+        setCapturing(false);
+        return;
+      }
+      const binding = normalizeShortcutFromEvent(event);
+      if (!binding) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setCapturing(false);
+      api.setShortcut(binding);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      api.setShortcutCapturing(false);
+    };
+  }, [api, capturing]);
+
+  const label = capturing
+    ? intl.formatMessage({ id: "settings.voice.shortcutCapture" })
+    : state.shortcut
+      ? formatShortcut(state.shortcut)
+      : intl.formatMessage({ id: "settings.voice.shortcutUnset" });
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => setCapturing((value) => !value)}
+      >
+        {label}
+      </Button>
+      {state.shortcut && state.shortcut !== DEFAULT_VOICE_SHORTCUT ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => api.setShortcut(DEFAULT_VOICE_SHORTCUT)}
+        >
+          {intl.formatMessage({ id: "settings.voice.shortcutReset" })}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 function VoiceSettingsSectionImpl() {
@@ -31,13 +91,13 @@ function VoiceSettingsSectionImpl() {
     void api.refreshModels();
   }, [api]);
 
-  const languages = useMemo(() => {
-    const values = new Set<string>(state.language ? [state.language] : []);
-    for (const model of state.models) {
-      for (const language of model.languages) values.add(language);
-    }
-    return [...values].sort();
-  }, [state.language, state.models]);
+  const languages = useMemo(
+    () =>
+      state.languages.length > 0
+        ? state.languages
+        : collectCatalogLanguages(state.models, state.language),
+    [state.language, state.languages, state.models],
+  );
   const selected = state.models.find((model) => model.id === state.modelId);
   const progress = state.progress;
   const busy = progress !== null;
@@ -148,10 +208,13 @@ function VoiceSettingsSectionImpl() {
         />
         <SettingsRow
           label={intl.formatMessage({ id: "settings.voice.shortcut" })}
-          description={intl.formatMessage({ id: "settings.voice.localOnly" })}
-          control={<span className="text-ui-base text-foreground-subtle">⌥</span>}
+          description={intl.formatMessage({ id: "settings.voice.shortcutDescription" })}
+          control={<VoiceShortcutControl api={api} />}
         />
       </SettingsGroupCard>
+      <p className="text-ui-base text-foreground-subtle">
+        {intl.formatMessage({ id: "settings.voice.localOnly" })}
+      </p>
       {state.error ? (
         <p className="text-ui-base text-[var(--color-danger)]">
           {describeVoiceError(intl, state.error)}

@@ -6,6 +6,8 @@ import type {
 } from "@zcode/shared";
 import { getActiveLexicalChatInput } from "@/lexical-chat-input/contract.js";
 import { logger } from "@/logger.js";
+import { collectCatalogLanguages } from "./languages.js";
+import { DEFAULT_VOICE_SHORTCUT } from "./shortcut.js";
 
 export type VoiceDictationStatus = "idle" | "starting" | "listening" | "stopping" | "error";
 
@@ -18,6 +20,12 @@ export interface VoiceDictationState {
   readonly models: readonly VoiceSpeechModel[];
   readonly modelId: string | null;
   readonly language: string;
+  /** Every language the catalog offers; the model list alone must not narrow it. */
+  readonly languages: readonly string[];
+  /** In-app dictation shortcut binding, e.g. `Alt` or `Control+Shift+Space`. */
+  readonly shortcut: string;
+  /** True while the settings capture a new shortcut; the hotkey must stay silent then. */
+  readonly capturingShortcut: boolean;
   readonly mode: "streaming" | "rolling" | null;
   readonly progress: VoiceModelPrepareProgress | null;
   readonly error: string | null;
@@ -30,6 +38,7 @@ export interface VoiceDictationState {
 
 const MODEL_STORAGE_KEY = "zcode.voice.model";
 const LANGUAGE_STORAGE_KEY = "zcode.voice.language";
+const SHORTCUT_STORAGE_KEY = "zcode.voice.shortcut";
 
 let state: VoiceDictationState = {
   status: "idle",
@@ -39,6 +48,9 @@ let state: VoiceDictationState = {
   models: [],
   modelId: null,
   language: typeof navigator === "undefined" ? "en" : navigator.language.slice(0, 2) || "en",
+  languages: [],
+  shortcut: readStored(SHORTCUT_STORAGE_KEY) ?? DEFAULT_VOICE_SHORTCUT,
+  capturingShortcut: false,
   mode: null,
   progress: null,
   error: null,
@@ -94,10 +106,7 @@ function modelSupportsLanguage(model: VoiceSpeechModel, language: string): boole
  * default model is not a setup, so the control stays inactive until the user
  * acts in the voice settings.
  */
-function isSetupComplete(
-  models: readonly VoiceSpeechModel[],
-  language: string,
-): boolean {
+function isSetupComplete(models: readonly VoiceSpeechModel[], language: string): boolean {
   const storedModelId = readStored(MODEL_STORAGE_KEY);
   if (!storedModelId) return false;
   const stored = models.find((model) => model.id === storedModelId);
@@ -200,7 +209,11 @@ class VoiceDictationController {
         // The setup state follows the catalog: a removed model or a language
         // the chosen model does not support makes the control inactive again.
         const latest = getVoiceDictationState();
-        setState({ configured: isSetupComplete(latest.models, latest.language) });
+        const languages = await this.collectLanguages(latest.models);
+        setState({
+          configured: isSetupComplete(latest.models, latest.language),
+          languages,
+        });
       }
     } catch (error) {
       setState({
@@ -234,6 +247,34 @@ class VoiceDictationController {
     writeStored(LANGUAGE_STORAGE_KEY, language);
     setState({ language });
     if (this.port) void this.refresh(true);
+  }
+
+  /** In-app shortcut binding; an empty binding disables the hotkey. */
+  setShortcut(shortcut: string): void {
+    const normalized = shortcut.trim();
+    writeStored(SHORTCUT_STORAGE_KEY, normalized);
+    setState({ shortcut: normalized, capturingShortcut: false });
+  }
+
+  setShortcutCapturing(capturing: boolean): void {
+    setState({ capturingShortcut: capturing });
+  }
+
+  /**
+   * Languages the catalog offers. The full catalog carries the languages of every
+   * model, so the choice does not shrink when the current language filters the model
+   * list — otherwise the language could not be changed back.
+   */
+  private async collectLanguages(models: readonly VoiceSpeechModel[]): Promise<string[]> {
+    try {
+      const catalog = await this.port?.listModels();
+      return collectCatalogLanguages(
+        catalog && catalog.length > 0 ? catalog : models,
+        state.language,
+      );
+    } catch {
+      return collectCatalogLanguages(models, state.language);
+    }
   }
 
   setSettingsOpen(open: boolean): void {
