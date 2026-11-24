@@ -49,7 +49,10 @@ function config(
 }
 
 function fakeFetch(
-  responder: (modelId: string, call: { body: string; headers: Record<string, string> }) => {
+  responder: (
+    modelId: string,
+    call: { body: string; headers: Record<string, string> },
+  ) => {
     status?: number;
     body?: string;
   },
@@ -108,11 +111,25 @@ describe("detectTextRefusal", () => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
   });
 
+  // The reported failure: a Russian refusal with a `stop` finish reason, where the stem is
+  // followed by a dash instead of a service verb.
+  it.each([
+    "Не буду — это оскорбление, и я такое не произношу, независимо от того, о ком речь.",
+    "Не могу — это оскорбление.",
+    "Не буду это делать.",
+    "Я не стану это произносить.",
+    "Это оскорбление, я такое не произношу.",
+  ])("detects the Russian refusal %s", (text) => {
+    expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
+  });
+
   it.each([
     "I can't find the file.",
     "Can you clarify which file?",
     "The command failed with exit code 1.",
     "The tests passed.",
+    "Не могу найти файл.",
+    "Я не буду менять конфигурацию без вашего согласия.",
   ])("does not detect %s", (text) => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBeNull();
   });
@@ -155,10 +172,7 @@ describe("attributeTodoItem", () => {
 describe("attributeTurnItem", () => {
   it("prefers the tracked todo", () => {
     expect(
-      attributeTurnItem(
-        [todo("first", "pending"), todo("second", "in_progress")],
-        "chat text",
-      ),
+      attributeTurnItem([todo("first", "pending"), todo("second", "in_progress")], "chat text"),
     ).toEqual({ itemIndex: 1, itemText: "second" });
   });
 
@@ -418,8 +432,7 @@ describe("runUncensoredTakeover routing", () => {
 
 describe("plain-chat item splitting", () => {
   it("picks the numbered item mentioned in the refusal", () => {
-    const userText =
-      "Сделай:\n1. Add the parser\n2. Fix the deploy script\n3. Update the docs";
+    const userText = "Сделай:\n1. Add the parser\n2. Fix the deploy script\n3. Update the docs";
     expect(
       attributeTurnItem([], userText, "I can't fix the deploy script without credentials."),
     ).toEqual({ itemIndex: 1, itemText: "Fix the deploy script" });
@@ -441,10 +454,10 @@ describe("plain-chat item splitting", () => {
 
 describe("takeover idempotency identity", () => {
   it("is stable for the same task and whitespace-normalized item text", () => {
-    expect(takeoverIdempotencyKey("s1", "  fix   it ")).toBe(takeoverIdempotencyKey("s1", "fix it"));
-    expect(takeoverAgentId("s1", 2, "fix it")).toMatch(
-      /^uncensored-takeover:s1:2:[0-9a-f]{16}$/,
+    expect(takeoverIdempotencyKey("s1", "  fix   it ")).toBe(
+      takeoverIdempotencyKey("s1", "fix it"),
     );
+    expect(takeoverAgentId("s1", 2, "fix it")).toMatch(/^uncensored-takeover:s1:2:[0-9a-f]{16}$/);
   });
 
   it("differs for a different item text", () => {

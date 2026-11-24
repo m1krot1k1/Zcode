@@ -163,9 +163,13 @@ export const TEXT_REFUSAL_REASON = "text-refusal";
 
 const TEXT_REFUSAL_PATTERNS: readonly RegExp[] = [
   /\b(?:i'?m|i)\b[^.!?\n]{0,80}\b(?:can'?t|cannot|won'?t|will not|must decline|unable to)\b[^.!?\n]{0,40}\b(?:help|assist|comply|provide|fulfill|do (?:that|this))\b/iu,
-  /(?:^|\s)не могу\s+(?:помочь|выполнить|предоставить|сделать это)/iu,
-  /(?:^|\s)не буду\s+(?:это\s+)?(?:делать|выполнять|помогать)/iu,
-  /(?:^|\s)отказываюсь\s+(?:помогать|выполнять)/iu,
+  // «Не буду — это оскорбление»: отказ, где разделитель вводит причину. Только в начале
+  // фразы, иначе «не буду» внутри ответа о планах не считается отказом.
+  /(?:^|[.!?\n]\s+)(?:я\s+)?(?:не могу|не буду|не стану|отказываюсь|отказался|отказалась)\s*[—–:;,]/iu,
+  // «не могу выполнить», «не буду помогать»: стем отказа + глагол обслуживания запроса.
+  /(?:^|\s)(?:не могу|не буду|не стану|отказываюсь|отказался|отказалась)\s+(?:это(?:го)?\s+)?(?:помогать|помочь|выполнять|выполнить|делать|сделать|предоставлять|предоставить|произносить|произнести|озвучивать)(?![\p{L}\p{N}])/iu,
+  // «я такое не произношу»: отказ именно от произнесения, а не от работы с задачей.
+  /(?:^|[.!?;,\n]\s+)я\s+(?:это\s+|такое\s+|так\s+)?не\s+(?:произношу|произнесу|озвучу)(?![\p{L}\p{N}])/iu,
   /无法(?:帮助|协助|提供|完成)/u,
   /不能(?:帮助|协助|提供|完成)/u,
   /抱歉[，,]\s*我(?:不能|无法)/u,
@@ -177,10 +181,7 @@ const TEXT_REFUSAL_PATTERNS: readonly RegExp[] = [
  * `stop`. Never inspects tool output, never fires on a clarifying question, and stays
  * high-precision: a miss keeps the normal turn, a false positive would misroute a real answer.
  */
-export function detectTextRefusal(
-  text: string,
-  options: { hasToolCalls: boolean },
-): string | null {
+export function detectTextRefusal(text: string, options: { hasToolCalls: boolean }): string | null {
   if (options.hasToolCalls) return null;
   const normalized = text.trim();
   if (normalized.length === 0 || normalized.length > 4000) return null;

@@ -7,8 +7,12 @@
 ## 不变量
 
 1. 拒绝只由 finish reason 判定：`finishReason` / `rawFinishReason` 归一化（lower/trim/`_`→`-`）后
-   属于 `{refusal, content-filter, safety, blocked}`；从不读正文，也不因 `stop` / `tool-calls` / `length` /
+   属于 `{refusal, content-filter}`；不从正文推断 provider 级拒绝，也不因 `stop` / `tool-calls` / `length` /
    空 completions 触发。
+1a. 文本级拒绝是独立的第二层：仅当 provider 未给出拒绝、finish reason 为 `stop` 且最后一条 assistant
+   消息没有 tool call 时，`detectTextRefusal` 才按高精度模板集判定（英/俄/中文）。模板要求「拒绝词干 +
+   请求服务动词」或「句首的拒绝词干 + 破折号/冒号引出原因」（`Не буду — это оскорбление`），
+   单独的词干（`Я не буду менять конфигурацию`）不算拒绝；工具输出、澄清问题永不触发。
 2. 归因确定：第一个 `in_progress`，否则第一个 `pending`；`itemIndex` 为 0-based 数组位置；空列表或全部
    `completed` 返回 `null`（不产生任何事件）。`itemText` 上限 4000，超出以 `…` 结尾。
 3. 请求恰好两条消息（固定 system + user）；user ≤ 12000 字符；item 优先且 ≤ 4000；fragment ≤ 3 × 4000；
