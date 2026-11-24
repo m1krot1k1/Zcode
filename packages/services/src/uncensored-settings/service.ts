@@ -22,9 +22,11 @@ export interface UncensoredSettingsServiceOptions {
   fetch?: typeof fetch;
   /**
    * Host-side mirror into the normal provider registry. The renderer never sees the key;
-   * failures are logged and do not fail the settings save.
+   * failures are logged and do not fail the settings save. Returns providerName → providerId.
    */
-  mirrorProviders?: (providers: readonly ZCodeUncensoredProviderConfig[]) => Promise<void>;
+  mirrorProviders?: (
+    providers: readonly ZCodeUncensoredProviderConfig[],
+  ) => Promise<ReadonlyMap<string, string>>;
 }
 
 const CHAT_TIMEOUT_MS = 60_000;
@@ -49,7 +51,7 @@ export function createUncensoredSettingsService(
   const logger = createServiceLogger("uncensored-settings");
   const { store } = options;
   const fetchImpl = options.fetch ?? fetch;
-  const mirroredWorkspaces = new Set<string>();
+  const mirroredProviderIds = new Map<string, ReadonlyMap<string, string>>();
 
   const workspaceKey = (workspace: UncensoredSettingsWorkspace): string =>
     workspace.workspaceIdentity?.trim() || workspace.workspacePath;
@@ -57,20 +59,23 @@ export function createUncensoredSettingsService(
   async function mirrorProviders(
     workspace: UncensoredSettingsWorkspace,
     force: boolean,
-  ): Promise<void> {
-    if (!options.mirrorProviders) return;
+  ): Promise<ReadonlyMap<string, string>> {
+    if (!options.mirrorProviders) return new Map();
     const key = workspaceKey(workspace);
-    if (!force && mirroredWorkspaces.has(key)) return;
-    mirroredWorkspaces.add(key);
+    const cached = mirroredProviderIds.get(key);
+    if (!force && cached) return cached;
     try {
       const config = await store.readTakeoverConfig(workspace);
-      await options.mirrorProviders(config.providers);
+      const mapping = await options.mirrorProviders(config.providers);
+      mirroredProviderIds.set(key, mapping);
+      return mapping;
     } catch (error) {
       // Mirror is derived state: a registry failure must not break the settings save.
-      mirroredWorkspaces.delete(key);
+      mirroredProviderIds.delete(key);
       logger.warn(undefined, "Uncensored provider mirror failed", {
         reason: error instanceof Error ? error.message : String(error),
       });
+      return new Map();
     }
   }
 
@@ -80,6 +85,19 @@ export function createUncensoredSettingsService(
       // Lazy first sync: settings saved before this feature still reach the composer picker.
       void mirrorProviders(workspace, false);
       return status;
+    },
+
+    async getTakeoverConfig(workspace) {
+      const status = await store.read(workspace);
+      const mapping = await mirrorProviders(workspace, false);
+      const config = await store.readTakeoverConfig(workspace);
+      // CLI использует mirror-провайдера: тот же normal provider/model, что и в чате.
+      return {
+        providers: config.providers.map((provider) => ({
+          ...provider,
+          providerId: mapping.get(provider.name) ?? null,
+        })),
+      };
     },
 
     async updateConfig(workspace, write) {

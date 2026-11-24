@@ -105,9 +105,29 @@ export interface RunUncensoredTakeoverInput {
   itemIndex: number;
   itemText: string;
   fragments: readonly TakeoverContextFragment[];
+  /**
+   * Normal provider/model path (Host-side mirror). Preferred over raw `fetch`: it uses the
+   * exact chat configuration, credentials and adapter for the selected provider/model.
+   */
+  generate?: UncensoredGeneratePort;
+  /** Legacy raw OpenAI-compatible transport for configs without a mirrored providerId. */
   fetch?: TakeoverFetch;
   signal?: AbortSignal;
   logger?: TakeoverLogger;
+}
+
+export interface UncensoredGenerateResult {
+  text: string;
+  finishReason?: string;
+}
+
+export interface UncensoredGeneratePort {
+  generate(input: {
+    providerId: string;
+    modelId: string;
+    messages: readonly TakeoverChatMessage[];
+    signal?: AbortSignal;
+  }): Promise<UncensoredGenerateResult>;
 }
 
 export interface TakeoverReminderInput {

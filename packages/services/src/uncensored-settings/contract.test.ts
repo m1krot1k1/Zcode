@@ -55,7 +55,8 @@ describe("uncensored-settings contract", () => {
 
   it("mirrors providers after a write and lazily on first read", async () => {
     const mirrorProviders = vi.fn(
-      async (_providers: readonly ZCodeUncensoredProviderConfig[]) => {},
+      async (_providers: readonly ZCodeUncensoredProviderConfig[]) =>
+        new Map<string, string>(),
     );
     const store = {
       read: async () => ({ providers: [] }),

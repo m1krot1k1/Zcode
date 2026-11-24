@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { TodoItem } from "@zcode/contracts";
 import {
   attributeTodoItem,
@@ -25,6 +25,7 @@ type ProviderConfig = {
   name: string;
   apiUrl: string;
   apiKey: string | null;
+  providerId?: string | null;
   models: Array<{ id: string; enabled: boolean }>;
 };
 
@@ -381,6 +382,60 @@ describe("runUncensoredTakeover routing", () => {
     const { fetch, calls } = fakeFetch(() => ({ body: doneBody("ok") }));
     await runUncensoredTakeover({ ...base, configPort: config({ apiKey: "" }), fetch });
     expect(calls[0]?.headers.Authorization).toBeUndefined();
+  });
+
+  it("uses the mirrored provider generate path when providerId is present", async () => {
+    const { fetch, calls } = fakeFetch(() => ({ body: doneBody("raw") }));
+    const generate = vi.fn(async () => ({ text: "done by mirror", finishReason: "stop" }));
+    const terminal = await runUncensoredTakeover({
+      ...base,
+      configPort: config({
+        providers: [
+          {
+            id: "entry-1",
+            providerId: "mirror-1",
+            name: "Provider 1",
+            apiUrl: "https://p1.test/v1/chat",
+            apiKey: "k1",
+            models: [{ id: "m1", enabled: true }],
+          },
+        ],
+      }),
+      generate: { generate },
+      fetch,
+    });
+    expect(terminal).toEqual({
+      status: "done",
+      providerId: "mirror-1",
+      providerName: "Provider 1",
+      modelId: "m1",
+      output: "done by mirror",
+    });
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("plain-chat item splitting", () => {
+  it("picks the numbered item mentioned in the refusal", () => {
+    const userText =
+      "Сделай:\n1. Add the parser\n2. Fix the deploy script\n3. Update the docs";
+    expect(
+      attributeTurnItem([], userText, "I can't fix the deploy script without credentials."),
+    ).toEqual({ itemIndex: 1, itemText: "Fix the deploy script" });
+  });
+
+  it("falls back to the first item for a generic refusal", () => {
+    expect(
+      attributeTurnItem([], "1. first thing\n2. second thing", "I can't help with that."),
+    ).toEqual({ itemIndex: 0, itemText: "first thing" });
+  });
+
+  it("keeps the whole message when it is not a list", () => {
+    expect(attributeTurnItem([], "Please refactor the module", "I can't help with that.")).toEqual({
+      itemIndex: 0,
+      itemText: "Please refactor the module",
+    });
   });
 });
 

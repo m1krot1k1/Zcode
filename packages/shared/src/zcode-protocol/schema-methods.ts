@@ -216,13 +216,16 @@ export const zcodeUncensoredGetConfigParamsSchema = z
   })
   .strict();
 
-/** Провайдер в ответе CLI: apiKey — write-only секрет, только для受信 stdio. */
+/** Провайдер в ответе CLI: apiKey — write-only секрет; providerId — id mirror-провайдера. */
 export const zcodeUncensoredProviderConfigSchema = z
   .object({
     id: z.string().min(1).max(128),
     name: z.string().min(1).max(200),
     apiUrl: z.string().min(1).max(2048),
     apiKey: z.string().max(4096).nullable(),
+    // id провайдера в обычном реестре (Host-side mirror). Если есть, takeover вызывает
+    // generateWorkspaceText и использует ровно ту конфигурацию, что работает в чате.
+    providerId: z.string().min(1).max(256).nullable().optional(),
     models: z.array(zcodeUncensoredModelEntrySchema).max(50),
   })
   .strict();

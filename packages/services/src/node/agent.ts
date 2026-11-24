@@ -69,6 +69,7 @@ export function createAgentServices(
     accountRequestAuthService,
     codeIntelligenceService,
     uncensoredSettingsStore,
+    uncensoredSettingsService,
     agentAccountProviderConfigSource,
     modelSelectionReadinessSource,
     offPeakToolWiring,
@@ -87,6 +88,7 @@ export function createAgentServices(
   const zcodeAgentService = createZCodeAgentService({
     codeIntelligenceService,
     uncensoredSettingsStore,
+    uncensoredSettingsService,
     ...(openCodeAcpRuntime ? { openCodeAcpRuntime } : {}),
     ...(localCliProviderCatalogSource
       ? { runtimeProviderCatalogSource: localCliProviderCatalogSource }

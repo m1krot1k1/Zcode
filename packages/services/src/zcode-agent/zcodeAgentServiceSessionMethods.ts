@@ -756,8 +756,9 @@ export function handleUncensoredGetConfigRequest(
       });
       return;
     }
+    const service = ctx.options?.uncensoredSettingsService;
     const store = ctx.options?.uncensoredSettingsStore;
-    if (!store) {
+    if (!service && !store) {
       await client.respondError(request.id, {
         code: -32603,
         message: "Uncensored settings are unavailable on this Host",
@@ -766,13 +767,16 @@ export function handleUncensoredGetConfigRequest(
     }
     const workspaceKey = resolveWorkspaceKey(workspace);
     try {
+      const target = {
+        workspacePath: workspace.workspacePath,
+        ...(workspace.workspaceIdentity
+          ? { workspaceIdentity: workspace.workspaceIdentity }
+          : {}),
+      };
+      // Service resolves mirror provider ids; store fallback keeps older hosts working
+      // (the CLI then uses the raw URL path).
       const result = zcodeUncensoredGetConfigResultSchema.parse(
-        await store.readTakeoverConfig({
-          workspacePath: workspace.workspacePath,
-          ...(workspace.workspaceIdentity
-            ? { workspaceIdentity: workspace.workspaceIdentity }
-            : {}),
-        }),
+        service ? await service.getTakeoverConfig(target) : await store!.readTakeoverConfig(target),
       );
       await client.respond(request.id, result);
       logger.info(undefined, "uncensored/getConfig served", {
@@ -782,6 +786,7 @@ export function handleUncensoredGetConfigRequest(
           0,
         ),
         configuredKeyCount: result.providers.filter((provider) => provider.apiKey !== null).length,
+        mirroredProviderCount: result.providers.filter((provider) => provider.providerId).length,
         workspaceKey,
       });
     } catch (error) {

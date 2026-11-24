@@ -62,15 +62,55 @@ export function attributeTodoItem(todos: readonly TodoItem[]): AttributedTakeove
  * so a plain chat refusal still gets one fallback attempt. The same 4000-char bound applies,
  * and an empty message never starts a takeover.
  */
+const TASK_ITEM_LINE = /^\s*(?:\d+[.)]|[-*•])\s+(.+)$/u;
+const ITEM_TOKEN = /[\p{L}\p{N}_-]{4,}/gu;
+
+function itemTokens(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(ITEM_TOKEN) ?? []);
+}
+
+/** Numbered/bulleted lines of the current user message; fewer than two items is not a list. */
+function splitUserTaskItems(text: string): AttributedTakeoverItem[] {
+  const items: AttributedTakeoverItem[] = [];
+  for (const line of text.split(/\r?\n/u)) {
+    const body = TASK_ITEM_LINE.exec(line)?.[1]?.trim() ?? "";
+    if (!body) continue;
+    items.push({ itemIndex: items.length, itemText: truncateItemText(body) });
+  }
+  return items.length >= 2 ? items : [];
+}
+
+function pickItemByOverlap(
+  items: readonly AttributedTakeoverItem[],
+  assistantText: string,
+): AttributedTakeoverItem | null {
+  const assistantTokens = itemTokens(assistantText);
+  if (assistantTokens.size === 0) return null;
+  let best: { item: AttributedTakeoverItem; score: number } | null = null;
+  for (const item of items) {
+    let score = 0;
+    for (const token of itemTokens(item.itemText)) {
+      if (assistantTokens.has(token)) score += 1;
+    }
+    if (score > 0 && (!best || score > best.score)) best = { item, score };
+  }
+  return best?.item ?? null;
+}
+
 export function attributeTurnItem(
   todos: readonly TodoItem[],
   lastUserText: string,
+  lastAssistantText = "",
 ): AttributedTakeoverItem | null {
   const todoItem = attributeTodoItem(todos);
   if (todoItem) return todoItem;
-  const text = truncateItemText(normalizeItemText(lastUserText));
-  if (text.length === 0) return null;
-  return { itemIndex: 0, itemText: text };
+  const normalized = normalizeItemText(lastUserText);
+  if (normalized.length === 0) return null;
+  const items = splitUserTaskItems(lastUserText);
+  if (items.length === 0) return { itemIndex: 0, itemText: truncateItemText(normalized) };
+  // No TodoWrite: send only the item the refusal text actually talks about; fall back to the
+  // first item when the refusal is generic, so the main model can continue the rest.
+  return pickItemByOverlap(items, lastAssistantText) ?? items[0]!;
 }
 
 function extractPaths(itemText: string): string[] {

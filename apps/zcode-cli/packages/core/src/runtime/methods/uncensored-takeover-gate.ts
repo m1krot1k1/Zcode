@@ -20,6 +20,7 @@ import {
   type TakeoverContextFragment,
   type TakeoverTerminal,
   type TakeoverToolResult,
+  type UncensoredGeneratePort,
 } from "../uncensored-takeover/index.js";
 
 interface CachedOutcome {
@@ -218,7 +219,7 @@ export async function runUncensoredTakeoverGate(
     });
     return false;
   }
-  const item = attributeTurnItem(todos, lastUserText);
+  const item = attributeTurnItem(todos, lastUserText, lastAssistantText);
   if (!item) return false;
 
   const taskId = String(this.sessionId);
@@ -274,16 +275,39 @@ export async function runUncensoredTakeoverGate(
   state.events.push(spawnedEvent);
 
   const startedAt = Date.now();
+  const workspacePath = this.config.workspacePath?.trim() || this.workingDirectory;
+  const workspaceIdentity = this.config.workspaceIdentity;
+  // Uses the mirrored normal provider/model — the exact configuration that works in chat.
+  const generate: UncensoredGeneratePort = {
+    generate: async ({ providerId, modelId, messages, signal }) => {
+      const timeout = AbortSignal.timeout(60_000);
+      const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+      const result = await this.generateWorkspaceText(
+        {
+          selection: { providerId, modelId },
+          messages: messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          querySource: "uncensored_takeover",
+          maxOutputTokens: 4096,
+        },
+        { abortSignal: combined, traceContext: state.turnTraceContext },
+      );
+      return { text: result.text, finishReason: result.finishReason };
+    },
+  };
   const terminal = await runUncensoredTakeover({
     configPort: takeover.configPort,
     workspace: {
-      workspacePath: this.config.workspacePath?.trim() || this.workingDirectory,
-      ...(this.config.workspaceIdentity ? { workspaceIdentity: this.config.workspaceIdentity } : {}),
+      workspacePath,
+      ...(workspaceIdentity ? { workspaceIdentity } : {}),
     },
     taskId,
     itemIndex: item.itemIndex,
     itemText: item.itemText,
     fragments: collectFragments(this, state, item.itemText),
+    generate,
     ...(takeover.fetch ? { fetch: takeover.fetch } : {}),
     signal: state.turnAbortSignal,
     ...(this.logger ? { logger: this.logger } : {}),

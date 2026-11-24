@@ -41,6 +41,20 @@ single-provider поля `apiUrl`/`apiKey`/`models` во всех раздела
 - When every enabled model refuses or fails, the terminal `refused`/`error` status is
   persisted and shown; the turn is not restarted.
 
+## Ревизия 2026-11-24: mirror-провайдер и точечный список
+
+- CLI-подхват использует `providerId` mirror-провайдера из обычного реестра и вызывает
+  `generateWorkspaceText` — ту же рабочую конфигурацию провайдера/модели, что и чат.
+  Raw POST по `apiUrl` остаётся только legacy-fallback для конфигов без `providerId`
+  (например, старый Host без mirror): базовый URL вида `/api/v1` давал 404.
+- Если TodoWrite пуст, последнее user-сообщение разбивается на нумерованные/маркированные
+  пункты. В uncensored уходит пункт с максимальным пересечением токенов с текстом отказа;
+  при общем отказе — первый пункт. Остальные пункты остаются основной модели.
+- `uncensored/getConfig` добавляет к провайдеру nullable `providerId`; URL/ключ остаются
+  для создания mirror-провайдера и не используются takeover'ом, если mirror готов.
+- Acceptance: multi-item prompt без TodoWrite → в uncensored уходит только отказанный
+  пункт; при наличии mirror-провайдера raw HTTP не вызывается.
+
 ## Проблема
 
 Основная модель чата ведёт задачу по списку `TodoWrite`. На одном пункте провайдер может

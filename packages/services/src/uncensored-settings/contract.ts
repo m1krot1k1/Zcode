@@ -1,5 +1,6 @@
 import { ServiceChannels } from "@zcode/shared";
 import type {
+  ZCodeUncensoredGetConfigResult,
   ZCodeUncensoredModelEntry,
   ZCodeUncensoredSettingsStatus,
   ZCodeUncensoredSettingsWrite,
@@ -46,6 +47,15 @@ export interface UncensoredSettingsService {
    * Идемпотентно; событий не отправляет; ждёт чтения файла.
    */
   getConfig(workspace: UncensoredSettingsWorkspace): Promise<UncensoredSettingsStatus>;
+
+  /**
+   * Конфиг для CLI-подхвата: провайдеры/модели + id их mirror-провайдеров в обычном
+   * реестре. CLI вызывает generateWorkspaceText, поэтому используется та же рабочая
+   * конфигурация, что и в чате, без повторного URL/ключа.
+   */
+  getTakeoverConfig(
+    workspace: UncensoredSettingsWorkspace,
+  ): Promise<ZCodeUncensoredGetConfigResult>;
 
   /**
    * Полная замена записи workspace. Пустой `providers` сбрасывает конфигурацию.

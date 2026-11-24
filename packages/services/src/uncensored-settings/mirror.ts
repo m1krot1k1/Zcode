@@ -116,13 +116,15 @@ export async function mirrorUncensoredProviders(
   providerSettings: ProviderSettingsMirrorPort,
   providers: readonly ZCodeUncensoredProviderConfig[],
   fetchImpl: typeof fetch = fetch,
-): Promise<void> {
+): Promise<ReadonlyMap<string, string>> {
   const view = await providerSettings.getView();
   for (const existing of view.providers) {
     if (existing.providerName?.startsWith(UNCENSORED_MIRROR_PREFIX)) {
       await providerSettings.deletePersonalProvider(existing.providerId);
     }
   }
+  // providerName → mirrored providerId; the takeover uses the same normal provider as chat.
+  const mirrored = new Map<string, string>();
   for (const provider of providers) {
     if (provider.models.length === 0) continue;
     const metadata = await fetchModelMetadata(provider, fetchImpl);
@@ -135,6 +137,7 @@ export async function mirrorUncensoredProviders(
         modelOrder: [],
       },
     });
+    mirrored.set(provider.name, created.providerId);
     for (const model of provider.models) {
       const meta = metadata.get(model.id);
       const contextWindow = meta?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
@@ -157,4 +160,5 @@ export async function mirrorUncensoredProviders(
       );
     }
   }
+  return mirrored;
 }

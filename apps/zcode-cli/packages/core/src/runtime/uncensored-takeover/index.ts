@@ -32,6 +32,8 @@ export type {
   TakeoverTerminalStatus,
   TakeoverToolResult,
   UncensoredConfigPort,
+  UncensoredGeneratePort,
+  UncensoredGenerateResult,
   UncensoredTakeoverEntryPayload,
   UncensoredTakeoverSessionEntry,
 } from "./contract.js";

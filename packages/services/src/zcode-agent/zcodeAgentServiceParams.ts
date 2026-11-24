@@ -4,6 +4,7 @@ import type {
 } from "./cuaOperationTurnTracker.js";
 import type { BrowserAmbientContextExecutor } from "./zcodeAgentBrowserAmbientContext.js";
 import type { CodeIntelligenceService, UncensoredSettingsStore } from "../code-intelligence/contract.js";
+import type { UncensoredSettingsService } from "../uncensored-settings/contract.js";
 import type { IAccountRequestAuthService } from "#src/model-provider/accountRequestAuthService.js";
 import type { IDisposable } from "@zcode/rpc";
 import type { IOffPeakTaskService } from "#src/session/offPeakTask.js";
@@ -433,6 +434,8 @@ export interface CreateZCodeAgentServiceOptions extends Omit<
    * Never exposed through the renderer channel: only `readTakeoverConfig` is used.
    */
   uncensoredSettingsStore?: UncensoredSettingsStore;
+  /** Host service that resolves mirror provider ids for the CLI takeover config. */
+  uncensoredSettingsService?: UncensoredSettingsService;
   sessionRuntimePreferencesAuthority?: "local" | "external";
   prepareProjectExecution?: (
     projectId: string,

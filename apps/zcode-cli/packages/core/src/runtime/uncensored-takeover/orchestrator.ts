@@ -1,6 +1,7 @@
 import type { LogContext } from "@zcode/contracts";
 import type { RunUncensoredTakeoverInput, TakeoverTerminal } from "./contract.js";
-import { buildTakeoverRequestBody } from "./context.js";
+import { buildTakeoverMessages, buildTakeoverRequestBody } from "./context.js";
+import { detectRefusal, detectTextRefusal } from "./detect.js";
 import { attemptTakeoverModel, defaultTakeoverFetch } from "./http.js";
 
 function logContext(input: RunUncensoredTakeoverInput, extra: Record<string, unknown>): LogContext {
@@ -76,6 +77,83 @@ export async function runUncensoredTakeover(
       };
     }
     const startedAt = Date.now();
+    if (provider.providerId && input.generate) {
+      // Preferred path: the mirrored normal provider/model that also works in chat.
+      try {
+        const generated = await input.generate.generate({
+          providerId: provider.providerId,
+          modelId: model.id,
+          messages: buildTakeoverMessages({
+            itemIndex: input.itemIndex,
+            itemText: input.itemText,
+            fragments: input.fragments,
+          }),
+          ...(input.signal ? { signal: input.signal } : {}),
+        });
+        const durationMs = Date.now() - startedAt;
+        const refusal =
+          detectRefusal({ finishReason: generated.finishReason }) ??
+          detectTextRefusal(generated.text, { hasToolCalls: false });
+        if (refusal) {
+          input.logger?.info?.(
+            "Uncensored takeover attempt refused",
+            logContext(input, {
+              providerId: provider.providerId,
+              modelId: model.id,
+              status: "failed",
+              reason: refusal,
+              durationMs,
+            }),
+          );
+          last = {
+            status: "refused",
+            providerId: provider.providerId,
+            providerName: provider.name,
+            modelId: model.id,
+            output: "",
+            reason: refusal,
+          };
+          continue;
+        }
+        if (!generated.text.trim()) {
+          last = {
+            status: "error",
+            providerId: provider.providerId,
+            providerName: provider.name,
+            modelId: model.id,
+            output: "",
+            reason: "empty-response",
+          };
+          continue;
+        }
+        input.logger?.info?.(
+          "Uncensored takeover attempt completed",
+          logContext(input, {
+            providerId: provider.providerId,
+            modelId: model.id,
+            status: "completed",
+            durationMs,
+          }),
+        );
+        return {
+          status: "done",
+          providerId: provider.providerId,
+          providerName: provider.name,
+          modelId: model.id,
+          output: generated.text,
+        };
+      } catch {
+        last = {
+          status: "error",
+          providerId: provider.providerId,
+          providerName: provider.name,
+          modelId: model.id,
+          output: "",
+          reason: "generate",
+        };
+        continue;
+      }
+    }
     const body = buildTakeoverRequestBody({
       modelId: model.id,
       itemIndex: input.itemIndex,
