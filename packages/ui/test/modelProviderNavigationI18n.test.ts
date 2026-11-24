@@ -139,6 +139,7 @@ describe("model provider navigation i18n", () => {
         "settings.modelProvider.openCodeCli": "OpenCode CLI · no API key",
         "settings.modelProvider.cursorCli": "Cursor CLI · no API key",
         "settings.embedding.navigationLabel": "Embeddings",
+        "settings.localModel.navigationLabel": "Local model",
       }),
     });
 
@@ -175,6 +176,11 @@ describe("model provider navigation i18n", () => {
     ).toMatchObject({
       title: "Workspace intelligence",
       items: [
+        {
+          key: "workspace-intelligence:local-model",
+          type: "codeIntelligence",
+          label: "Local model",
+        },
         {
           key: "workspace-intelligence:embeddings",
           type: "codeIntelligence",
