@@ -302,6 +302,27 @@ function resolveApiKeyWrite(value: string | null | undefined): ApiKeyAction {
   return { kind: "save", value: trimmed };
 }
 
+/**
+ * Провайдеры uncensored — пользовательская настройка, а не свойство папки: зеркало в реестре
+ * провайдеров глобально, поэтому и takeover обязан видеть ту же конфигурацию в любом workspace.
+ * Файл исторически хранит записи по ключу workspace, поэтому workspace без собственной записи
+ * переиспользует уже сохранённую, а не сообщает «нет включённых моделей».
+ */
+function resolveProvidersEntry(
+  values: Record<string, string>,
+  workspaceKey: string,
+): { key: string; raw: string | undefined } {
+  const own = values[providersKey(workspaceKey)];
+  if (own) return { key: workspaceKey, raw: own };
+  for (const [entryKey, raw] of Object.entries(values)) {
+    if (!raw) continue;
+    const match = /^uncensored:(.+):providers$/u.exec(entryKey);
+    if (!match) continue;
+    return { key: match[1] ?? workspaceKey, raw };
+  }
+  return { key: workspaceKey, raw: undefined };
+}
+
 function defaultStatus(): ZCodeUncensoredSettingsStatus {
   return { providers: [] };
 }
@@ -314,12 +335,19 @@ export function createUncensoredSettingsStore(
   const filePath = join(indexRootDir, UNCENSORED_SETTINGS_FILE);
   const credentialStore = options.credentialStore;
 
+  async function readWithOwner(
+    workspace: UncensoredSettingsWorkspace,
+  ): Promise<{ status: ZCodeUncensoredSettingsStatus; ownerKey: string }> {
+    const workspaceKey = workspaceKeyOf(workspace);
+    const values = await readJsonFile(filePath);
+    const resolved = resolveProvidersEntry(values, workspaceKey);
+    return { status: { providers: parseStoredProviders(resolved.raw) }, ownerKey: resolved.key };
+  }
+
   async function read(
     workspace: UncensoredSettingsWorkspace,
   ): Promise<ZCodeUncensoredSettingsStatus> {
-    const workspaceKey = workspaceKeyOf(workspace);
-    const values = await readJsonFile(filePath);
-    return { providers: parseStoredProviders(values[providersKey(workspaceKey)]) };
+    return (await readWithOwner(workspace)).status;
   }
 
   async function write(
@@ -389,7 +417,7 @@ export function createUncensoredSettingsStore(
   async function readTakeoverConfig(
     workspace: UncensoredSettingsWorkspace,
   ): Promise<ZCodeUncensoredGetConfigResult> {
-    const status = await read(workspace);
+    const { status, ownerKey } = await readWithOwner(workspace);
     if (!credentialStore) {
       return {
         providers: status.providers.map(
@@ -403,7 +431,8 @@ export function createUncensoredSettingsStore(
         ),
       };
     }
-    const workspaceKey = workspaceKeyOf(workspace);
+    // Секрет читается по тому ключу, что владеет настройкой, а не по ключу текущей папки.
+    const workspaceKey = ownerKey;
     const providers: ZCodeUncensoredProviderConfig[] = [];
     for (const provider of status.providers) {
       const stored = await credentialStore
