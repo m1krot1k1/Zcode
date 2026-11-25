@@ -177,12 +177,15 @@ export function hasRefusalMarker(text: string): boolean {
 /** Drops the marker line so the user never sees the protocol token in chat. */
 export function stripRefusalMarker(text: string): string {
   if (!REFUSAL_MARKER_PATTERN.test(text)) return text;
+  // Remove the token itself, never the line: a model may put it before real content.
   return text
+    .replace(REFUSAL_MARKER_PATTERN, "")
     .split("\n")
-    .filter((line) => !REFUSAL_MARKER_PATTERN.test(line))
+    .map((line) => line.replace(/\s+$/u, ""))
+    .filter((line, index, lines) => line.trim().length > 0 || index === lines.length - 1)
     .join("\n")
-    .replace(/^\s*\n+/, "")
-    .trimEnd();
+    .replace(/^\n+/u, "")
+    .trim();
 }
 
 /**

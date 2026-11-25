@@ -1,7 +1,7 @@
 import type { LogContext } from "@zcode/contracts";
 import type { RunUncensoredTakeoverInput, TakeoverTerminal } from "./contract.js";
 import { buildTakeoverMessages, buildTakeoverRequestBody } from "./context.js";
-import { detectRefusal, detectTextRefusal } from "./detect.js";
+import { detectRefusal, detectTextRefusal, stripRefusalMarker } from "./detect.js";
 import { attemptTakeoverModel, defaultTakeoverFetch } from "./http.js";
 
 function logContext(input: RunUncensoredTakeoverInput, extra: Record<string, unknown>): LogContext {
@@ -138,7 +138,8 @@ export async function runUncensoredTakeover(
           providerId: provider.providerId,
           providerName: provider.name,
           modelId: model.id,
-          output: generated.text,
+          // The token can come back from the model (it sees the host prompt), never show it.
+          output: stripRefusalMarker(generated.text),
         };
       } catch (error) {
         // A mirrored provider can be unresolvable in this runtime (registry view, model id).
@@ -196,7 +197,7 @@ export async function runUncensoredTakeover(
         providerId: provider.id,
         providerName: provider.name,
         modelId: model.id,
-        output: outcome.content,
+        output: stripRefusalMarker(outcome.content),
       };
     }
     if (outcome.kind === "refused") {

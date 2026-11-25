@@ -544,4 +544,19 @@ describe("takeover idempotency identity", () => {
       expect(calls).toHaveLength(1);
     });
   });
+  it("strips the protocol marker from the delivered output", async () => {
+    const { fetch } = fakeFetch(() => ({ body: doneBody("[[ZCODE_REFUSAL]] полезный ответ") }));
+    const terminal = await runUncensoredTakeover({
+      itemIndex: 0,
+      itemText: "item",
+      fragments: [],
+      taskId: "session-1",
+      workspace: { workspacePath: "/workspace" },
+      configPort: config(),
+      fetch,
+    });
+
+    expect(terminal.status).toBe("done");
+    expect(terminal.output).toBe("полезный ответ");
+  });
 });
