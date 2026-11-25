@@ -78,4 +78,41 @@ describe("uncensored takeover projection", () => {
       output: "delegated answer",
     });
   });
+
+  describe("refusal marker in streaming text", () => {
+    it("never renders the token, even when it arrives split across deltas", () => {
+      const projection = new ProductProjection("marker-stream", "epoch");
+      let seq = 0;
+      const apply = (type: SessionEvent["type"], payload: unknown) =>
+        projection.applyEvent({
+          id: `event-${++seq}`,
+          sessionId: "marker-stream",
+          turnId: "turn-1",
+          traceId: "trace",
+          timestamp: new Date(1700000000000 + seq),
+          sequenceNumber: seq,
+          type,
+          payload,
+        } as SessionEvent);
+      apply(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200000 });
+      apply(SessionEventType.TurnStarted, { turnNumber: 1, input: "x", messageId: "user-1" });
+
+      const stream = (payload: Record<string, unknown>) =>
+        apply(SessionEventType.ModelStreaming, { done: false, ...payload });
+      const deltas = [
+        ...stream({ kind: "text_start", delta: "" }),
+        ...stream({ kind: "text_delta", delta: "[[ZCODE_" }),
+        ...stream({ kind: "text_delta", delta: "REFUSAL]]" }),
+        ...stream({ kind: "text_delta", delta: "\nНе буду это писать." }),
+      ];
+
+      const appended = deltas
+        .filter(
+          (delta): delta is Extract<typeof delta, { op: "row.delta" }> => delta.op === "row.delta",
+        )
+        .map((delta) => delta.append)
+        .join("");
+      expect(appended).toBe("\nНе буду это писать.");
+    });
+  });
 });

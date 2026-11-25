@@ -32,6 +32,28 @@ import {
 } from "./product-projection-types.js";
 import type { ProductProjectionContext } from "./product-projection-context.js";
 
+/**
+ * The refusal marker is a protocol signal, never content. Streaming text reaches the UI as
+ * append-only deltas, so the token is removed per delta and a possibly incomplete tail
+ * (`[[ZCODE_…`) is held back until the next delta decides it.
+ */
+const REFUSAL_MARKER = /\[\[\s*ZCODE[\s_-]*REFUSAL\s*\]\]/giu;
+const MARKER_TAIL = /\[\[\s*[A-Za-z_]*\s*\]?\]?$/u;
+const pendingMarkerTail = new WeakMap<object, string>();
+
+function stripStreamedMarker(self: object, delta: string): string {
+  const buffered = pendingMarkerTail.get(self) ?? "";
+  let text = `${buffered}${delta}`.replace(REFUSAL_MARKER, "");
+  const tail = MARKER_TAIL.exec(text);
+  if (tail && tail[0].length <= 24) {
+    // Hold the possible start of the token; the next delta decides what it was.
+    pendingMarkerTail.set(self, tail[0]);
+    return text.slice(0, text.length - tail[0].length);
+  }
+  pendingMarkerTail.delete(self);
+  return text;
+}
+
 export function onModelStreaming(
   self: ProductProjectionContext,
   fact: CanonicalAssistantSegmentFact,
@@ -60,18 +82,29 @@ export function onModelStreaming(
       return self.openTextRow(event, fact);
     case "text_delta": {
       const open = self.streamingTextRowId === null ? self.openTextRow(event, fact) : [];
+      const append = stripStreamedMarker(self, payload.delta);
+      if (append.length === 0) return open;
       return [
         ...open,
         {
           op: "row.delta",
           rowId: self.streamingTextRowId as number,
           path: "text",
-          append: payload.delta,
+          append,
         },
       ];
     }
-    case "text_end":
-      return self.closeTextRow("complete");
+    case "text_end": {
+      const held = pendingMarkerTail.get(self);
+      pendingMarkerTail.delete(self);
+      const close = self.closeTextRow("complete");
+      if (!held || held.replace(REFUSAL_MARKER, "").trim().length === 0) return close;
+      // A held tail that never completed is real text; append it before closing.
+      return [
+        { op: "row.delta", rowId: self.streamingTextRowId as number, path: "text", append: held },
+        ...close,
+      ];
+    }
     case "reasoning_start":
       return self.openReasoningRow(event, fact);
     case "reasoning_delta": {
