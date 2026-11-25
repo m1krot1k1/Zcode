@@ -29,6 +29,15 @@
       "global": false
     },
     {
+      "rule": "unmanaged-new-file",
+      "file": "packages/ui/src/lib/composerPlanGroups.ts",
+      "module": "ui",
+      "detail": "ui",
+      "message": "新文件落在未受管模块 ui；请放入 managed 模块，或用 pnpm architecture:adopt <id> --root <dir> 为它所在目录登记模块",
+      "fingerprint": "f82656569e0c800f",
+      "global": false
+    },
+    {
       "rule": "max-contract-lines",
       "file": "packages/services/src/code-intelligence/contract.ts",
       "module": "code-intelligence",

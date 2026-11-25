@@ -1,5 +1,6 @@
 import type { ComposerInitialConfig } from "@/store/zcodeSessionStoreTypes.js";
 import type { ModelSelectionView } from "@zcode/services";
+import { isEmbeddingOnlyModelId } from "@zcode/shared";
 import {
   firstSelectableModelSelection,
   readComposerRecent,
@@ -23,14 +24,33 @@ export function initializeNewTaskDraft(
   scope?: ComposerScope,
 ): V4ComposerDraft {
   const recent = readComposerRecent(workspacePath, workspaceIdentity, undefined, scope);
+  const recentSelection = recent?.modelSelection ?? null;
+  const resolved = resolveDraftInitialModelSelection(view, recentSelection);
+  // Recent может указывать на провайдера, которого ещё нет в текущем каталоге (аккаунт
+  // переключился/каталог не догрузился). Не теряем исходный intent в draft: View отдельно
+  // отдаёт effectiveSelection, а запись текста должна сохранить именно выбор пользователя.
+  // Аккаунт мог смениться, а сама модель остаться в каталоге под другим Provider.
+  // В этом случае сохраняем пользовательский intent: View отдельно вычислит effective
+  // selection. Если же модели больше нет ни у одного Provider — заменяем на первый
+  // доступный, иначе новый черновик останется с несуществующим выбором.
+  const modelStillExists = recentSelection
+    ? view.providers.some((provider) =>
+        provider.models.some((model) => model.modelId === recentSelection.modelId),
+      )
+    : false;
+  const rememberedSelection =
+    resolved.selection ??
+    (recentSelection &&
+    modelStillExists &&
+    !isEmbeddingOnlyModelId(recentSelection.modelId)
+      ? recentSelection
+      : null);
   return {
     ...draft,
     mode: recent?.mode === "plan" ? "build" : (recent?.mode ?? "build"),
     planEnabled: false,
     modelSelection:
-      resolveDraftInitialModelSelection(view, recent?.modelSelection ?? null).selection ??
-      firstSelectableModelSelection(view) ??
-      undefined,
+      rememberedSelection ?? firstSelectableModelSelection(view) ?? undefined,
   };
 }
 

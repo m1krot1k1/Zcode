@@ -24,7 +24,7 @@ export function createUncensoredConfigPort(
 ): CliUncensoredConfigPort {
   return {
     async getConfig(input) {
-      return await context.requestClient(
+      const config = await context.requestClient(
         zcodeProtocolMethods.uncensoredGetConfig,
         {
           workspacePath: input.workspacePath,
@@ -33,6 +33,17 @@ export function createUncensoredConfigPort(
         zcodeUncensoredGetConfigResultSchema,
         { timeoutMs: UNCENSORED_CONFIG_TIMEOUT_MS },
       );
+      // Host создаёт/обновляет mirror-провайдера во время этого же RPC. Без refresh
+      // CLI Registry остаётся на снимке старта, и providerId из ответа не резолвится
+      // («Provider Registry 中不存在 Provider»). Ошибка refresh не отменяет raw fallback.
+      try {
+        await context.deps.refreshProviderRegistry?.("uncensored-takeover");
+      } catch (error) {
+        context.logger?.warn("Provider registry refresh before uncensored takeover failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return config;
     },
   };
 }

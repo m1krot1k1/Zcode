@@ -236,6 +236,7 @@ describe("uncensored takeover gate", () => {
     expect(harness.generated[0]?.selection).toEqual({
       providerId: "mirror-nano-gpt",
       modelId: "deepseek-uncensored",
+      options: { reasoningLevel: "disabled" },
     });
     expect(harness.generated[0]?.messages).toHaveLength(2);
     expect(harness.generated[0]?.messages[1]?.content).toContain(USER_TEXT);

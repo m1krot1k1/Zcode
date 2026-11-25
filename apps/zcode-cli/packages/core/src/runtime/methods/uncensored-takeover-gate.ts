@@ -431,7 +431,10 @@ export async function runUncensoredTakeoverGate(
       const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
       const result = await this.generateWorkspaceText(
         {
-          selection: { providerId, modelId },
+          // Host mirror exposes the uncensored model with the explicit "disabled" reasoning
+          // level. Without it the registry rejects the mirror selection before any request and
+          // forces the legacy raw fallback.
+          selection: { providerId, modelId, options: { reasoningLevel: "disabled" } },
           messages: messages.map((message) => ({
             role: message.role,
             content: message.content,

@@ -1,5 +1,7 @@
 import type { ModelSelectionView, ProviderSettingsView } from "@zcode/services";
 import {
+  MODEL_PROVIDER_FAMILY_SPECS,
+  isZCodeAgentProvider,
   resolveModelProviderFamilySpecByProviderId,
   type ProviderFamilyDomain,
   type ProviderFamilyConnectionSelection,
@@ -68,11 +70,32 @@ export function buildComposerPlanGroups(
     providerId === resolveModelProviderFamilySpecByProviderId(providerId)?.teamCodingPlanProviderId;
   const includeProvider = (providerId: string) =>
     isTeamProvider(providerId) || isAvailable(providerId);
+  const providerKey = (providerId: string) => `registry-provider:${providerId}`;
+  const baseGroupFor = (
+    providerId: string,
+    mode: "team-coding-plan" | "individual-coding-plan" | "start-plan",
+  ): ModelSelectGroup => {
+    const existing = groups.find((group) => group.key === providerKey(providerId));
+    if (existing) return existing;
+    const spec = resolveModelProviderFamilySpecByProviderId(providerId);
+    return {
+      key: providerKey(providerId),
+      label: spec?.label ?? providerId,
+      labelBadge:
+        mode === "team-coding-plan"
+          ? (labels.teamPlanBadgeLabel ?? "Team")
+          : mode === "individual-coding-plan"
+            ? (labels.codingPlanBadgeLabel ?? "Individual")
+            : (labels.startPlanBadgeLabel ?? "Free"),
+      directItems: true,
+      items: [],
+    };
+  };
   const missing =
     settingsView?.providers
       .filter(
         (p) =>
-          !groups.some((g) => g.key === `registry-provider:${p.providerId}`) &&
+          !groups.some((g) => g.key === providerKey(p.providerId)) &&
           p.enabled &&
           includeProvider(p.providerId) &&
           p.effectiveConfig.access?.type === "zhipu-account" &&
@@ -82,46 +105,39 @@ export function buildComposerPlanGroups(
               p.accountState.entitled)),
       )
       .map((p) => ({ providerId: p.providerId, config: p.effectiveConfig, models: [] })) ?? [];
+  const registryGroups = buildRegistryModelSelectGroups(
+    agentProvider,
+    {
+      revision: 0,
+      providers: missing,
+    } as ModelSelectionView,
+    labels,
+  );
+  const registryKeys = new Set(registryGroups.map((group) => group.key));
+  // Registry groups disappear when the catalog has no models yet. Keep the plan identity
+  // visible so a purchased/entitled plan can still be selected once its catalog arrives.
+  const supplementedGroups = missing.flatMap((provider) => {
+    if (registryKeys.has(providerKey(provider.providerId))) return [];
+    const access = provider.config.access;
+    const mode = access?.type === "zhipu-account" ? access.mode : undefined;
+    if (mode !== "team-coding-plan" && mode !== "individual-coding-plan" && mode !== "start-plan") {
+      return [];
+    }
+    return [baseGroupFor(provider.providerId, mode)];
+  });
   const candidates = [
     ...groups.filter((group) => includeProvider(group.key.replace(/^registry-provider:/, ""))),
-    // 原因：未激活个人套餐由此补充；漏传当前语言会回退成英文 Individual。
-    ...buildRegistryModelSelectGroups(
-      agentProvider,
-      {
-        revision: 0,
-        providers: missing,
-      } as ModelSelectionView,
-      labels,
-    ),
+    ...registryGroups,
+    ...supplementedGroups,
   ];
   const plans: ComposerPlanGroup[] = [];
   const others: ComposerPlanGroup[] = [];
-  for (const group of candidates) {
-    const providerId = group.key.replace(/^registry-provider:/, "");
-    const spec = resolveModelProviderFamilySpecByProviderId(providerId);
-    if (!spec || providerId === spec.startPlanProviderId) {
-      others.push(group);
-      continue;
-    }
-    if (providerId === spec.individualCodingPlanProviderId) {
-      const selection = { kind: "individual-coding-plan" as const };
-      plans.push({
-        ...group,
-        connection: {
-          key: group.key,
-          label: group.labelBadge ?? "",
-          providerId,
-          family: spec.id,
-          selection,
-          items: group.items,
-        },
-      });
-      continue;
-    }
-    if (providerId !== spec.teamCodingPlanProviderId) {
-      others.push(group);
-      continue;
-    }
+  const seenTeamProviders = new Set<string>();
+  const appendTeamPlanRows = (
+    spec: NonNullable<ReturnType<typeof resolveModelProviderFamilySpecByProviderId>>,
+    providerId: string,
+    group: ModelSelectGroup,
+  ): void => {
     const seen = new Set<string>();
     for (const product of products) {
       if (
@@ -184,6 +200,54 @@ export function buildComposerPlanGroups(
       !products.some((product) => (product.family ?? "bigmodel") === spec.id)
     )
       plans.push(group);
+  };
+  for (const group of candidates) {
+    const providerId = group.key.replace(/^registry-provider:/, "");
+    const spec = resolveModelProviderFamilySpecByProviderId(providerId);
+    if (!spec || providerId === spec.startPlanProviderId) {
+      others.push(group);
+      continue;
+    }
+    if (providerId === spec.individualCodingPlanProviderId) {
+      const selection = { kind: "individual-coding-plan" as const };
+      plans.push({
+        ...group,
+        connection: {
+          key: group.key,
+          label: group.labelBadge ?? "",
+          providerId,
+          family: spec.id,
+          selection,
+          items: group.items,
+        },
+      });
+      continue;
+    }
+    if (providerId !== spec.teamCodingPlanProviderId) {
+      others.push(group);
+      continue;
+    }
+    if (!isZCodeAgentProvider(agentProvider)) continue;
+    seenTeamProviders.add(providerId);
+    appendTeamPlanRows(spec, providerId, group);
+  }
+  // Products can arrive before the team provider catalog/group. Do not wait for the group:
+  // each subscribed project remains selectable through its own connection row.
+  for (const spec of MODEL_PROVIDER_FAMILY_SPECS) {
+    if (!isZCodeAgentProvider(agentProvider)) break;
+    if (seenTeamProviders.has(spec.teamCodingPlanProviderId)) continue;
+    const hasSubscribedProduct = products.some(
+      (product) =>
+        (product.family ?? "bigmodel") === spec.id &&
+        product.subscribed === true &&
+        product.productId.trim().length > 0,
+    );
+    if (!hasSubscribedProduct) continue;
+    appendTeamPlanRows(
+      spec,
+      spec.teamCodingPlanProviderId,
+      baseGroupFor(spec.teamCodingPlanProviderId, "team-coding-plan"),
+    );
   }
   // 同品牌个人排在团队之前；API 与 Start Plan 内部顺序不变。
   return [
