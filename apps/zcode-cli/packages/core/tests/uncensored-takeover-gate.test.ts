@@ -325,6 +325,30 @@ describe("uncensored takeover gate", () => {
     });
   });
 
+  it("shows an explicit error text when the fallback model textually refuses", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      generateText: "Не могу выполнить этот запрос.",
+    });
+
+    const result = await runGate(harness);
+
+    expect(result.action).toBe("finish");
+    const finalText = harness.persistedParts[0]?.part.text as string;
+    expect(finalText).toContain("status: refused");
+    expect(finalText).toContain("text-refusal");
+    expect(finalText).not.toBe("Не могу выполнить этот запрос.");
+    expect(finalText).not.toBe(synthesizedRefusal());
+    const stopped = harness.events.find(
+      (event) => event.type === SessionEventType.SubagentStopped,
+    );
+    expect(stopped?.payload.takeover).toMatchObject({
+      status: "refused",
+      reason: "text-refusal",
+    });
+  });
+
   it("finishes with the fallback answer when no todo item remains", async () => {
     const harness = createHarness({
       userText: "Выполни пункт из списка",

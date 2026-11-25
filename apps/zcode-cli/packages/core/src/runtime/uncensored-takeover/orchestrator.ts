@@ -183,6 +183,34 @@ export async function runUncensoredTakeover(
     });
     const durationMs = Date.now() - startedAt;
     if (outcome.kind === "done") {
+      // 修复原因：legacy raw 分支之前只看 finish reason 与空内容。供应商用普通 `stop`
+      // 返回文本拒绝时会被当作 done，最终文本被二级模型的拒绝覆盖。这里与 mirror 分支
+      // 共用同一个 detectTextRefusal，文本拒绝必须落到 refused。
+      const textRefusal = detectTextRefusal(outcome.content, {
+        hasToolCalls: false,
+        ignoreMarker: true,
+      });
+      if (textRefusal) {
+        input.logger?.info?.(
+          "Uncensored takeover attempt refused",
+          logContext(input, {
+            providerId: provider.id,
+            modelId: model.id,
+            status: "failed",
+            reason: textRefusal,
+            durationMs,
+          }),
+        );
+        last = {
+          status: "refused",
+          providerId: provider.id,
+          providerName: provider.name,
+          modelId: model.id,
+          output: "",
+          reason: textRefusal,
+        };
+        continue;
+      }
       input.logger?.info?.(
         "Uncensored takeover attempt completed",
         logContext(input, {

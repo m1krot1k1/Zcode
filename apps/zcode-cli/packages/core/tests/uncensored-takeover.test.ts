@@ -354,6 +354,52 @@ describe("runUncensoredTakeover routing", () => {
     expect(calls[1]?.headers.Authorization).toBe("Bearer k2");
   });
 
+  it("treats a raw textual refusal as refused and advances to the next model", async () => {
+    // Raw HTTP не имеет finish-reason отказа: провайдер отвечает обычным `stop`, а отказ
+    // выражен текстом. Без текстового слоя такой ответ становился `done` и подменял
+    // финальный текст хода отказом резервной модели.
+    const { fetch, calls } = fakeFetch((modelId) =>
+      modelId === "m1"
+        ? { body: doneBody("Не могу выполнить этот запрос.") }
+        : { body: doneBody("done by m2") },
+    );
+    const terminal = await runUncensoredTakeover({
+      ...base,
+      configPort: config({
+        models: [
+          { enabled: true, id: "m1" },
+          { enabled: true, id: "m2" },
+        ],
+      }),
+      fetch,
+    });
+    expect(terminal).toEqual({
+      status: "done",
+      providerId: "provider-1",
+      providerName: "Provider 1",
+      modelId: "m2",
+      output: "done by m2",
+    });
+    expect(calls.map((call) => JSON.parse(call.body).model)).toEqual(["m1", "m2"]);
+  });
+
+  it("returns refused when the only raw model textually refuses", async () => {
+    const { fetch } = fakeFetch(() => ({ body: doneBody("Не могу выполнить этот запрос.") }));
+    const terminal = await runUncensoredTakeover({
+      ...base,
+      configPort: config({ models: [{ enabled: true, id: "m1" }] }),
+      fetch,
+    });
+    expect(terminal).toEqual({
+      status: "refused",
+      providerId: "provider-1",
+      providerName: "Provider 1",
+      modelId: "m1",
+      output: "",
+      reason: "text-refusal",
+    });
+  });
+
   it("advances after an HTTP error and returns the last status when all fail", async () => {
     const { fetch, calls } = fakeFetch((modelId) =>
       modelId === "m1" ? { status: 500, body: "boom" } : { body: refusalBody("content_filter") },

@@ -273,10 +273,17 @@ const WORK_SIGNALS = /```|`[^`]+`|[\w./-]+\.(?:ts|tsx|js|jsx|json|md|py|rs|go|ja
  * signal a refusal, the last assistant message has no tool calls, and the finish reason is
  * `stop`. Never inspects tool output, never fires on a clarifying question, and stays
  * high-precision: a miss keeps the normal turn, a false positive would misroute a real answer.
+ *
+ * `ignoreMarker` is for the legacy raw takeover transport: the fallback model sees the main
+ * refusal prompt and may echo the protocol token. The raw branch strips that token and keeps
+ * a useful answer, while still treating genuine refusal wording as `refused`.
  */
-export function detectTextRefusal(text: string, options: { hasToolCalls: boolean }): string | null {
+export function detectTextRefusal(
+  text: string,
+  options: { hasToolCalls: boolean; ignoreMarker?: boolean },
+): string | null {
   if (options.hasToolCalls) return null;
-  if (hasRefusalMarker(text)) return TEXT_REFUSAL_REASON;
+  if (!options.ignoreMarker && hasRefusalMarker(text)) return TEXT_REFUSAL_REASON;
   const normalized = text.trim();
   if (normalized.length === 0 || normalized.length > 4000) return null;
   if (normalized.endsWith("?") || normalized.endsWith("？")) return null;
