@@ -227,7 +227,10 @@ export async function runUncensoredTakeoverGate(
     });
     return false;
   }
-  const item = attributeTurnItem(todos, lastUserText, lastAssistantText);
+  // The current turn's input is authoritative: the message entries may still describe the
+  // previous turn at this point, which routed a stale item to the fallback model (one turn late).
+  const currentUserText = state.input.trim().length > 0 ? state.input : lastUserText;
+  const item = attributeTurnItem(todos, currentUserText, lastAssistantText);
   if (!item) return false;
 
   const taskId = String(this.sessionId);

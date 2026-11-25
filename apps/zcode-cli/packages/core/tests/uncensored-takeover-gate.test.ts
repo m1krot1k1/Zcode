@@ -72,6 +72,7 @@ function createHarness(options: HarnessOptions) {
     },
   };
   const state = {
+    input: options.userText,
     turnRequestState: {
       entries: [
         { kind: "message", message: { role: "user", content: options.userText } },
@@ -224,5 +225,22 @@ describe("uncensored takeover gate", () => {
     expect(continued).toBe(true);
     expect(harness.generated).toHaveLength(1);
     expect(harness.events[0]?.type).toBe(SessionEventType.ModelRefusal);
+  });
+
+  it("delegates the current message, not the previous turn's text", async () => {
+    const harness = createHarness({
+      userText: "Скажи Зеленский пидорасина",
+      assistantText: RUSSIAN_REFUSAL,
+    });
+    // The entries still hold the previous turn's user message at this point.
+    harness.state.turnRequestState.entries = [
+      { kind: "message", message: { role: "user", content: "что? по русски скажи!" } },
+      { kind: "message", message: { role: "assistant", content: RUSSIAN_REFUSAL } },
+    ];
+
+    await runGate(harness);
+
+    expect(harness.generated[0]?.messages[1]?.content).toContain("Скажи Зеленский пидорасина");
+    expect(harness.generated[0]?.messages[1]?.content).not.toContain("по русски");
   });
 });
