@@ -22,6 +22,14 @@ import type {
 import { diffWorkflowRunsState, reduceWorkflowRunsState } from "@zcode/shared/zcode-protocol-v4";
 import type { ProductProjectionContext } from "./product-projection-context.js";
 
+/** Takeover facts travel in the subagent payload; rows without them keep the old shape. */
+function takeoverOf(payload: Record<string, unknown>): SubagentRow["takeover"] | undefined {
+  const raw = payload.takeover;
+  if (!raw || typeof raw !== "object") return undefined;
+  return raw as SubagentRow["takeover"];
+}
+
+
 export function shouldMaterializeSubagentProjection(
   self: ProductProjectionContext,
   reduced: readonly ConversationDelta[],
@@ -264,7 +272,7 @@ export function onSubagentSpawned(
     return resumedBackgroundWork ? [resumedBackgroundWork] : [];
   }
   if (existing) {
-    const row: SubagentRow = {
+  const row: SubagentRow = {
       ...existing,
       status: "running",
       summaryText:
@@ -298,6 +306,7 @@ export function onSubagentSpawned(
       self.stringPayload(payload, "summaryText") ??
       self.stringPayload(payload, "prompt") ??
       "",
+    ...(takeoverOf(payload) ? { takeover: takeoverOf(payload)! } : {}),
     ...(self.stringPayload(payload, "childSessionId")
       ? { childSessionId: self.stringPayload(payload, "childSessionId") }
       : {}),
@@ -453,6 +462,7 @@ export function onSubagentStopped(
         ...usageFields,
         // resumed child 的终态同样属于原 Agent row，只在旧 row 缺失锚点时补齐。
         ...(!existing.parentToolCallId && parentToolCallId ? { parentToolCallId } : {}),
+        ...(takeoverOf(payload) ? { takeover: takeoverOf(payload)! } : {}),
         ...(self.stringPayload(payload, "childSessionId")
           ? { childSessionId: self.stringPayload(payload, "childSessionId") }
           : {}),
@@ -468,6 +478,7 @@ export function onSubagentStopped(
         subagentType: self.stringPayload(payload, "agentType") ?? "subagent",
         status,
         summaryText,
+        ...(takeoverOf(payload) ? { takeover: takeoverOf(payload)! } : {}),
         ...(self.stringPayload(payload, "childSessionId")
           ? { childSessionId: self.stringPayload(payload, "childSessionId") }
           : {}),
