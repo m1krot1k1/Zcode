@@ -46,9 +46,7 @@ export async function runUncensoredTakeover(
     return errorTerminal("config");
   }
   const routes = config.providers.flatMap((provider) =>
-    provider.models
-      .filter((model) => model.enabled)
-      .map((model) => ({ provider, model })),
+    provider.models.filter((model) => model.enabled).map((model) => ({ provider, model })),
   );
   if (routes.length === 0) {
     input.logger?.info?.(
@@ -142,16 +140,30 @@ export async function runUncensoredTakeover(
           modelId: model.id,
           output: generated.text,
         };
-      } catch {
+      } catch (error) {
+        // A mirrored provider can be unresolvable in this runtime (registry view, model id).
+        // Keep the reason bounded in the card and fall through to the raw endpoint below when
+        // the provider still has its URL, so the attempt is not silently dropped.
+        const message = error instanceof Error ? error.message : String(error);
+        const reason = `generate: ${message.slice(0, 200)}`;
+        input.logger?.warn?.(
+          "Uncensored takeover mirrored generate failed",
+          logContext(input, {
+            providerId: provider.providerId,
+            modelId: model.id,
+            status: "failed",
+            reason,
+          }),
+        );
         last = {
           status: "error",
           providerId: provider.providerId,
           providerName: provider.name,
           modelId: model.id,
           output: "",
-          reason: "generate",
+          reason,
         };
-        continue;
+        if (!provider.apiUrl) continue;
       }
     }
     const body = buildTakeoverRequestBody({

@@ -508,4 +508,40 @@ describe("takeover idempotency identity", () => {
       expect(stripRefusalMarker("Обычный ответ.")).toBe("Обычный ответ.");
     });
   });
+
+  describe("mirrored generate failure", () => {
+    it("falls back to the provider endpoint when the mirror cannot be resolved", async () => {
+      const { fetch, calls } = fakeFetch(() => ({ body: doneBody("done by raw endpoint") }));
+      const terminal = await runUncensoredTakeover({
+        itemIndex: 0,
+        itemText: "finish the item",
+        fragments: [],
+        taskId: "session-1",
+        workspace: { workspacePath: "/workspace" },
+        configPort: {
+          getConfig: async () => ({
+            providers: [
+              {
+                id: "provider-1",
+                name: "nano-gpt",
+                apiUrl: "https://takeover.test/v1/chat",
+                apiKey: "secret-key",
+                providerId: "mirror-1",
+                models: [{ id: "m1", enabled: true }],
+              },
+            ],
+          }),
+        },
+        generate: {
+          generate: async () => {
+            throw new Error("model not found in registry");
+          },
+        },
+        fetch,
+      });
+
+      expect(terminal).toMatchObject({ status: "done", output: "done by raw endpoint" });
+      expect(calls).toHaveLength(1);
+    });
+  });
 });

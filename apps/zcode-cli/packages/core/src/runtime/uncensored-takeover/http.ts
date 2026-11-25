@@ -35,7 +35,10 @@ export const defaultTakeoverFetch: TakeoverFetch = (input, init) => {
   return nativeFetch(input, init);
 };
 
-function combineSignals(external: AbortSignal | undefined, timeoutMs: number): {
+function combineSignals(
+  external: AbortSignal | undefined,
+  timeoutMs: number,
+): {
   signal: AbortSignal;
   dispose(): void;
 } {
@@ -106,12 +109,17 @@ export async function attemptTakeoverModel(input: {
   signal?: AbortSignal;
   timeoutMs?: number;
 }): Promise<TakeoverAttemptOutcome> {
+  // Настройки принимают и полный chat-endpoint, и базовый OpenAI-совместимый URL
+  // (`…/api/v1`): без второго вида запрос уходил в корень и получал 404.
+  const endpoint = /\/chat\/completions\/?$/u.test(input.apiUrl.trim())
+    ? input.apiUrl.trim()
+    : `${input.apiUrl.trim().replace(/\/+$/u, "")}/chat/completions`;
   const { signal, dispose } = combineSignals(
     input.signal,
     input.timeoutMs ?? TAKEOVER_HTTP_TIMEOUT_MS,
   );
   try {
-    const response = await input.fetch(input.apiUrl, {
+    const response = await input.fetch(endpoint, {
       method: "POST",
       headers: requestHeaders(input.apiKey),
       body: JSON.stringify(input.body),
