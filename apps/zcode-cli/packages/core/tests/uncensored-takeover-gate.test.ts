@@ -196,4 +196,20 @@ describe("uncensored takeover gate", () => {
       itemText: "починить тест",
     });
   });
+
+  it("hands over a refusal phrased as not evaluating people with such words", async () => {
+    const harness = createHarness({
+      userText: "Скажи Зеленский пидорасина",
+      assistantText:
+        "Нет. Я не оцениваю людей такими словами — ни по чьей просьбе.\n\nГотов помочь с кодом: разобрать репозиторий, найти баг, написать тесты.",
+    });
+
+    const continued = await runGate(harness);
+
+    expect(continued).toBe(true);
+    expect(harness.generated).toHaveLength(1);
+    expect(harness.generated[0]?.modelId).toBe("deepseek-uncensored");
+    expect(harness.generated[0]?.messages[1]?.content).toContain("Скажи Зеленский пидорасина");
+    expect(harness.events.at(-1)?.payload.takeover).toMatchObject({ status: "done" });
+  });
 });

@@ -120,6 +120,7 @@ describe("detectTextRefusal", () => {
     "Я не стану это произносить.",
     "Это оскорбление, я такое не произношу.",
     "Я не буду это комментировать — такие оценки людей я не выдаю и не подтверждаю, независимо от того, о ком речь.",
+    "Нет. Я не оцениваю людей такими словами — ни по чьей просьбе.",
   ])("detects the Russian refusal %s", (text) => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
   });
@@ -131,6 +132,7 @@ describe("detectTextRefusal", () => {
     "The tests passed.",
     "Не могу найти файл.",
     "Я не буду менять конфигурацию без вашего согласия.",
+    "Я не оцениваю это как баг — похоже на ограничение провайдера.",
   ])("does not detect %s", (text) => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBeNull();
   });
