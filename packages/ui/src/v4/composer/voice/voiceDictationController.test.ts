@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDictationPort, VoiceSpeechModel } from "@zcode/shared";
-import { getVoiceDictationController, getVoiceDictationState } from "./voiceDictationController.js";
+import {
+  getVoiceDictationController,
+  getVoiceDictationState,
+  subscribeVoiceDictation,
+} from "./voiceDictationController.js";
 
 const installedModel: VoiceSpeechModel = {
   id: "parakeet_unified_en",
@@ -107,5 +111,29 @@ describe("voice dictation pre-setup", () => {
     expect(window.localStorage.getItem("zcode.voice.shortcut")).toBe("Control+Shift+Space");
 
     controller.setShortcut("Alt");
+  });
+
+  it("does not notify subscribers when the capture flag is unchanged", () => {
+    // The settings capture effect reacts to this state; a redundant write re-rendered the
+    // form, re-ran the effect and looped until React error #185.
+    const controller = getVoiceDictationController();
+    let notifications = 0;
+    const unsubscribe = subscribeVoiceDictation(() => {
+      notifications += 1;
+    });
+
+    controller.setShortcutCapturing(false);
+    expect(notifications).toBe(0);
+
+    controller.setShortcutCapturing(true);
+    expect(notifications).toBe(1);
+
+    controller.setShortcutCapturing(true);
+    expect(notifications).toBe(1);
+
+    controller.setShortcutCapturing(false);
+    expect(notifications).toBe(2);
+
+    unsubscribe();
   });
 });

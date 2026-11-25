@@ -257,6 +257,9 @@ class VoiceDictationController {
   }
 
   setShortcutCapturing(capturing: boolean): void {
+    // Writing an unchanged flag notifies subscribers and re-renders the settings form,
+    // whose capture effect calls this again — an unbounded update loop (React error #185).
+    if (state.capturingShortcut === capturing) return;
     setState({ capturingShortcut: capturing });
   }
 

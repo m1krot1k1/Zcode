@@ -25,11 +25,15 @@ function VoiceShortcutControl({ api }: { api: VoiceDictationApi }) {
   const { intl } = useZCodeIntl();
   const { state } = api;
   const [capturing, setCapturing] = useState(false);
+  // `api` is a fresh object on every render; depending on it would re-run the capture
+  // effect after each update. The effect only needs the latest actions.
+  const apiRef = useRef(api);
+  apiRef.current = api;
 
   useEffect(() => {
     if (!capturing) return;
     // The dictation hotkey reads this flag and stays silent while a binding is captured.
-    api.setShortcutCapturing(true);
+    apiRef.current.setShortcutCapturing(true);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.code === "Escape") {
         event.preventDefault();
@@ -41,14 +45,14 @@ function VoiceShortcutControl({ api }: { api: VoiceDictationApi }) {
       event.preventDefault();
       event.stopPropagation();
       setCapturing(false);
-      api.setShortcut(binding);
+      apiRef.current.setShortcut(binding);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
-      api.setShortcutCapturing(false);
+      apiRef.current.setShortcutCapturing(false);
     };
-  }, [api, capturing]);
+  }, [capturing]);
 
   const label = capturing
     ? intl.formatMessage({ id: "settings.voice.shortcutCapture" })
