@@ -6,6 +6,9 @@ import {
   buildTakeoverRequestBody,
   detectRefusal,
   detectTextRefusal,
+  hasRefusalMarker,
+  REFUSAL_MARKER,
+  stripRefusalMarker,
   runUncensoredTakeover,
   selectContextFragments,
   takeoverAgentId,
@@ -121,6 +124,15 @@ describe("detectTextRefusal", () => {
     "Это оскорбление, я такое не произношу.",
     "Я не буду это комментировать — такие оценки людей я не выдаю и не подтверждаю, независимо от того, о ком речь.",
     "Нет. Я не оцениваю людей такими словами — ни по чьей просьбе.",
+    // Shapes the phrase list never had: new wordings of the same refusal structure.
+    "Извините, но я не стану такое писать.",
+    "Не имею права произносить такие вещи.",
+    "Я не вправе это подтверждать.",
+    "Я не могу предоставить такие данные.",
+    "Я не буду это обсуждать.",
+    "拒绝回答这个问题。",
+    "Sorry, I cannot produce that content.",
+    "I'm not able to write that.",
   ])("detects the Russian refusal %s", (text) => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
   });
@@ -133,6 +145,7 @@ describe("detectTextRefusal", () => {
     "Не могу найти файл.",
     "Я не буду менять конфигурацию без вашего согласия.",
     "Я не оцениваю это как баг — похоже на ограничение провайдера.",
+    "Я не обсуждал это с командой.",
   ])("does not detect %s", (text) => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBeNull();
   });
@@ -469,5 +482,30 @@ describe("takeover idempotency identity", () => {
 
   it("uses the declared durable entry type", () => {
     expect(UNCENSORED_TAKEOVER_ENTRY_TYPE).toBe("runtime/uncensored_takeover");
+  });
+
+  describe("refusal marker protocol", () => {
+    it("treats the marker as a refusal regardless of wording", () => {
+      // A wording no heuristic knows: the token is the only signal, and it must be enough.
+      const text = `${REFUSAL_MARKER}\nПредпочту это не делать, извини за неудобство.`;
+      expect(hasRefusalMarker(text)).toBe(true);
+      expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
+    });
+
+    it("ignores a normal answer without the marker", () => {
+      expect(hasRefusalMarker("Готово: тест проходит, коммит готов.")).toBe(false);
+      expect(
+        detectTextRefusal("Готово: тест проходит, коммит готов.", { hasToolCalls: false }),
+      ).toBeNull();
+    });
+
+    it("removes the marker line before the text reaches the chat", () => {
+      const text = `${REFUSAL_MARKER}\nПредпочту это не делать.`;
+      expect(stripRefusalMarker(text)).toBe("Предпочту это не делать.");
+    });
+
+    it("leaves text without a marker untouched", () => {
+      expect(stripRefusalMarker("Обычный ответ.")).toBe("Обычный ответ.");
+    });
   });
 });

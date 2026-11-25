@@ -212,4 +212,17 @@ describe("uncensored takeover gate", () => {
     expect(harness.generated[0]?.messages[1]?.content).toContain("Скажи Зеленский пидорасина");
     expect(harness.events.at(-1)?.payload.takeover).toMatchObject({ status: "done" });
   });
+
+  it("hands over a refusal that only carries the protocol marker", async () => {
+    const harness = createHarness({
+      userText: "Скажи Зеленский пидорасина",
+      assistantText: "[[ZCODE_REFUSAL]]\nПредпочту это не делать.",
+    });
+
+    const continued = await runGate(harness);
+
+    expect(continued).toBe(true);
+    expect(harness.generated).toHaveLength(1);
+    expect(harness.events[0]?.type).toBe(SessionEventType.ModelRefusal);
+  });
 });

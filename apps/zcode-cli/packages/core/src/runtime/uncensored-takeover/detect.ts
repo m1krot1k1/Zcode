@@ -161,27 +161,75 @@ export function selectContextFragments(input: {
 
 export const TEXT_REFUSAL_REASON = "text-refusal";
 
-const TEXT_REFUSAL_PATTERNS: readonly RegExp[] = [
-  /\b(?:i'?m|i)\b[^.!?\n]{0,80}\b(?:can'?t|cannot|won'?t|will not|must decline|unable to)\b[^.!?\n]{0,40}\b(?:help|assist|comply|provide|fulfill|do (?:that|this))\b/iu,
-  // «Не буду — это оскорбление»: отказ, где разделитель вводит причину. Только в начале
-  // фразы, иначе «не буду» внутри ответа о планах не считается отказом.
-  /(?:^|[.!?\n]\s+)(?:я\s+)?(?:не могу|не буду|не стану|отказываюсь|отказался|отказалась)\s*[—–:;,]/iu,
-  // «не могу выполнить», «не буду помогать»: стем отказа + глагол обслуживания запроса.
-  /(?:^|\s)(?:не могу|не буду|не стану|отказываюсь|отказался|отказалась)\s+(?:это(?:го)?\s+)?(?:помогать|помочь|выполнять|выполнить|делать|сделать|предоставлять|предоставить|произносить|произнести|озвучивать)(?![\p{L}\p{N}])/iu,
-  // «я такое не произношу»: отказ именно от произнесения, а не от работы с задачей.
-  /(?:^|[.!?;,\n]\s+)я\s+(?:это\s+|такое\s+|так\s+)?не\s+(?:произношу|произнесу|озвучу)(?![\p{L}\p{N}])/iu,
-  // «Не буду это комментировать»: отказ от производства содержания, где причина идёт
-  // после отказа, а не отдельным глаголом обслуживания запроса.
-  /(?:^|[.!?;,\n]\s+)(?:я\s+)?(?:не буду|не стану)\s+(?:это\s+|этого\s+)?(?:комментировать|прокомментировать|обсуждать|обсудить|оценивать|оценить)(?![\p{L}\p{N}])/iu,
-  // «я такое не выдаю и не подтверждаю»: отказ от выдачи оценки или утверждения.
-  /(?:^|[.!?;,\n]\s+)я\s+(?:это|такое|такого|такие|таких|подобное|подобного)\s+не\s+(?:выдаю|выдам|подтверждаю|подтвержу|поддерживаю|поддержу)(?![\p{L}\p{N}])/iu,
-  // «Я не оцениваю людей такими словами»: отказ в настоящем времени. Объект отказа
-  // (люди/такие слова) держит точность — техническое «не оцениваю это как баг» не считается.
-  /(?:^|[.!?;,\n]\s+)(?:я\s+)?не\s+(?:оцениваю|оценю|комментирую|прокомментирую|обсуждаю|обсужу)\s+(?:людей|человека|человек|такие\s+слова|таких\s+слов|такими\s+словами|подобное)(?![\p{L}\p{N}])/iu,
-  /无法(?:帮助|协助|提供|完成)/u,
-  /不能(?:帮助|协助|提供|完成)/u,
-  /抱歉[，,]\s*我(?:不能|无法)/u,
+/**
+ * Machine-readable refusal marker the main model is told to emit (see the identity prompt).
+ * It makes refusal detection independent of wording and language: any refusal, phrased any
+ * way, is announced with the same token. The heuristic shapes below stay as a safety net for
+ * models that ignore the instruction.
+ */
+export const REFUSAL_MARKER = "[[ZCODE_REFUSAL]]";
+const REFUSAL_MARKER_PATTERN = /\[\[\s*ZCODE[\s_-]*REFUSAL\s*\]\]/iu;
+
+export function hasRefusalMarker(text: string): boolean {
+  return REFUSAL_MARKER_PATTERN.test(text);
+}
+
+/** Drops the marker line so the user never sees the protocol token in chat. */
+export function stripRefusalMarker(text: string): string {
+  if (!REFUSAL_MARKER_PATTERN.test(text)) return text;
+  return text
+    .split("\n")
+    .filter((line) => !REFUSAL_MARKER_PATTERN.test(line))
+    .join("\n")
+    .replace(/^\s*\n+/, "")
+    .trimEnd();
+}
+
+/**
+ * Universal refusal shapes, not a phrase list. A refusal is recognised by structure:
+ * a negation plus an object it refuses (any conjugation), a policy/capability denial,
+ * or a denial that pivots into "I can help with something else". Concrete wordings are
+ * consumed by stems, so new phrasing of the same shape is covered.
+ */
+const NEGATION_STEM = String.raw`(?:не\s+(?:буду|могу|стану|хочу|собираюсь|намерен\p{L}*|позволю|в\s+праве)|не|нет|никогда)`;
+// Content-production actions a refusal refuses to perform: every non-past form
+// (infinitive, present, future). Past-tense forms are statements of fact («не обсуждал
+// это с командой»), not refusals, so they are deliberately absent.
+const REFUSED_ACTION = String.raw`(?:помогать|помочь|помогаю|помогу|выполнять|выполнить|выполняю|выполню|предоставлять|предоставить|предоставляю|предоставлю|комментировать|прокомментировать|комментирую|прокомментирую|обсуждать|обсудить|обсуждаю|обсуждаем|обсужу|обсудим|произносить|произнести|произношу|произнесу|озвучивать|озвучить|озвучиваю|озвучу|поддерживать|поддержать|поддерживаю|поддержу|генерировать|сгенерировать|генерирую|сгенерирую|создавать|создать|создаю|создам|писать|написать|пишу|напишу|делать|сделать|делаю|сделаю)`;
+const EN_REFUSED_ACTION = String.raw`(?:help|assist|comply|provide|produce|generate|write|say|tell|discuss|comment|evaluate|answer|participate|engage|support|confirm|create|do (?:that|this|it))`;
+
+const REFUSAL_SHAPES: readonly RegExp[] = [
+  // Negation followed by a separator that introduces the reason: «Не буду — это оскорбление».
+  new RegExp(String.raw`(?:^|[.!?;,\n]\s*)${NEGATION_STEM}\s*[—–:,;]`, "iu"),
+  // Negation (up to three padding words) + refused action in any conjugation.
+  new RegExp(
+    String.raw`(?:^|[^\p{L}])${NEGATION_STEM}\s+(?:\p{L}+\s+){0,3}${REFUSED_ACTION}(?![\p{L}])`,
+    "iu",
+  ),
+  // Negation + the object a refusal commonly names: people, such words.
+  /(?:не|никогда)\s+(?:\p{L}+\s+){0,3}(?:людей|человека|такие\s+слова|таких\s+слов|такими\s+словами|подобное|подобного)(?![\p{L}])/iu,
+  // English: can't / won't / decline + refused action.
+  new RegExp(
+    String.raw`\b(?:can(?:no|')?t|cannot|won'?t|will\s+not|(?:am|i'?m)\s+not\s+able\s+to|unable\s+to|decline\s+to|refuse\s+to)\s+(?:\p{L}+\s+){0,3}${EN_REFUSED_ACTION}\b`,
+    "iu",
+  ),
+  // Policy or capability denial: refusal of any wording, regardless of the action.
+  /(?:не\s+имею\s+права|не\s+вправе|не\s+разрешено|запрещ\p{L}*|против\s+правил|противоречит\s+(?:политике|правилам)|неэтичн\p{L}*|оскорбительн\p{L}*)/iu,
+  /\b(?:against\s+(?:my|the|our)\s+(?:policy|policies|guidelines)|not\s+allowed\s+to|violates?\s+(?:policy|guidelines|usage))\b/iu,
+  /(?:无法|不能|不会|不可以|不允许|拒绝)/u,
 ];
+
+/** Departures that turn a denial into a refusal of the request rather than an answer to it. */
+const PIVOT_OFFERS: readonly RegExp[] = [
+  /(?:готов\p{L}*\s+помо\p{L}*|могу\s+помо\p{L}*|чем\s+(?:ещё\s+)?(?:могу\s+)?помо\p{L}*|если\s+(?:есть|нужн)\p{L}*|сформулиру\p{L}*|напиш\p{L}*,?\s*что|обращайтесь|спрашивайте)/iu,
+  /\b(?:happy\s+to\s+help|glad\s+to\s+help|i\s+can\s+help\s+with|let\s+me\s+know|feel\s+free\s+to)/iu,
+  /(?:乐意帮助|可以帮助|随时告诉我|需要的话)/u,
+];
+
+const LEADING_DENIAL = /^\s*(?:нет|no|nope|не)\b[.!,\s]/iu;
+
+/** Work artefacts: an answer that shows real work is never a refusal of that work. */
+const WORK_SIGNALS = /```|`[^`]+`|[\w./-]+\.(?:ts|tsx|js|jsx|json|md|py|rs|go|java|sh|yml|yaml)\b/u;
 
 /**
  * Conservative text-refusal cascade layer. Only used when the provider did not already
@@ -191,10 +239,19 @@ const TEXT_REFUSAL_PATTERNS: readonly RegExp[] = [
  */
 export function detectTextRefusal(text: string, options: { hasToolCalls: boolean }): string | null {
   if (options.hasToolCalls) return null;
+  if (hasRefusalMarker(text)) return TEXT_REFUSAL_REASON;
   const normalized = text.trim();
   if (normalized.length === 0 || normalized.length > 4000) return null;
   if (normalized.endsWith("?") || normalized.endsWith("？")) return null;
-  return TEXT_REFUSAL_PATTERNS.some((pattern) => pattern.test(normalized))
-    ? TEXT_REFUSAL_REASON
-    : null;
+  // An answer that ships code or file output is real work, never a refusal of that work.
+  if (WORK_SIGNALS.test(normalized)) return null;
+  const head = normalized.slice(0, 600);
+  const denies = REFUSAL_SHAPES.some((pattern) => pattern.test(head));
+  const pivots = PIVOT_OFFERS.some((pattern) => pattern.test(normalized));
+  const short = normalized.length <= 900;
+  // A bare "Нет." that pivots to "I can help with…" is a refusal even without a known action.
+  const leadingDenial = LEADING_DENIAL.test(head);
+  if (denies && (pivots || short)) return TEXT_REFUSAL_REASON;
+  if (!denies && pivots && leadingDenial) return TEXT_REFUSAL_REASON;
+  return null;
 }

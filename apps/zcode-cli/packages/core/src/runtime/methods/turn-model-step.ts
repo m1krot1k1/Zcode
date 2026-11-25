@@ -1,16 +1,33 @@
-import type {
-  ToolSearchExecutionContext,
-} from "@zcode/contracts";
+import type { ToolSearchExecutionContext } from "@zcode/contracts";
 import { isOffPeakUserTakeover, refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 
 import { beginLocalTurnPreparation } from "@zcode/contracts";
-import { SessionEventType, createChildTraceContext, createMessageId, createPartId, getModelUsageTotalTokens, traceContextToLogContext, TurnMachineImpl } from "../deps.js";
+import {
+  SessionEventType,
+  createChildTraceContext,
+  createMessageId,
+  createPartId,
+  getModelUsageTotalTokens,
+  traceContextToLogContext,
+  TurnMachineImpl,
+} from "../deps.js";
 import type { MessageId, ModelNetworkStatusEvent, ModelToolContract } from "../deps.js";
 import {
   createRuntimeAssistantEntry,
   type RuntimeMessageEntry,
 } from "../../agent/message-history.js";
-import { createModelContextExceededFinishError, projectExecutionErrorPayload, finalizeSuspiciousEmptyModelResult, isContextExceededFinishReason, isSuspiciousEmptyModelResult, readRawFinishReason, throwIfTurnAborted, isModelContextExceededError, isTurnCancellationError, buildTurnFileChangeSummary } from "../helpers/index.js";
+import {
+  createModelContextExceededFinishError,
+  projectExecutionErrorPayload,
+  finalizeSuspiciousEmptyModelResult,
+  isContextExceededFinishReason,
+  isSuspiciousEmptyModelResult,
+  readRawFinishReason,
+  throwIfTurnAborted,
+  isModelContextExceededError,
+  isTurnCancellationError,
+  buildTurnFileChangeSummary,
+} from "../helpers/index.js";
 import type {
   DrainedPendingInputDiagnostics,
   RunModelTextRequestOptions,
@@ -19,10 +36,7 @@ import type {
 } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { executeToolCallsForModelStep } from "./turn-tools.js";
-import {
-  captureAssistantPersistenceAnchor,
-  finishModelStepWithoutToolCalls,
-} from "./turn-stop.js";
+import { captureAssistantPersistenceAnchor, finishModelStepWithoutToolCalls } from "./turn-stop.js";
 import { createStreamingToolCoordinator } from "./streaming-tool-coordinator.js";
 import { persistCancelledStreamSnapshot } from "./cancelled-stream-persistence.js";
 import {
@@ -56,6 +70,7 @@ import {
   recordTruncatedToolCallRecovery,
 } from "./turn-output-token-continuation.js";
 import { synthesizeTruncatedToolCallSettlements } from "../../tool/self-repair/index.js";
+import { stripRefusalMarker } from "../uncensored-takeover/index.js";
 import { recoverModelStepAfterContextExceeded } from "./turn-model-step-compact-recovery.js";
 import { handleOutputTokenLimitOutcome } from "./turn-model-step-output-limit.js";
 import {
@@ -223,10 +238,7 @@ async function runModelBackedTurnStepImpl(
     modelHardMaxOutputTokens: executionMaxOutputTokens,
     configuredMaxOutputTokens: depthTuning?.minMaxOutputTokens,
     contextWindow: executionContextWindow,
-    estimatedInputTokens: estimateCurrentModelInputTokens(
-      options.messages,
-      options.sourceEntries,
-    ),
+    estimatedInputTokens: estimateCurrentModelInputTokens(options.messages, options.sourceEntries),
     reasoningEffort: depthTuning?.reasoningEffort ?? model.options?.reasoningLevel,
     minToolPayloadReserveTokens: this.config.reasoningReserveOutputTokens,
   });
@@ -497,7 +509,8 @@ async function runModelBackedTurnStepImpl(
     throw finalError;
   }
 
-  state.modelResponse = result.text;
+  // Refusal protocol: the marker is a machine signal, not content — keep it out of chat.
+  state.modelResponse = stripRefusalMarker(result.text);
   state.modelStepCount += 1;
   state.tokenCount += getModelUsageTotalTokens(result.usage);
 

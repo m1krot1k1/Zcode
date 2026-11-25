@@ -37,12 +37,19 @@ export type {
   UncensoredTakeoverEntryPayload,
   UncensoredTakeoverSessionEntry,
 } from "./contract.js";
-export { buildTakeoverMessages, buildTakeoverReminder, buildTakeoverRequestBody } from "./context.js";
+export {
+  buildTakeoverMessages,
+  buildTakeoverReminder,
+  buildTakeoverRequestBody,
+} from "./context.js";
 export {
   attributeTodoItem,
   attributeTurnItem,
   detectRefusal,
   detectTextRefusal,
+  hasRefusalMarker,
+  REFUSAL_MARKER,
+  stripRefusalMarker,
   normalizeFinishReason,
   normalizeItemText,
   selectContextFragments,
@@ -56,9 +63,5 @@ export {
   takeoverAgentId,
   takeoverIdempotencyKey,
 } from "./durable-entry.js";
-export {
-  attemptTakeoverModel,
-  defaultTakeoverFetch,
-  type TakeoverAttemptOutcome,
-} from "./http.js";
+export { attemptTakeoverModel, defaultTakeoverFetch, type TakeoverAttemptOutcome } from "./http.js";
 export { runUncensoredTakeover } from "./orchestrator.js";

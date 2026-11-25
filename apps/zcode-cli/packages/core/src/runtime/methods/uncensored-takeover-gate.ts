@@ -10,11 +10,13 @@ import {
   buildTakeoverReminder,
   detectRefusal,
   detectTextRefusal,
+  hasRefusalMarker,
   parseTakeoverEntryData,
   runUncensoredTakeover,
   selectContextFragments,
   takeoverAgentId,
   takeoverIdempotencyKey,
+  TEXT_REFUSAL_REASON,
   UNCENSORED_TAKEOVER_AGENT_TYPE,
   UNCENSORED_TAKEOVER_ENTRY_TYPE,
   type TakeoverContextFragment,
@@ -200,10 +202,16 @@ export async function runUncensoredTakeoverGate(
     lastAssistantText = modelMessageContentToText(entry.message.content);
     lastAssistantHasToolCalls = (entry.message.toolCalls?.length ?? 0) > 0;
   }
+  const finishIsStop =
+    options.result.finishReason === undefined || options.result.finishReason === "stop";
+  // The marker is checked on the raw model text: the assistant entry may already be stripped.
   const textReason =
-    !providerReason &&
-    (options.result.finishReason === undefined || options.result.finishReason === "stop")
-      ? detectTextRefusal(lastAssistantText, { hasToolCalls: lastAssistantHasToolCalls })
+    !providerReason && finishIsStop
+      ? hasRefusalMarker(options.result.text) ||
+        hasRefusalMarker(lastAssistantText) ||
+        detectTextRefusal(lastAssistantText, { hasToolCalls: lastAssistantHasToolCalls })
+        ? TEXT_REFUSAL_REASON
+        : null
       : null;
   const reason = providerReason ?? textReason;
   if (!reason) return false;
@@ -232,7 +240,10 @@ export async function runUncensoredTakeoverGate(
     // Duplicate: no second model.refusal, no second spawn/stop, no HTTP. A reminder for an item
     // already injected in this very turn is skipped, so a refusing main model cannot loop.
     if (existing.injectedTurnId === state.turnId) return false;
-    const reminder = buildTakeoverReminder({ itemIndex: item.itemIndex, terminal: existing.terminal });
+    const reminder = buildTakeoverReminder({
+      itemIndex: item.itemIndex,
+      terminal: existing.terminal,
+    });
     commitTurnRequestEntries(this, state.turnRequestState, [
       systemReminderAttachmentEntry("uncensored_takeover", reminder),
     ]);
