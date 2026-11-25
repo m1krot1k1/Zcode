@@ -432,7 +432,8 @@ export interface AgentRuntimeTurnMethods {
         }
       | undefined,
     traceContext: TraceContext,
-    model?: Model,
+    /** `null` = synthetic answer without model attribution. */
+    model?: Pick<Model, "providerId" | "modelId"> | null,
   ): Promise<void>;
   persistMessage(
     input: Parameters<SessionStorePort["saveMessage"]>[0],

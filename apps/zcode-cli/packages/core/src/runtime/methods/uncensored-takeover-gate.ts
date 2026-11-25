@@ -1,22 +1,37 @@
-import { modelMessageContentToText, SessionEventType, TurnMachineImpl } from "../deps.js";
+import { createModelId, createModelProviderId } from "@zcode/contracts";
+import type { ModelId, ModelProviderId, TodoItem } from "@zcode/contracts";
+import {
+  createMessageId,
+  createPartId,
+  modelMessageContentToText,
+  SessionEventType,
+  TurnMachineImpl,
+} from "../deps.js";
+import type { MessageId } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelTextResult } from "../types.js";
-import type { RegularTurnLoopState } from "./turn-loop-state.js";
+import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
 import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
-import { systemReminderAttachmentEntry } from "../../agent/message-history.js";
 import {
+  createRuntimeAssistantEntry,
+  systemReminderAttachmentEntry,
+} from "../../agent/message-history.js";
+import {
+  attributeTodoItem,
   attributeTurnItem,
   buildTakeoverEntry,
   buildTakeoverReminder,
   detectRefusal,
   detectTextRefusal,
   hasRefusalMarker,
+  normalizeItemText,
   parseTakeoverEntryData,
   runUncensoredTakeover,
   selectContextFragments,
   takeoverAgentId,
   takeoverIdempotencyKey,
   TEXT_REFUSAL_REASON,
+  truncateItemText,
   UNCENSORED_TAKEOVER_AGENT_TYPE,
   UNCENSORED_TAKEOVER_ENTRY_TYPE,
   type TakeoverContextFragment,
@@ -27,14 +42,116 @@ import {
 
 interface CachedOutcome {
   terminal: TakeoverTerminal;
-  /** Turn that already received the synthetic reminder for this item. */
-  injectedTurnId?: string;
+  /** Turn that already settled this item: a reminder was injected or the final text written. */
+  resolvedTurnId?: string;
 }
 
-// Per-runtime, therefore per-session, guard. It closes the same-process duplicate window;
-// the durable session entry closes the restart window. Limitation: a second process sharing
-// one session relies on `sessionEntries` being implemented by its SessionStorePort.
+/** Per-runtime, therefore per-session, guard. It closes the same-process duplicate window;
+ * the durable session entry closes the restart window. Limitation: a second process sharing
+ * one session relies on `sessionEntries` being implemented by its SessionStorePort.
+ */
 const outcomesByRuntime = new WeakMap<object, Map<string, CachedOutcome>>();
+
+/**
+ * Gate outcome. `finish` means the fallback outcome is already persisted as the turn's final
+ * assistant answer; the caller must end the turn instead of requesting another model step.
+ */
+export type UncensoredTakeoverGateResult =
+  | { action: "unhandled" }
+  | { action: "continue" }
+  | { action: "finish"; assistantMessageId: MessageId; finalText: string };
+
+/**
+ * Text the user must see as the turn's final answer when the fallback model, not the main
+ * model, owns the outcome. A successful takeover returns its output verbatim; every other
+ * terminal state is an explicit error text so a repeated main-model refusal can never stand
+ * in for the fallback result.
+ */
+function takeoverFinalText(terminal: TakeoverTerminal): string {
+  if (terminal.status === "done" && terminal.output.trim().length > 0) return terminal.output;
+  const reason = terminal.reason ? `: ${terminal.reason}` : "";
+  if (!terminal.modelId) {
+    return `No fallback model produced an answer (status: ${terminal.status})${reason}.`;
+  }
+  const provider = terminal.providerName ?? terminal.providerId ?? "unknown";
+  return `Fallback model ${provider}/${terminal.modelId} did not produce an answer (status: ${terminal.status})${reason}.`;
+}
+
+/** Fallback model attribution from the terminal fact; `null` when no model produced it. */
+function takeoverModelAttribution(
+  terminal: TakeoverTerminal,
+): { providerId: ModelProviderId; modelId: ModelId } | null {
+  if (!terminal.providerId || !terminal.modelId) return null;
+  return {
+    providerId: createModelProviderId(terminal.providerId),
+    modelId: createModelId(terminal.modelId),
+  };
+}
+
+/**
+ * Writes the fallback outcome as the turn's final assistant answer. The text is persisted for
+ * cold replay and streamed through the normal ModelStreaming projection for the live UI, so
+ * the final visible text is deterministic instead of depending on the next main-model step.
+ */
+async function commitTakeoverFinalText(
+  runtime: AgentRuntimeInternal,
+  state: RegularTurnLoopState,
+  terminal: TakeoverTerminal,
+): Promise<{ assistantMessageId: MessageId; finalText: string }> {
+  const text = takeoverFinalText(terminal);
+  const attribution = takeoverModelAttribution(terminal);
+  const createdAt = Date.now();
+  const messageId = createMessageId();
+  const partId = createPartId();
+  const traceContext = state.turnTraceContext;
+  // Synthetic answer, not a model step. `persistCompletedAssistantStep` is intentionally not
+  // reused: it commits `state.modelResponse` (the primary refusal) and the primary step's
+  // `step-finish`/usage, which would attribute the fallback answer to the wrong step. These
+  // primitives match the existing synthetic assistant carriers.
+  await runtime.persistAssistantMessage(
+    messageId,
+    state.currentUserMessageId,
+    createdAt,
+    { completed: createdAt, finish: "stop" },
+    traceContext,
+    attribution,
+  );
+  await runtime.persistPart(
+    {
+      id: partId,
+      sessionID: runtime.sessionId,
+      messageID: messageId,
+      type: "text",
+      text,
+      time: { start: createdAt, end: createdAt },
+    },
+    traceContext,
+  );
+  for (const payload of [
+    { kind: "text_start" as const, delta: "", done: false },
+    { kind: "text_delta" as const, delta: text, done: false },
+    { kind: "text_end" as const, delta: "", done: true },
+  ]) {
+    await runtime.emitModelStreamingEvent(
+      { ...payload, assistantMessageId: messageId, partId },
+      traceContext,
+      state.events,
+    );
+  }
+  recordModelHistoryRound(state);
+  commitTurnRequestEntries(runtime, state.turnRequestState, [
+    createRuntimeAssistantEntry(text, undefined, undefined, attribution ?? undefined),
+  ]);
+  return { assistantMessageId: messageId, finalText: text };
+}
+
+/** The attributed todo item is last when no other pending/in_progress item remains. */
+function hasRemainingTodoWork(todos: readonly TodoItem[], itemIndex: number): boolean {
+  return todos.some(
+    (todo, index) =>
+      index !== itemIndex && (todo.status === "pending" || todo.status === "in_progress"),
+  );
+}
 
 function outcomesFor(runtime: AgentRuntimeInternal): Map<string, CachedOutcome> {
   let map = outcomesByRuntime.get(runtime);
@@ -172,16 +289,17 @@ async function persistOutcome(
 /**
  * Turn-loop gate. Single owner of the takeover decision: events, durable row, idempotency and
  * the continuation reminder all live here; the module only shapes the HTTP request.
- * Returns `true` when the turn must continue with the next model step.
+ * Returns `continue` when the turn must request the next model step, and `finish` when the
+ * fallback outcome is already the turn's final visible assistant answer.
  */
 export async function runUncensoredTakeoverGate(
   this: AgentRuntimeInternal,
   state: RegularTurnLoopState,
   options: { querySource: string; result: RuntimeModelTextResult },
-): Promise<boolean> {
-  if (options.querySource !== "main_turn") return false;
+): Promise<UncensoredTakeoverGateResult> {
+  if (options.querySource !== "main_turn") return { action: "unhandled" };
   const takeover = this.config.uncensoredTakeover;
-  if (!takeover) return false;
+  if (!takeover) return { action: "unhandled" };
   const providerReason = detectRefusal({
     finishReason: options.result.finishReason,
     rawFinishReason: options.result.rawFinishReason ?? state.lastStepDiagnostics?.rawFinishReason,
@@ -214,8 +332,8 @@ export async function runUncensoredTakeoverGate(
         : null
       : null;
   const reason = providerReason ?? textReason;
-  if (!reason) return false;
-  if (!this.sessionStore?.readTodos) return false;
+  if (!reason) return { action: "unhandled" };
+  if (!this.sessionStore?.readTodos) return { action: "unhandled" };
   let todos;
   try {
     todos = await this.sessionStore.readTodos({ sessionID: this.sessionId });
@@ -225,13 +343,23 @@ export async function runUncensoredTakeoverGate(
       event: "uncensored_takeover.todo_read_failed",
       errorMessage: error instanceof Error ? error.message : String(error),
     });
-    return false;
+    return { action: "unhandled" };
   }
   // The current turn's input is authoritative: the message entries may still describe the
   // previous turn at this point, which routed a stale item to the fallback model (one turn late).
   const currentUserText = state.input.trim().length > 0 ? state.input : lastUserText;
   const item = attributeTurnItem(todos, currentUserText, lastAssistantText);
-  if (!item) return false;
+  if (!item) return { action: "unhandled" };
+  // A plain chat turn (no todo list, item equals the whole message) leaves nothing for the main
+  // model after the takeover, so its next step can only repeat the refusal.
+  const wholeUserMessage =
+    todos.length === 0 && item.itemText === truncateItemText(normalizeItemText(currentUserText));
+  // The todo branch needs the main model only when another pending/in_progress item remains.
+  // On the last item the fallback answer is the turn's final text, same as plain chat.
+  const trackedTodoItem = attributeTodoItem(todos);
+  const noRemainingWork =
+    wholeUserMessage ||
+    (trackedTodoItem !== null && !hasRemainingTodoWork(todos, trackedTodoItem.itemIndex));
 
   const taskId = String(this.sessionId);
   const key = takeoverIdempotencyKey(taskId, item.itemText);
@@ -240,9 +368,14 @@ export async function runUncensoredTakeoverGate(
   const existing = cached ?? (await readDurableOutcome(this, taskId, key));
 
   if (existing) {
-    // Duplicate: no second model.refusal, no second spawn/stop, no HTTP. A reminder for an item
-    // already injected in this very turn is skipped, so a refusing main model cannot loop.
-    if (existing.injectedTurnId === state.turnId) return false;
+    // Duplicate: no second model.refusal, no second spawn/stop, no HTTP.
+    // Root cause of the repeated refusal: after the reminder the main model may refuse the same
+    // item again; that refusal is already streamed and persisted. The fallback outcome owns the
+    // final text; the refusal stays in history/metadata but never overrides it.
+    if (existing.resolvedTurnId === state.turnId) {
+      const outcome = await commitTakeoverFinalText(this, state, existing.terminal);
+      return { action: "finish", ...outcome };
+    }
     const reminder = buildTakeoverReminder({
       itemIndex: item.itemIndex,
       terminal: existing.terminal,
@@ -250,9 +383,9 @@ export async function runUncensoredTakeoverGate(
     commitTurnRequestEntries(this, state.turnRequestState, [
       systemReminderAttachmentEntry("uncensored_takeover", reminder),
     ]);
-    outcomes.set(key, { terminal: existing.terminal, injectedTurnId: state.turnId });
+    outcomes.set(key, { terminal: existing.terminal, resolvedTurnId: state.turnId });
     state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
-    return true;
+    return { action: "continue" };
   }
 
   const agentId = takeoverAgentId(taskId, item.itemIndex, item.itemText);
@@ -359,9 +492,15 @@ export async function runUncensoredTakeoverGate(
   );
   await this.appendEvent(stoppedEvent, state.turnTraceContext);
   state.events.push(stoppedEvent);
-  outcomes.set(key, { terminal, injectedTurnId: state.turnId });
+  outcomes.set(key, { terminal, resolvedTurnId: state.turnId });
 
-  if (state.turnAbortSignal.aborted) return true;
+  if (state.turnAbortSignal.aborted) return { action: "continue" };
+  if (noRemainingWork) {
+    // Nothing remains for the main model, so the fallback outcome is the turn's final answer.
+    // This also breaks the refusal -> reminder -> refusal chain at its source.
+    const outcome = await commitTakeoverFinalText(this, state, terminal);
+    return { action: "finish", ...outcome };
+  }
   commitTurnRequestEntries(this, state.turnRequestState, [
     systemReminderAttachmentEntry(
       "uncensored_takeover",
@@ -369,5 +508,5 @@ export async function runUncensoredTakeoverGate(
     ),
   ]);
   state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
-  return true;
+  return { action: "continue" };
 }

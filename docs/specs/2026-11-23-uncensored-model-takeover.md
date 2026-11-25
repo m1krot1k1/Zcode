@@ -72,6 +72,18 @@ single-provider поля `apiUrl`/`apiKey`/`models` во всех раздела
 - Условия настоящего отказа не меняются: маркер в обычном тексте, finish reason
   `refusal`/`content-filter` и текстовые формы по-прежнему запускают takeover.
 
+## Ревизия 2026-11-25: финальный текст хода
+
+- Если ответ основной модели — отказ, а пункт обработан резервной моделью, последним
+  видимым текстом хода становится результат резервной модели. Отказ основной модели
+  сохраняется в истории и метаданных (`model.refusal`, durable-строка takeover), но не
+  подменяет результат перехвата.
+- Финальный текст пишет единственный владелец — гейт перехвата; второго пути записи нет.
+  Подробные правила, сценарии и порядок событий — в разделах «Финальный текст хода» и
+  «Порядок событий».
+- `TurnComplete.response` и `TurnResult.response` в этом случае равны финальному тексту,
+  чтобы клиентские фолбэки не дописывали отказ основной модели после ответа резервной.
+
 ## Ревизия 2026-11-24: mirror-провайдер и точечный список
 
 - CLI-подхват использует `providerId` mirror-провайдера из обычного реестра и вызывает
@@ -108,7 +120,11 @@ single-provider поля `apiUrl`/`apiKey`/`models` во всех раздела
 5. Результат виден в чате отдельным агентом/подпрогоном с моделью, статусом и полным
    выводом.
 6. После терминального события перехвата основная модель продолжает оставшиеся пункты.
-   Уже завершённые пункты не повторяются.
+   Уже завершённые пункты не повторяются. Исключение — ход без оставшихся пунктов:
+   отказ по всему пользовательскому сообщению (plain chat), отказ по последнему
+   `pending`/`in_progress` пункту todo и повторный отказ от уже обработанного пункта
+   завершают ход финальным текстом из результата резервной модели (раздел «Финальный
+   текст хода»).
 7. При отсутствии отказа поведение и поток событий не меняются побайтово.
 
 ## Не входит
@@ -135,7 +151,7 @@ single-provider поля `apiUrl`/`apiKey`/`models` во всех раздела
 | Секрет | `ICredentialService` (Host) | ключ `code-intelligence:<workspaceKey>:uncensored-api-key` |
 | Host-обработчик | `packages/services/src/zcode-agent/zcodeAgentServiceSessionMethods.ts` (семейство) | строгий reverse-RPC `uncensored/getConfig`, без логирования ключа |
 | Порт CLI | новый `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/uncensored-config.ts` (по образцу `createProviderRuntimeHeadersPort`, `provider-runtime-headers.ts:20-107`) | один запрос конфигурации на попытку перехвата, таймаут, без ретраев |
-| Runtime | `apps/zcode-cli/packages/core/src/runtime/methods/turn-stop.ts` (`finishModelStepWithoutToolCalls`) | детект отказа, контекст, попытки, события, продолжение |
+| Runtime | `apps/zcode-cli/packages/core/src/runtime/methods/turn-stop.ts` (`finishModelStepWithoutToolCalls`) и `uncensored-takeover-gate.ts` | детект отказа, контекст, попытки, события, продолжение и единственный владелец финального assistant-текста |
 | Стор идемпотентности | новый `UncensoredTakeoverStore` в CLI session store (владелец `SessionStorePort`, тот же модуль, что todo) | `begin/complete`, дедупликация по ключу |
 | Проекция чата | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection-subagents.ts` | перенос нового поля `takeover` в строку `subagent` |
 | UI настроек | `packages/ui/src/settings/model-provider-section/*` и новый `UncensoredModelSettings` | форма, сохранение, статусы |
@@ -472,17 +488,28 @@ complete(input: { sessionId: string; agentId: string; status: ...; modelId: stri
 
 Порядок внутри гейта:
 
-1. Проверить условия раздела «Определение отказа»; иначе вернуть обычное поведение.
-2. Прочитать todo, атрибутировать пункт; иначе обычное поведение.
-3. Записать и отправить `model.refusal`.
-4. Вызвать `UncensoredTakeoverStore.begin`; при `duplicate` перейти к шагу 8.
-5. Отправить `SubagentSpawned` со статусом `running`.
-6. Получить конфигурацию через `UncensoredConfigPort`; выполнить попытки по порядку.
-7. Отправить `SubagentStopped` с терминальным статусом и полным выводом; вызвать
+1. Проверить условия раздела «Определение отказа»; иначе вернуть `unhandled`.
+2. Прочитать todo, атрибутировать пункт; иначе `unhandled`.
+3. Вычислить `wholeUserMessage`: todo-список пуст, а пункт совпадает со всем текущим
+   user-сообщением после нормализации и обрезки. Для todo-пункта вычислить
+   `hasRemainingTodoWork`: есть ли другой пункт в статусе `pending`/`in_progress`.
+4. Если для ключа уже есть терминальный результат (кэш или durable):
+   - результат получен в этом же ходе — записать финальный текст из него и вернуть
+     `finish` (duplicate);
+   - иначе добавить synthetic reminder и вернуть `continue` (duplicate без событий и
+     HTTP).
+5. Записать и отправить `model.refusal`.
+6. Вызвать `UncensoredTakeoverStore.begin`; при `duplicate` перейти к шагу 4.
+7. Отправить `SubagentSpawned` со статусом `running`.
+8. Получить конфигурацию через `UncensoredConfigPort`; выполнить попытки по порядку.
+9. Отправить `SubagentStopped` с терминальным статусом и полным выводом; вызвать
    `complete`.
-8. Добавить синтетическую запись запроса с `role: "user"` (system-reminder) и вернуть
-   `"continue"`, чтобы `runRegularTurnLoop` (`turn-loop.ts:111`) запланировал следующий
-   model step.
+10. Если ход отменён — вернуть `continue` (существующая обработка abort).
+11. Если `wholeUserMessage` или у todo-пункта нет других `pending`/`in_progress` пунктов —
+    записать финальный assistant-текст и вернуть `finish`.
+12. Иначе (остаются другие пункты) добавить синтетическую запись запроса с `role: "user"`
+    (system-reminder) и вернуть `continue`, чтобы `runRegularTurnLoop` (`turn-loop.ts:111`)
+    запланировал следующий model step.
 
 Синтетическая запись (английский текст, константа):
 
@@ -502,9 +529,76 @@ If no items remain, reply with a short final summary.
   auto-repair в `turn-stop.ts:233-239`.
 - Основная модель остаётся единственным писателем todo и сама помечает пункт
   `completed`; движок статус не меняет.
-- Если оставшихся пунктов нет, следующий model step всё равно запрашивается и просит
-  короткое резюме.
-- Turn не завершается: `"continue"` сохраняет тот же active turn и счётчик model steps.
+- Если другие `pending`/`in_progress` пункты остаются, следующий model step запрашивается
+  и после их выполнения просит короткое резюме.
+- В ветке продолжения `"continue"` сохраняет тот же active turn и счётчик model steps.
+- Если других пунктов нет, следующий model step не запрашивается: финальный текст
+  пишется сразу, ход завершается (`finish`); статус пункта движок не меняет.
+
+## Финальный текст хода
+
+Продуктовое правило: если шаг основной модели завершился отказом, а пункт передан
+резервной модели, последним видимым assistant-текстом хода является результат резервной
+модели. Отказ основной модели остаётся отдельным assistant-сообщением в истории и в
+метаданных (`model.refusal` и durable-строка takeover); он не удаляется и не
+перезаписывается, но и не становится финальным текстом вместо результата перехвата.
+
+Владелец решения — `runUncensoredTakeoverGate`; второго пути записи финального текста
+нет. Гейт возвращает один из результатов: `unhandled` (не перехват), `continue`
+(следующий model step) или `finish` с `finalText` и `assistantMessageId` (финальный
+текст уже записан, ход завершается).
+
+Выбор текста:
+
+- `done` с непустым `output` — `output` дословно (маркер отказа уже удалён
+  оркестратором);
+- `refused`, `error`, `no-enabled-models` или пустой `output` — явный текст ошибки, а не
+  отказ основной модели: `Fallback model <provider>/<model> did not produce an answer
+  (status: <status>[: <reason>]).`, а при отсутствии модели —
+  `No fallback model produced an answer (status: <status>[: <reason>]).`.
+
+Запись финального текста:
+
+- один синтетический assistant-message на ход: `text` part, `completed`, `finish: "stop"`;
+- тот же текст отправляется существующими `ModelStreaming` событиями
+  `text_start`/`text_delta`/`text_end`, поэтому live-UI и cold replay показывают один и тот
+  же последний текст;
+- `step-finish`, usage и cost не пишутся: это не model step, а синтетический ответ.
+  `persistCompletedAssistantStep` здесь не переиспользуется: он коммитит
+  `state.modelResponse` (отказ) и диагностику основного шага, а не результат резервной
+  модели;
+- `TurnComplete.response` и `TurnResult.response` равны финальному тексту (результату
+  резервной модели), потому что TUI и legacy web-проекция используют их как
+  authoritative-фолбэк видимого ответа; в `turn-stop.ts` перед завершением хода
+  `state.modelResponse` заменяется на этот текст. Отказ основного шага остаётся в истории
+  отдельным assistant-сообщением;
+- повторной записи и повторных takeover-событий при `duplicate` нет.
+
+Атрибуция:
+
+- assistant-message и запись в turn request получают `providerId`/`modelId` из
+  `TakeoverTerminal`, то есть модель, выдавшую результат, а не основную модель;
+- если терминальное состояние не содержит модели (`no-enabled-models`, ошибка
+  конфигурации), сообщение пишется без `providerId`/`modelId`; подставлять основную
+  модель запрещено. Это выражается существующими необязательными полями
+  `AssistantMessageInfo`, без смены провайдеров и моделей.
+
+Ветки:
+
+- plain chat: todo-список пуст, атрибутированный пункт совпадает со всем текущим
+  user-сообщением после `normalizeItemText` и `truncateItemText` — финальный текст
+  пишется сразу, следующий model step не запрашивается;
+- duplicate: пункт уже обработан в этом же ходе (system-reminder уже добавлен), а
+  основная модель повторно отказалась от него — финальный текст берётся из сохранённого
+  терминального результата; `model.refusal`, spawn/stop и HTTP не повторяются;
+- todo: остаются другие `pending`/`in_progress` пункты, кроме обработанного — финальный
+  текст не пишется, добавляется system-reminder и ход продолжается; если других пунктов
+  нет — финальный текст пишется сразу, следующий model step не запрашивается. Статус
+  пункта движок не меняет: todo остаётся единственной зоной записи основной модели.
+
+Завершение финальным текстом не запускает auto-repair и Stop hooks этого шага: решение
+об ответе уже принято. Ожидающие guide переводятся в обычный fallback
+`guide.noToolBoundary`, active turn становится не steerable.
 
 ## Порядок событий
 
@@ -514,6 +608,10 @@ ModelComplete(stopReason = отказ)          // существующее со
   -> SubagentSpawned(takeover.status=running, agentId детерминирован)
   -> HTTP attempts (0..N, последовательно)
   -> SubagentStopped(takeover.status=done|refused|error|no-enabled-models, полный output)
+  -> final assistant message + ModelStreaming(text_*)  // plain chat / duplicate
+  -> TurnComplete                           // финальный текст уже виден
+
+todo-ветка вместо final assistant message:
   -> synthetic system-reminder entry        // не событие, часть следующего запроса
   -> следующий ModelRequest
 ```
@@ -521,6 +619,9 @@ ModelComplete(stopReason = отказ)          // существующее со
 - Запись выполняется до emit там, где это уже делает существующий код (`appendEvent`).
 - Между `model.refusal` и `SubagentSpawned` нет других событий.
 - При `duplicate` шаги 3-7 не повторяются: ни `model.refusal`, ни новые spawn/stop.
+  Вместо них один раз пишется финальный assistant-текст из сохранённого результата и ход
+  завершается; повторный отказ основной модели остаётся в истории, но не становится
+  последним текстом.
 - При отсутствии отказа порядок и состав событий не меняются.
 
 ## Chat sub-run и проекция
@@ -662,7 +763,7 @@ Test intent: unit-тест хранилища (round-trip, восстановл�
 
 ### 2. Десять пунктов, отказ по одному
 
-Given todo из 10 пунктов, 9 выполняет основная модель, на одном провайдер возвращает
+Given todo из 10 пунктов, ни один ещё не выполнен; на одном провайдер возвращает
 `finishReason: "refusal"`; включена одна нецензурированная модель.
 When шаг завершается без tool calls.
 Then создаётся один `model.refusal`, одна карточка takeover, ровно один HTTP-вызов
@@ -700,6 +801,38 @@ Then чат показывает отдельный sub-run с `takeover.modelId
 Test intent: тест live-проекции, интеграционный replay-тест холодной гидратации и тест
 идемпотентности стора. Сохранение `takeover` при холодном replay — требуемое поведение
 и реализационная задача ветки runtime/projection; доказательство даёт replay-тест.
+
+### 5. Финальный текст при перехвате
+
+Given основная модель отказалась от пункта, включена резервная модель.
+When перехват завершается.
+Then последним видимым и персистентным assistant-текстом хода является результат
+резервной модели; исходный отказ остаётся в истории и метаданных.
+
+Сценарии:
+
+- одиночный отказ + ответ: plain chat, резервная модель вернула `done` с непустым
+  `output`; ход завершается сразу, финальный assistant-message равен `output`, отказ
+  основной модели остаётся предыдущим сообщением; следующего model step нет;
+- два отказа подряд: после reminder основная модель повторно отказалась от того же
+  пункта; новых `model.refusal`/spawn/stop и HTTP нет, финальный assistant-message равен
+  сохранённому `output` резервной модели и записан один раз;
+- ошибка резервной модели: терминальный `error`; финальный текст — явный текст ошибки
+  со статусом и причиной, а не отказ основной модели; карточка takeover имеет статус
+  `error`;
+- пустой ответ резервной модели: терминальный `error`, `reason: "empty-response"`;
+  финальный текст — явный текст ошибки, а не отказ основной модели;
+- todo с другими пунктами: остаются другие `pending`/`in_progress` пункты; финальный
+  assistant-message не пишется, добавляется system-reminder, ход продолжается; отказ и
+  карточка takeover сохранены;
+- todo без оставшихся пунктов: обработанный пункт — последний `pending`/`in_progress`;
+  финальный assistant-message равен результату резервной модели, system-reminder не
+  добавляется, следующего model step нет; статус пункта движок не меняет.
+
+Test intent: focused runtime-тесты гейта с fake runtime: последний persisted `text` part,
+атрибуция `providerId`/`modelId`, отсутствие повторных событий/HTTP и сохранение отказа в
+`turnRequestState.entries`; для ветки `finish` проверяется `finalText`, из которого
+формируется `TurnComplete.response`.
 
 ## Приложение: проверки и коммит (не критерий приёмки)
 

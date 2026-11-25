@@ -24,7 +24,7 @@ function harness() {
     } as SessionEvent);
   apply(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200000 });
   apply(SessionEventType.TurnStarted, { turnNumber: 1, input: "item", messageId: "user-1" });
-  return apply;
+  return { apply, projection };
 }
 
 const runningTakeover = {
@@ -40,7 +40,7 @@ const runningTakeover = {
 
 describe("uncensored takeover projection", () => {
   it("carries the fallback answer into the subagent row", () => {
-    const apply = harness();
+    const { apply } = harness();
 
     apply(SessionEventType.SubagentSpawned, {
       agentId: "agent-1",
@@ -77,6 +77,64 @@ describe("uncensored takeover projection", () => {
       status: "done",
       output: "delegated answer",
     });
+  });
+
+  it("keeps the fallback answer as the last visible assistant text", () => {
+    const { apply, projection } = harness();
+    const stream = (assistantMessageId: string, partId: string, text: string) => {
+      apply(SessionEventType.ModelStreaming, {
+        assistantMessageId,
+        partId,
+        kind: "text_start",
+        delta: "",
+        done: false,
+      });
+      apply(SessionEventType.ModelStreaming, {
+        assistantMessageId,
+        partId,
+        kind: "text_delta",
+        delta: text,
+        done: false,
+      });
+      apply(SessionEventType.ModelStreaming, {
+        assistantMessageId,
+        partId,
+        kind: "text_end",
+        delta: "",
+        done: true,
+      });
+    };
+
+    // The main model's refusal is streamed and persisted as its own assistant message.
+    stream("assistant-primary", "part-primary", "I can't help with that.");
+    apply(SessionEventType.SubagentSpawned, {
+      agentId: "agent-1",
+      agentType: "uncensored-takeover",
+      status: "running",
+      description: "Uncensored takeover for task item 0",
+      takeover: runningTakeover,
+    });
+    apply(SessionEventType.SubagentStopped, {
+      agentId: "agent-1",
+      agentType: "uncensored-takeover",
+      status: "completed",
+      durationMs: 1200,
+      takeover: {
+        ...runningTakeover,
+        providerName: "nano-gpt",
+        modelId: "deepseek-uncensored",
+        status: "done",
+        output: "Fallback answer.",
+      },
+    });
+    // The gate writes the fallback outcome as a new synthetic assistant message.
+    stream("assistant-fallback", "part-fallback", "Fallback answer.");
+
+    const assistantTexts = projection.snapshot.rows.window.flatMap((row) =>
+      row.kind === "assistantText" ? [row.text] : [],
+    );
+    expect(assistantTexts).toEqual(["I can't help with that.", "Fallback answer."]);
+    expect(assistantTexts.at(-1)).toBe("Fallback answer.");
   });
 
   describe("refusal marker in streaming text", () => {

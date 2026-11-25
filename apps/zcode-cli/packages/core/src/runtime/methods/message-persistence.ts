@@ -302,7 +302,11 @@ export async function persistAssistantMessage(
       }
     | undefined,
   traceContext: TraceContext,
-  model?: Model,
+  /**
+   * `null` marks a synthetic answer with no model attribution; `undefined` keeps the legacy
+   * session-selection fallback; a value attributes the message to that provider/model.
+   */
+  model?: Pick<Model, "providerId" | "modelId"> | null,
 ): Promise<void> {
   this.latestConversationMessageId = messageID;
   this.latestAssistantMessageId = messageID;
@@ -312,8 +316,13 @@ export async function persistAssistantMessage(
   if (!this.sessionStore) return;
   const selection = this.getSessionModelSelection();
   const providerId =
-    model?.providerId ?? (selection && createModelProviderId(selection.providerId));
-  const modelId = model?.modelId ?? (selection && createModelId(selection.modelId));
+    model === null
+      ? undefined
+      : (model?.providerId ?? (selection && createModelProviderId(selection.providerId)));
+  const modelId =
+    model === null
+      ? undefined
+      : (model?.modelId ?? (selection && createModelId(selection.modelId)));
   const tokens = update?.tokens ?? emptyTokenUsageInfo();
   // 成本只在消息写入路径计算一次；step-finish 与 assistant message 共用同一价格函数。
   const cost = calculateRuntimeModelCost(modelId, update?.tokens);

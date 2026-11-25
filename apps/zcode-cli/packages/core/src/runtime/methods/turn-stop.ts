@@ -175,6 +175,35 @@ export async function persistOutputTokenLimitErrorCarrier(
   );
 }
 
+/**
+ * Single exit for a turn whose visible answer is already persisted. Drains pending guides to
+ * the authoritative queue, closes steering and fixes the fork boundary on that assistant
+ * message, so the final visible text and the stable boundary cannot diverge.
+ */
+async function completeTurnWithFinalAssistant(
+  runtime: AgentRuntimeInternal,
+  state: RegularTurnLoopState,
+  assistantMessageId: MessageId,
+): Promise<"break"> {
+  if (state.activeTurn) {
+    // FIFO barrier / reservation 阻止本轮安全 inline 时，仍保留既有权威 queue 兜底；
+    // 正常可消费的 text-only guide 已作为 user-role continuation drain。
+    await runtime.fallbackPendingGuidesToQueue({
+      activeTurn: state.activeTurn,
+      events: state.events,
+      reasonCode: "guide.noToolBoundary",
+      traceContext: state.turnTraceContext,
+    });
+    state.activeTurn.steerable = false;
+  }
+  state.stableProductStartMessageId = state.currentUserMessageId;
+  state.stableBoundaryAssistantMessageId = assistantMessageId;
+  state.turnMachine = new TurnMachineImpl(
+    state.turnMachine.complete(state.modelResponse, "success"),
+  );
+  return "break";
+}
+
 export async function finishModelStepWithoutToolCalls(
   this: AgentRuntimeInternal,
   state: RegularTurnLoopState,
@@ -199,31 +228,22 @@ export async function finishModelStepWithoutToolCalls(
   if (state.automationCreateLimitReached) {
     // 上限命中后只允许这一轮纯文本说明。跳过 guide 和 Stop hook，避免它们再次
     // 触发模型请求，把已经关闭工具的 turn 延长成新的恢复循环。
-    if (state.activeTurn) {
-      await this.fallbackPendingGuidesToQueue({
-        activeTurn: state.activeTurn,
-        events: state.events,
-        reasonCode: "guide.noToolBoundary",
-        traceContext: state.turnTraceContext,
-      });
-      state.activeTurn.steerable = false;
-    }
-    state.stableProductStartMessageId = state.currentUserMessageId;
-    state.stableBoundaryAssistantMessageId = options.assistantMessageId;
-    state.turnMachine = new TurnMachineImpl(
-      state.turnMachine.complete(state.modelResponse, "success"),
-    );
-    return "break";
+    return await completeTurnWithFinalAssistant(this, state, options.assistantMessageId);
   }
   // Uncensored takeover: a provider refusal of one attributed task item is handed to a
-  // fallback model and the main model continues the remaining items in the same turn.
-  if (
-    await runUncensoredTakeoverGate.call(this, state, {
-      querySource: options.querySource,
-      result: options.result,
-    })
-  ) {
-    return "continue";
+  // fallback model. Remaining items continue the same turn; a plain-chat or repeated refusal
+  // finishes with the fallback outcome as the turn's final visible answer.
+  const takeover = await runUncensoredTakeoverGate.call(this, state, {
+    querySource: options.querySource,
+    result: options.result,
+  });
+  if (takeover.action === "continue") return "continue";
+  if (takeover.action === "finish") {
+    // TUI 和旧 web 投影把 TurnComplete.response / TurnResult.response 当作可见回复的权威兜底。
+    // 合成的最终文本已持久化并流式发送；response 必须指向它而不是主模型拒答，否则客户端会在
+    // 备用模型答案之后再次追加拒答。
+    state.modelResponse = takeover.finalText;
+    return await completeTurnWithFinalAssistant(this, state, takeover.assistantMessageId);
   }
   // Этап 4.5b: `enableAutoRepairLoop` — единственная точка, где решение «ход
   // завершён» ещё можно отменить. Проверки идут после персиста assistant, но до
@@ -273,23 +293,7 @@ export async function finishModelStepWithoutToolCalls(
     state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
     return "continue";
   }
-  if (state.activeTurn) {
-    // FIFO barrier / reservation 阻止本轮安全 inline 时，仍保留既有权威 queue 兜底；
-    // 正常可消费的 text-only guide 已在上方作为 user-role continuation drain。
-    await this.fallbackPendingGuidesToQueue({
-      activeTurn: state.activeTurn,
-      events: state.events,
-      reasonCode: "guide.noToolBoundary",
-      traceContext: state.turnTraceContext,
-    });
-  }
-  if (state.activeTurn) state.activeTurn.steerable = false;
   // assistant completed 只代表 model step 收口；Stop hook 仍可能继续同一 product turn。
   // 只有最终 break 才把它交给 turn.ts 在 goal accounting 后持久化最终 boundary。
-  state.stableProductStartMessageId = state.currentUserMessageId;
-  state.stableBoundaryAssistantMessageId = options.assistantMessageId;
-  state.turnMachine = new TurnMachineImpl(
-    state.turnMachine.complete(state.modelResponse, "success"),
-  );
-  return "break";
+  return await completeTurnWithFinalAssistant(this, state, options.assistantMessageId);
 }
