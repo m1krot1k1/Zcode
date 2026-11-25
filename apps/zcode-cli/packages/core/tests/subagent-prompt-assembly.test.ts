@@ -257,7 +257,7 @@ describe("subagent provider-visible prompt assembly", () => {
     expect(systems[1]).toContain("Shell: Git Bash");
     expect(systems[1]).toContain("OS Version: Darwin 24.3.0");
     expect(systems[1]).toContain(
-      "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc.",
+      "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc",
     );
 
     const text = allMessageText(childRequests[0]);
@@ -719,7 +719,7 @@ describe("subagent provider-visible prompt assembly", () => {
       expect(systems[1]).toContain("Agent threads always have their cwd reset between bash calls");
       expect(systems[1]).toContain("Working directory: /repo/current");
       expect(systems[1]).toContain(
-        "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc.",
+        "You are powered by the model named anthropic/claude-haiku-4-5-20251001-cc",
       );
       expect(allMessageText(request)).not.toContain(
         "You help the user with software engineering work in the current workspace.",

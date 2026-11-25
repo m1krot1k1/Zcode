@@ -8,6 +8,7 @@ export function rebuildContextPrefix(
   runtime: AgentRuntimeInternal,
   options: { model?: Model; turnRequestEntries?: readonly RuntimeMessageEntry[] } = {},
 ): readonly RuntimeMessageEntry[] {
+  const model = options.model ?? runtime.contextModel;
   if (!runtime.contextBuilder || !runtime.contextInitialized) {
     // 首轮 context 初始化前，model/outputStyle/language 变更只能刷新同步预览，
     // 不能把 config-only fallback envInfo 写入 config.envInfo。否则真实 context source
@@ -18,7 +19,7 @@ export function rebuildContextPrefix(
         runtime.memoryRoot,
         {
           memoryIndexContent: runtime.memoryIndexContent,
-          model: options.model,
+          model,
           persistEnvInfo: false,
         },
       );
@@ -32,7 +33,7 @@ export function rebuildContextPrefix(
   runtime.contextBuilder = runtime.createContextBuilderFromSnapshot(
     contextSnapshot,
     runtime.memoryRoot,
-    { memoryIndexContent: runtime.memoryIndexContent, model: options.model },
+    { memoryIndexContent: runtime.memoryIndexContent, model },
   );
   const effectiveContextResult = runtime.contextBuilder.build();
   const contextEntries = buildContextHistoryEntries(effectiveContextResult);

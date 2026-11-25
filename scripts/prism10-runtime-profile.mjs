@@ -37,7 +37,7 @@ const COMPACT_CODING_CORE = [
   "1. Read the repository before changing it. Follow existing patterns, public entrypoints, and AGENTS.md.",
   "2. Make the smallest coherent change. Do not expand scope, permissions, or dependencies.",
   "3. For behavior changes, update the owning spec and add a focused regression check when the repository requires it.",
-  "4. Verify at the layer you changed: targeted test, typecheck, lint, build, or a real UI run.",
+  "4. Check the changed layer with the closest real verification: targeted test, typecheck, lint, build, or a real UI run.",
   "5. Never claim a command, test, commit, or agent report succeeded without its observed result.",
   "6. If blocked, stop and report the exact blocker, evidence, and the next available checkpoint.",
   "",
@@ -59,8 +59,8 @@ const COMPACT_CODING_CORE = [
   "- Do not perform irreversible, public, costly, or production actions without the required approval.",
   "- Keep secrets out of logs and artifacts.",
   "",
-  "# Done",
-  "Finish the requested scope end-to-end; do not stop after a first slice or a partial fix. Implement, verify, repair, and only then report. If part is genuinely blocked, name the blocker, evidence, and next checkpoint.",
+  "# Delivery",
+  "Carry the requested scope through implementation and verification; do not stop after a first slice or a partial fix. If part is genuinely blocked, name the blocker, evidence, and next checkpoint.",
   "Report what changed, what was verified, what was not, and residual risk.",
 ].join("\n");
 

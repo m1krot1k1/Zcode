@@ -626,7 +626,7 @@ export function createDefaultSubagentPort(
                     const mirroredEvent = mirrorSubagentToolEvent(event, {
                       agentId: request.agentId,
                       agentType: request.agentType,
-                      background: request.background,
+                      background: this.runtimeTaskRegistry.get(request.agentId)?.isBackgrounded ?? request.background,
                       childSessionId: request.sessionId,
                       description: request.description,
                       parentSessionId: this.sessionId,

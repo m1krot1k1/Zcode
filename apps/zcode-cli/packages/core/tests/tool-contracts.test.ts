@@ -112,6 +112,7 @@ const SOURCE_DERIVED_READ_SHORT_DESCRIPTION = [
   // Описание приоритезирует диапазон: измерено 89 427 токенов на tool-вызов, и чтение
   // целых крупных файлов — основная причина роста контекста на каждом следующем шаге.
   "- Prefer a targeted range: pass offset and limit when a CodeIndex/Grep hit already shows the lines you need. Reading a whole large file keeps costing context on every later step of the turn and is the main reason turns get slow.",
+  "- A ranged result states the full Read line count; never treat the number of displayed lines as the file's total. Use a full-file count when the exact count matters.",
   "- Read the whole file only when you must edit it and no narrower range suffices. When several ranges are needed, issue the Reads in one parallel batch instead of widening one of them.",
   "- Results are returned using cat -n format, with line numbers starting at 1",
   "- Reads images (PNG, JPG, …) and presents them visually.",
@@ -465,11 +466,18 @@ describe("tool contract declarations", () => {
         "- IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.",
         "- `timeout` is in milliseconds: default 120000, max 600000.",
         "- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.",
+        "- Independent read-only Bash commands in the same batch run concurrently; commands with side effects are serialized as a safety barrier.",
         "",
         "# Git",
         "- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.",
         "- Use the `gh` CLI for GitHub operations (PRs, issues, API).",
         "- Commit or push only when the user asks. If on the default branch, branch first.",
+        "",
+        "# Sandbox",
+        "- The result reports the actual `sandbox.mode` and whether filesystem/network isolation was applied. The user configures the session policy; do not assume isolation is always active.",
+        "- `bwrap` (Linux) or `seatbelt` (macOS) means the workspace is writable and other paths are read-only. `degraded` means the mechanism is unavailable: the workspace is still enforced, but filesystem writes outside it are not blocked — check `sandbox.reason`.",
+        "- `none` means the user disabled the sandbox: commands run with normal user permissions, and `GH_CONFIG_DIR`, `SSH_AUTH_SOCK` and other environment variables are inherited.",
+        "- When a sandbox is active, do not try to escape it. If a command legitimately needs a path outside the workspace under an active sandbox, ask the user.",
       ].join("\n"),
     );
     expect(byName.get("Skill")?.description).toContain("available skills");
@@ -1132,11 +1140,18 @@ describe("tool contract declarations", () => {
         "- IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.",
         "- `timeout` is in milliseconds: default 120000, max 600000.",
         "- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.",
+        "- Independent read-only Bash commands in the same batch run concurrently; commands with side effects are serialized as a safety barrier.",
         "",
         "# Git",
         "- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.",
         "- Use the `gh` CLI for GitHub operations (PRs, issues, API).",
         "- Commit or push only when the user asks. If on the default branch, branch first.",
+        "",
+        "# Sandbox",
+        "- The result reports the actual `sandbox.mode` and whether filesystem/network isolation was applied. The user configures the session policy; do not assume isolation is always active.",
+        "- `bwrap` (Linux) or `seatbelt` (macOS) means the workspace is writable and other paths are read-only. `degraded` means the mechanism is unavailable: the workspace is still enforced, but filesystem writes outside it are not blocked — check `sandbox.reason`.",
+        "- `none` means the user disabled the sandbox: commands run with normal user permissions, and `GH_CONFIG_DIR`, `SSH_AUTH_SOCK` and other environment variables are inherited.",
+        "- When a sandbox is active, do not try to escape it. If a command legitimately needs a path outside the workspace under an active sandbox, ask the user.",
       ].join("\n"),
     );
 
@@ -1521,7 +1536,7 @@ describe("tool contract declarations", () => {
     });
     expect(calls[0]?.request).not.toHaveProperty("acceptanceCriteria");
     expect(calls[0]?.request).not.toHaveProperty("runInBackground");
-    expect(calls[0]?.options).toEqual({ signal: abortSignal, model: activeModel });
+    expect(calls[0]?.options).toEqual({ signal: abortSignal, model: activeModel, allowBackground: true });
   });
 
   it("returns a configuration error when task graph dispatch is unavailable", async () => {

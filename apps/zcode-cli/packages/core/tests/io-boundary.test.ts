@@ -11,6 +11,8 @@ const allowedNetworkBoundaryFiles = new Set([
   // 通过调用方注入的 fetch 执行正式 Adapter 网络边界。
   "packages/adapters/src/model/model-option-map-fetch.ts",
   "packages/adapters/src/model/provider-endpoint-routing-fetch.ts",
+  // 只调用调用方注入的 fetch 来放置 cache breakpoint，本身不发起网络请求。
+  "packages/adapters/src/model/cache-control/breakpoint-placer.ts",
   // 只读 node:http 的 IncomingMessage 类型，把已到手的响应交给 http/index.ts 与 proxy-fetch.ts，不发请求。
   "packages/adapters/src/network/incoming-response.ts",
   "packages/adapters/src/network/proxy-fetch.ts",
@@ -19,6 +21,9 @@ const allowedNetworkBoundaryFiles = new Set([
   "packages/cli/src/provider-runtime-env.ts",
   // WebFetch 工具只读取 node:http 状态码，真实请求由注入的执行端口完成。
   "packages/core/src/tool/handlers/webfetch.ts",
+  // Takeover transport boundary: the runtime injects fetch in production; the global fetch
+  // is only the legacy raw-path fallback when no adapter fetch is wired.
+  "packages/core/src/runtime/uncensored-takeover/http.ts",
   // OpenCode adapter поднимает loopback-only HTTP server для SDK; исходящих запросов
   // к внешним хостам здесь нет, traffic проксируется через network/proxy-fetch.ts.
   "packages/adapters/src/model/opencode-session.ts",

@@ -166,6 +166,7 @@ export function createContextBuilderFromSnapshot(
   memoryRoot?: string,
   options: { memoryIndexContent?: string; model?: Model; persistEnvInfo?: boolean } = {},
 ): ContextBuilder {
+  if (options.model) this.contextModel = options.model;
   const envInfo = snapshot.envInfo;
   // 同步 preview / config-only fallback 会构造 unknown envInfo。
   // 这类临时值不能写回 config，否则首轮真实 context source 会把它当作显式 envInfo，

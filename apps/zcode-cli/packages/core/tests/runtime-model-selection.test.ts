@@ -431,6 +431,7 @@ describe("AgentRuntime model selection event", () => {
                       description: "Explore source",
                       prompt: "Explore the source.",
                       subagent_type: "Explore",
+                      run_in_background: false,
                     },
                   },
                   {
@@ -440,6 +441,7 @@ describe("AgentRuntime model selection event", () => {
                       description: "Search source",
                       prompt: "Search the source.",
                       subagent_type: "Code Search",
+                      run_in_background: false,
                     },
                   },
                 ],

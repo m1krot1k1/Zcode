@@ -83,6 +83,7 @@ describe("AgentRuntime trace propagation", () => {
     expect(result.traceId).toBe(traceContext.traceId);
     expect(new Set(events.map((event) => event.traceId))).toEqual(new Set([traceContext.traceId]));
     expect(events.map((event) => event.type)).toEqual([
+      SessionEventType.ModelSelected,
       SessionEventType.TurnStarted,
       SessionEventType.ModelRequest,
       SessionEventType.ModelComplete,
@@ -1465,10 +1466,11 @@ describe("AgentRuntime trace propagation", () => {
       type: event.type,
     }));
     expect(liveEvents).toEqual([
-      { sequenceNumber: 1, type: SessionEventType.TurnStarted },
-      { sequenceNumber: 2, type: SessionEventType.ModelRequest },
-      { sequenceNumber: 3, type: SessionEventType.ModelComplete },
-      { sequenceNumber: 4, type: SessionEventType.TurnComplete },
+      { sequenceNumber: 1, type: SessionEventType.ModelSelected },
+      { sequenceNumber: 2, type: SessionEventType.TurnStarted },
+      { sequenceNumber: 3, type: SessionEventType.ModelRequest },
+      { sequenceNumber: 4, type: SessionEventType.ModelComplete },
+      { sequenceNumber: 5, type: SessionEventType.TurnComplete },
     ]);
     expect(liveEvents).toEqual(storedEvents);
   });
@@ -1521,6 +1523,7 @@ describe("AgentRuntime trace propagation", () => {
       { assistantMessageId: expect.any(String), delta: "", done: true, kind: "finish" },
     ]);
     expect(events.map((event) => event.type)).toEqual([
+      SessionEventType.ModelSelected,
       SessionEventType.TurnStarted,
       SessionEventType.ModelRequest,
       SessionEventType.ModelStreaming,
@@ -1536,9 +1539,9 @@ describe("AgentRuntime trace propagation", () => {
     expect(appendSummary?.context).toMatchObject({
       event: "event_store.appended.summary",
       eventCount: 3,
-      firstSessionEventSequenceNumber: 3,
+      firstSessionEventSequenceNumber: 4,
       flushReason: "low_frequency_event",
-      lastSessionEventSequenceNumber: 5,
+      lastSessionEventSequenceNumber: 6,
       module: "core.runtime",
       payloadKinds: {
         finish: 1,

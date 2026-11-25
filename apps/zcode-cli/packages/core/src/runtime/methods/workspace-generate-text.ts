@@ -70,8 +70,10 @@ export async function testModelConnectivity(
   const baseModel = createRuntimeModel(this, { selection: input.selection, scope: "workspace" });
   // 连接探测不需要生成正文；复用辅助生成的 5,000 预算会等待多余推理和输出。
   // 独立限制为 1 Token，仍使用最低公开档位，不改变其他辅助调用的预算。
+  // 没有 reasoning 档位的模型（部分测试/兼容 provider）不应在这里崩溃。
+  const reasoningLevel = baseModel.optionSpecs.reasoningLevel?.values[0];
   const model = baseModel.bind({
-    reasoningLevel: baseModel.optionSpecs.reasoningLevel.values[0]!,
+    ...(reasoningLevel === undefined ? {} : { reasoningLevel }),
     maxOutputTokens: CONNECTIVITY_PROBE_MAX_OUTPUT_TOKENS,
   });
   const traceContext = createChildTraceContext(options?.traceContext ?? this.rootTraceContext, {

@@ -1284,7 +1284,9 @@ describe("subagent tool event projection", () => {
     );
 
     expect(mirroredScheduled?.sessionId).toBe(sessionId);
-    expect(mirroredScheduled?.turnId).toBe(parentEvents[0]?.turnId);
+    expect(mirroredScheduled?.turnId).toBe(
+      parentEvents.find((event) => event.type === SessionEventType.TurnStarted)?.turnId,
+    );
     expect(mirroredScheduled?.payload).toMatchObject({
       agentId: spawnedAgentId,
       childSessionId,

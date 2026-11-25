@@ -73,7 +73,7 @@ describe("Write model-result harness", () => {
       `File created successfully at: ${file}${WRITE_STORAGE_SUFFIX}`,
     );
     expect(fs.files.get(file)).toBe("alpha\nbeta\n");
-    expect(fs.readPaths).toEqual([file]);
+    expect(fs.readPaths).toEqual([]);
   });
 
   it("documents update model content for existing nonempty files", async () => {
@@ -309,15 +309,23 @@ describe("Write model-result harness", () => {
 
     expect(fs.files.get(file)).toBe("now filled\n");
     expect(result.output).toEqual({
-      type: "create",
+      type: "update",
       filePath: file,
       content: "now filled\n",
-      structuredPatch: [],
-      originalFile: null,
+      structuredPatch: [
+        {
+          lines: ["+now filled"],
+          newLines: 1,
+          newStart: 1,
+          oldLines: 0,
+          oldStart: 1,
+        },
+      ],
+      originalFile: "",
       userModified: false,
     });
     expect(asModelText(result.modelContent)).toBe(
-      `File created successfully at: ${file}${WRITE_STORAGE_SUFFIX}`,
+      `The file ${file} has been updated successfully.${WRITE_STORAGE_SUFFIX}`,
     );
   });
 

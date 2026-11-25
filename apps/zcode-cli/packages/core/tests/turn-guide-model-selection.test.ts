@@ -79,6 +79,7 @@ describe("inline Guide model selection", () => {
       rootTraceContext: { traceId: "guide-trace" },
       sessionStore: { saveSessionEntry: vi.fn(async () => undefined) },
       sessionId: "guide-session",
+      sessionRowCreated: true,
       setSessionModelSelection: vi.fn((selection: ModelSelection) => {
         sessionModelSelection = structuredClone(selection);
       }),

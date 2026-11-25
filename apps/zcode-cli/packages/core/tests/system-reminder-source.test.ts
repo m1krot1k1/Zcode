@@ -47,6 +47,7 @@ const EXPECTED_SOURCES = [
   "swarm_results",
   "swarm_unavailable",
   "code_index_hint",
+  "uncensored_takeover",
 ] as const satisfies readonly SystemReminderSource[];
 
 function expectExactlyOneSystemReminderWrapper(reminder: string): void {
@@ -97,6 +98,7 @@ describe("system reminder source descriptors", () => {
       "swarm_results",
       "swarm_unavailable",
       "code_index_hint",
+      "uncensored_takeover",
     ]);
 
     const groupedSources = [

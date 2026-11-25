@@ -2012,7 +2012,7 @@ describe("Explore subagent", () => {
       expect(childToolNames).toContain(mcpToolName);
       expect(connectConfiguredServers).toHaveBeenCalledTimes(1);
       expect(status).not.toHaveBeenCalled();
-      expect(listTools).not.toHaveBeenCalled();
+      expect(listTools).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -3318,7 +3318,7 @@ describe("Explore subagent", () => {
     expect(childRequests).toHaveLength(1);
     expect(connectConfiguredServers).toHaveBeenCalledTimes(1);
     expect(status).not.toHaveBeenCalled();
-    expect(listTools).not.toHaveBeenCalled();
+    expect(listTools).toHaveBeenCalledTimes(1);
   });
 
   it("does not require an MCP server for a parent-denied subagent tool", async () => {
@@ -4723,7 +4723,7 @@ describe("Explore subagent", () => {
         querySource: "subagent",
       },
       {
-        maxOutputTokens: 20_000,
+        maxOutputTokens: 8_000,
         querySource: "compact",
       },
       {
@@ -4735,7 +4735,7 @@ describe("Explore subagent", () => {
         querySource: "subagent",
       },
       {
-        maxOutputTokens: 20_000,
+        maxOutputTokens: 8_000,
         querySource: "compact",
       },
     ]);

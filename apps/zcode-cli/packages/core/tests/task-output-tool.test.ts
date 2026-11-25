@@ -1153,11 +1153,14 @@ describe("TaskOutput tool", () => {
     );
     expect(missingField.success).toBe(false);
     expect(missingField.error?.message).toBe("Tool input failed inputSchema validation");
-    expect(missingField.modelContent).toBe(
+    expect(missingField.modelContent).toContain(
       [
         "<tool_use_error>InputValidationError: TaskOutput failed due to the following issue:",
-        "The required parameter `task_id` is missing</tool_use_error>",
+        "The required parameter `task_id` is missing",
       ].join("\n"),
+    );
+    expect(missingField.modelContent).toContain(
+      'Tool "TaskOutput" input failed schema validation after automatic self-repair.',
     );
 
     for (const testCase of [

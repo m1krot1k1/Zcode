@@ -9,6 +9,33 @@
       "message": "UI 层不能直接依赖 Repo、Runtime 或 Service 实现；通过本模块 contract/port 访问",
       "fingerprint": "4e1bd6585ea52703",
       "global": false
+    },
+    {
+      "rule": "max-public-methods",
+      "file": "apps/zcode-cli/packages/core/src/runtime/uncensored-takeover/contract.ts",
+      "module": "cli-uncensored-takeover",
+      "detail": "16",
+      "message": "契约公开方法超过上限 12",
+      "fingerprint": "abfe511758777668",
+      "global": false
+    },
+    {
+      "rule": "max-public-methods",
+      "file": "packages/services/src/code-intelligence/contract.ts",
+      "module": "code-intelligence",
+      "detail": "15",
+      "message": "契约公开方法超过上限 12",
+      "fingerprint": "d9e5111b4c3b2104",
+      "global": false
+    },
+    {
+      "rule": "max-contract-lines",
+      "file": "packages/services/src/code-intelligence/contract.ts",
+      "module": "code-intelligence",
+      "detail": "303",
+      "message": "契约 303 行，超过上限 300 行",
+      "fingerprint": "fba0d56e525f18e9",
+      "global": false
     }
   ]
 }

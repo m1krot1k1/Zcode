@@ -100,7 +100,12 @@ describe("AgentRuntime background Memory extraction", () => {
     });
     await runtime.drainMemoryExtractions();
 
-    expect(createdSelections).toEqual(["account:zai-offpeak-idle-plan/GLM-5.3-Flash"]);
+    // The post-turn extraction gets a fresh background handle from the completed Turn Active
+    // Model selection; the point is that it must not resolve Session Selection again.
+    expect(createdSelections).toEqual([
+      "account:zai-offpeak-idle-plan/GLM-5.3-Flash",
+      "account:zai-offpeak-idle-plan/GLM-5.3-Flash",
+    ]);
   });
 
   it("projects unsupported historical video before an Extraction request", async () => {

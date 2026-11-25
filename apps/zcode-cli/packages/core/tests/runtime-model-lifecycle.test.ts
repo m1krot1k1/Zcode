@@ -63,6 +63,9 @@ describe("Agent Runtime Model lifecycle", () => {
         mode: "build",
         modelSelection: createTestModelSelection(createTestModelSelection("test/model-a")),
         workingDirectory: "/tmp/zcode-submission-model-lifecycle",
+        autoReasoningLevel: false,
+        memory: { enabled: false },
+        titleGeneration: { enabled: false },
       },
       {
         eventStore: createTestSessionEventStore(),
@@ -144,6 +147,9 @@ describe("Agent Runtime Model lifecycle", () => {
         mode: "build",
         modelSelection: createTestModelSelection(createTestModelSelection("test/session-model")),
         workingDirectory: "/tmp/zcode-temporary-execution-model-lifecycle",
+        autoReasoningLevel: false,
+        memory: { enabled: false },
+        titleGeneration: { enabled: false },
       },
       {
         eventStore,
@@ -251,6 +257,9 @@ describe("Agent Runtime Model lifecycle", () => {
         mode: "build",
         modelSelection: createTestModelSelection(createTestModelSelection("test/model-a")),
         workingDirectory: "/tmp/zcode-model-lifecycle",
+        autoReasoningLevel: false,
+        memory: { enabled: false },
+        titleGeneration: { enabled: false },
       },
       {
         eventStore: createTestSessionEventStore(),
@@ -340,6 +349,9 @@ describe("Agent Runtime Model lifecycle", () => {
         mode: "build",
         modelSelection: createTestModelSelection(createTestModelSelection("test/model-a")),
         workingDirectory: "/tmp/zcode-model-context-before-capture",
+        autoReasoningLevel: false,
+        memory: { enabled: false },
+        titleGeneration: { enabled: false },
       },
       {
         eventStore: createTestSessionEventStore(),
@@ -554,6 +566,9 @@ describe("Agent Runtime Model lifecycle", () => {
         mode: "build",
         modelSelection: createTestModelSelection(createTestModelSelection("test/model-a")),
         workingDirectory: "/tmp/zcode-model-lifecycle-reactive",
+        autoReasoningLevel: false,
+        memory: { enabled: false },
+        titleGeneration: { enabled: false },
       },
       {
         eventStore: createTestSessionEventStore(),

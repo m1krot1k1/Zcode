@@ -6,6 +6,7 @@ import {
   type MessageWithParts,
   type SessionId,
   type UsageStorePort,
+  type FileSystemPort,
 } from "@zcode/contracts";
 import { appendEvent } from "../src/runtime/methods/events.js";
 import { createToolRegistry } from "../src/tool/registry.js";
@@ -849,6 +850,24 @@ describe("maxTurns limit", () => {
     let parentCalls = 0;
     let childCalls = 0;
     let childSessionId: SessionId | undefined;
+    const fileSystemPort = {
+      stat: async ({ path }: { path: string }) => ({
+        path,
+        kind: "file" as const,
+        sizeBytes: 7,
+      }),
+      readTextFileRange: async ({ path }: { path: string }) => ({
+        path,
+        content: "fixture",
+        encoding: "utf8" as const,
+        bytesRead: 7,
+        sizeBytes: 7,
+        truncated: false,
+        startLine: 1,
+        lineCount: 1,
+        totalLines: 1,
+      }),
+    } as unknown as FileSystemPort;
     const runtime = createTestAgentRuntime(
       parentSessionId,
       {
@@ -870,6 +889,7 @@ describe("maxTurns limit", () => {
       },
       {
         eventStore,
+        fileSystemPort,
         modelFactory: createTestModelFactory({
           async generateText(_request, observation) {
             if (observation.invocationContext?.metadata?.querySource === "subagent") {
@@ -884,7 +904,7 @@ describe("maxTurns limit", () => {
                     {
                       id: `child-read-${childCalls}`,
                       name: "Read",
-                      input: { file_path: "/missing-max-turns-fixture" },
+                      input: { file_path: "/tmp/zcode-max-turns-child-unlimited/fixture.txt" },
                     },
                   ],
                   usage,
@@ -929,7 +949,6 @@ describe("maxTurns limit", () => {
     );
 
     const result = await runtime.executeTurn("delegate to the unlimited child");
-
     expect(childCalls).toBe(7);
     expect(result.response).toBe("parent done");
     expect(childSessionId).toBeDefined();

@@ -328,14 +328,18 @@ function contextWith(
 function createRealFileSystemPort(): FileSystemPort {
   return {
     async stat(request) {
-      const info = await stat(request.path);
-      return {
-        path: request.path,
-        kind: info.isDirectory() ? "directory" : "file",
-        sizeBytes: info.size,
-        mtimeMs: info.mtimeMs,
-        revision: revisionFor(info),
-      };
+      try {
+        const info = await stat(request.path);
+        return {
+          path: request.path,
+          kind: info.isDirectory() ? "directory" : "file",
+          sizeBytes: info.size,
+          mtimeMs: info.mtimeMs,
+          revision: revisionFor(info),
+        };
+      } catch (error) {
+        throw toFileSystemError(error, request.path);
+      }
     },
     async readTextFile(request) {
       const content = await readFile(request.path, "utf8").catch((error: unknown) => {

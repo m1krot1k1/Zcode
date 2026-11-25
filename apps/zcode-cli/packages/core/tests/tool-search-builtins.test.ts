@@ -12,12 +12,15 @@ import { createTestRuntimeModel } from "./test-runtime-model.js";
 
 const RESIDENT_NAMES = [
   "Agent",
+  "ApplyPatch",
   "AskUserQuestion",
   "Bash",
   "CodeIndex",
   "Edit",
   "Glob",
   "Grep",
+  "InstallCapability",
+  "MultiEdit",
   "Read",
   "ReportFindings",
   "Skill",

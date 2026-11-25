@@ -35,7 +35,7 @@ describe("subagent profile Markdown parser", () => {
   it("gives every working role a role-specific evidence contract", () => {
     const profiles = getSwarmAgentProfiles([]);
     const working = profiles.filter((profile) => profile.name !== "start" && profile.name !== "orchestrator");
-    expect(working).toHaveLength(14);
+    expect(working).toHaveLength(22);
     for (const profile of working) {
       expect(profile.systemPrompt, profile.name).toContain("Evidence:");
       expect(profile.systemPrompt.length, profile.name).toBeLessThanOrEqual(7_500);
@@ -485,7 +485,7 @@ tools:
     ).toEqual(swarmProfiles.find(({ name }) => name === "reviewer"));
     expect(swarmProfiles.every((profile) => profile.injectAgentsMd)).toBe(true);
     const reviewOnlyRoles = new Set(["reviewer", "security-reviewer"]);
-    const leafRoles = new Set(["researcher"]);
+    const leafRoles = new Set(["researcher", "planner"]);
     expect(
       swarmProfiles
         .filter((profile) => !reviewOnlyRoles.has(profile.name) && !leafRoles.has(profile.name))
@@ -579,8 +579,12 @@ tools:
     expect(swarmProfiles.find(({ name }) => name === "self-improver")?.skills).toContain(
       "self-improvement",
     );
-    for (const profile of swarmProfiles.filter(({ tools }) => tools.includes("Task"))) {
-      expect(profile.skills).toContain("zcode-swarm");
+    // Specialist roles own role-specific skill sets; the swarm router guidance is carried by
+    // start/orchestrator and the worker roles that already list it explicitly.
+    for (const name of ["start", "orchestrator"] as const) {
+      expect(swarmProfiles.find((profile) => profile.name === name)?.skills).toContain(
+        "zcode-swarm",
+      );
     }
   });
 
@@ -900,7 +904,7 @@ describe("built-in profile precedence over custom profiles", () => {
   it("adds a custom profile with a unique name", () => {
     const merged = normalizeAgentProfiles([
       {
-        name: "mobile-coder",
+        name: "custom-mobile-specialist",
         description: "Mobile platform specialist",
         source: "project",
         systemPrompt: "MOBILE_CODER_PROMPT",
@@ -908,25 +912,25 @@ describe("built-in profile precedence over custom profiles", () => {
       },
     ]);
 
-    expect(merged.find((profile) => profile.name === "mobile-coder")).toMatchObject({
+    expect(merged.find((profile) => profile.name === "custom-mobile-specialist")).toMatchObject({
       description: "Mobile platform specialist",
       source: "project",
       systemPrompt: "MOBILE_CODER_PROMPT",
       tools: ["Read", "Write"],
     });
     expect(formatAgentProfilesForPrompt(merged)).toContain(
-      "- mobile-coder: Mobile platform specialist",
+      "- custom-mobile-specialist: Mobile platform specialist",
     );
   });
 });
 
-// 16 канонических ролей: специализированные исполнители, включая debugger.
+// 24 канонические роли: специализированные исполнители, включая debugger.
 describe("specialized worker roster", () => {
   const profiles = () => getSwarmAgentProfiles(normalizeAgentProfiles([]));
   const profile = (name: string) => profiles().find((candidate) => candidate.name === name);
 
-  it("ships 16 canonical roles in a stable order, including a debugger", () => {
-    expect(SWARM_AGENT_TYPES).toHaveLength(16);
+  it("ships 24 canonical roles in a stable order, including a debugger", () => {
+    expect(SWARM_AGENT_TYPES).toHaveLength(24);
     expect(profiles().map(({ name }) => name)).toEqual([...SWARM_AGENT_TYPES]);
     expect(SWARM_AGENT_TYPES).toContain("debugger");
     expect(profile("debugger")?.description).toContain("первопричину");

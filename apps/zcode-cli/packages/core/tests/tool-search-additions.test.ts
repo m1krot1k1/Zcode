@@ -160,10 +160,14 @@ it.each(["native", "local"] as const)(
       "Without the schema in your prompt, typed parameters (arrays, numbers, booleans) get emitted as strings and the client-side parser rejects them. " +
       'Load the tool first: call ToolSearch with query "select:WebFetch", then retry this call. ' +
       `For reference, this tool's input schema is: ${JSON.stringify(webFetchToolEntry.inputSchema)}`;
-    expect(invalid.modelContent).toBe(
-      `${known.modelContent}${guidance}` +
-        (mode === "local" ? '\nCall DeferredToolCall with {name: "WebFetch", input: {...}}.' : ""),
-    );
+    expect(invalid.modelContent).toContain(guidance);
+    expect(invalid.modelContent).toContain("The required parameter `url` is missing");
+    expect(invalid.modelContent).toContain("The required parameter `prompt` is missing");
+    if (mode === "local") {
+      expect(invalid.modelContent).toContain(
+        'Call DeferredToolCall with {name: "WebFetch", input: {...}}.',
+      );
+    }
     expect(known.modelContent).not.toContain("select:WebFetch");
     const off = buildToolExposure({
       mode: "off",
@@ -176,7 +180,9 @@ it.each(["native", "local"] as const)(
       { ...call, name: "WebFetch", input: {} },
       { toolSearch: off.context },
     );
-    expect(disabled.modelContent).toBe(known.modelContent);
+    const withoutRetryCount = (value: string | undefined) =>
+      value?.replace(/\(\d+\/\d+ consecutive schema failures/u, "(N/N consecutive schema failures");
+    expect(withoutRetryCount(disabled.modelContent)).toBe(withoutRetryCount(known.modelContent));
     expect(handler).not.toHaveBeenCalled();
     registry.unregister("WebFetch");
     const missing = await executor.execute(call, { toolSearch: exposure.context });

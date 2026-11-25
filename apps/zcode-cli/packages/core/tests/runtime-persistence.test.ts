@@ -4471,6 +4471,7 @@ describe("AgentRuntime session persistence", () => {
       sessionId,
       {
         mode: "plan",
+        autoReasoningLevel: false,
         modelSelection: createTestModelSelection(defaultModel),
         titleGeneration: {
           modelSelection: createTestModelSelection(defaultModel),

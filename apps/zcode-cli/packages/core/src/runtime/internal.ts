@@ -1,6 +1,7 @@
 import { PermissionService, ToolScheduler } from "./deps.js";
 import type {
   Logger,
+  Model,
   ModelSelection,
   EventReducer,
   MessageId,
@@ -110,6 +111,8 @@ export interface AgentRuntimeInternal
   dynamicWorkflowToolsActivated: boolean;
   dynamicWorkflowActivationSource?: DynamicWorkflowActivationSource;
   contextBuilder: ContextBuilder | null;
+  /** Model used by the last accepted context snapshot; config-only rebuilds reuse it. */
+  contextModel?: Model;
   contextInitialized: boolean;
   contextSourceSnapshot?: ContextSourceSnapshot;
   latestContextBuildResult?: ContextBuildResult;

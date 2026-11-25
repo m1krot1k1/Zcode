@@ -269,6 +269,8 @@ export const ptySessionToolEntry: ToolEntry = {
     sideEffectScope: "system",
     riskLevel: "medium",
     needsApproval: true,
+    // The schema is large and the tool is rarely needed; keep it behind ToolSearch.
+    shouldDefer: true,
   },
   handler: ptySessionHandler,
   inputSchema: PtySessionInputJsonSchema,

@@ -3862,8 +3862,10 @@ describe("AgentRuntime manual compact", () => {
       outputReserveTokens: 21_000,
       threshold: 94_000,
     });
+    // Microcompact uses the documented 90% ratio of the auto-compact threshold:
+    // floor(94_000 * 0.9) = 84_600.
     expect(microcompactLog).toMatchObject({
-      thresholdTokens: 80_000,
+      thresholdTokens: 84_600,
     });
   });
 

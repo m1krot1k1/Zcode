@@ -622,7 +622,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                       input: {
                         description: "Grandchild alpha one",
                         prompt: `Grandchild alpha one: read ${fixturePath} and report ${markers.alpha}.`,
-                        subagent_type: "researcher",
+                        subagent_type: "implementer",
                       },
                     },
                     {
@@ -631,7 +631,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                       input: {
                         description: "Grandchild alpha two",
                         prompt: `Grandchild alpha two: read ${fixturePath} and report ${markers.alpha}.`,
-                        subagent_type: "researcher",
+                        subagent_type: "implementer",
                       },
                     },
                   ],
@@ -656,7 +656,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                       input: {
                         description: "L4 alpha leaf",
                         prompt: `Grandchild alpha level 4: read ${fixturePath} and report ${markers.alpha}.`,
-                        subagent_type: "researcher",
+                        subagent_type: "implementer",
                       },
                     },
                   ],
@@ -854,7 +854,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
       expect(new Set(codeIndexQueries), JSON.stringify(toolEvents)).toEqual(new Set(["status"]));
       expect(nestedRoleRequests).toHaveLength(3);
       for (const nestedRequest of nestedRoleRequests) {
-        expect(nestedRequest.system).toMatch(/Ты (?:оркестратор|исследователь|тест-инженер) ZCode/u);
+        expect(nestedRequest.system).toMatch(/Ты (?:оркестратор|исследователь|тест-инженер|инженер-исполнитель|implementer) ZCode/u);
         expect(nestedRequest.tools).toContain("Read");
         expect(nestedRequest.tools).toContain("CodeIndex");
         expect(nestedRequest.tools).toContain("Task");
@@ -1288,7 +1288,7 @@ describe("swarm planner to real AgentRuntime child sessions", () => {
                       prompt: `Continue the serial capability probe at ${nextDescription}.`,
                       // Router-роль не может вызывать другой router; цепочку продолжает
                       // обычная worker-роль с Task, чтобы проверять именно рекурсию Task.
-                      subagent_type: "researcher",
+                      subagent_type: "implementer",
                     },
                   },
                 ],

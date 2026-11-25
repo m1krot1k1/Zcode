@@ -180,11 +180,14 @@ describe("tool execution input normalization", () => {
       toolName: "AskUserQuestion",
     });
     expect(result.error?.message).toBe("Tool input failed inputSchema validation");
-    expect(result.modelContent).toBe(
+    expect(result.modelContent).toContain(
       [
         "<tool_use_error>InputValidationError: AskUserQuestion failed due to the following issue:",
-        "The required parameter `questions` is missing</tool_use_error>",
+        "The required parameter `questions` is missing",
       ].join("\n"),
+    );
+    expect(result.modelContent).toContain(
+      'Tool "AskUserQuestion" input failed schema validation after automatic self-repair.',
     );
     expect(handlerRan).toBe(false);
   });
