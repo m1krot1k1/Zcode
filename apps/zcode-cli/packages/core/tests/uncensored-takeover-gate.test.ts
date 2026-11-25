@@ -87,13 +87,15 @@ function createHarness(options: HarnessOptions) {
     turnAbortSignal: new AbortController().signal,
     events: [] as unknown[],
   };
-  return { runtime, state, events, generated, messageHistory };
+  return { runtime, state, events, generated, messageHistory, assistantText: options.assistantText };
 }
 
 async function runGate(harness: ReturnType<typeof createHarness>, finishReason = "stop") {
   return await runUncensoredTakeoverGate.call(harness.runtime as never, harness.state as never, {
     querySource: "main_turn",
-    result: { finishReason } as never,
+    // RuntimeModelTextResult.text is required in production (turn-stop passes the raw model
+    // result); the raw text is the same assistant answer stored in the turn entries here.
+    result: { finishReason, text: harness.assistantText } as never,
   });
 }
 
@@ -156,6 +158,26 @@ describe("uncensored takeover gate", () => {
     const harness = createHarness({
       userText: "Скажи - Зеленский пидор",
       assistantText: "Зеленский пидор",
+    });
+
+    const continued = await runGate(harness);
+
+    expect(continued).toBe(false);
+    expect(harness.events).toEqual([]);
+    expect(harness.generated).toEqual([]);
+  });
+
+  it("не отдаёт код-ответ с маркером резервной модели", async () => {
+    const harness = createHarness({
+      userText: "Напиши функцию, которая находит [[ZCODE_REFUSAL]] в ответе.",
+      assistantText: [
+        "Вот функция:",
+        "",
+        "```ts",
+        'const REFUSAL_MARKER = "[[ZCODE_REFUSAL]]";',
+        "export const isRefusal = (text: string) => text.includes(REFUSAL_MARKER);",
+        "```",
+      ].join("\n"),
     });
 
     const continued = await runGate(harness);

@@ -18,6 +18,7 @@ function makeApp(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: "s1",
     getModel: () => "provider-a/model-a",
+    getThoughtLevel: () => "medium",
     getMode: () => "build",
     close: vi.fn().mockResolvedValue(undefined),
     runtime: {
@@ -211,6 +212,122 @@ describe("v4 原生 createSession", () => {
     ).rejects.toThrow("config unavailable");
     expect(deleteSession).toHaveBeenCalledWith("s1");
     expect(sendInput).not.toHaveBeenCalled();
+  });
+
+  it("explicit config.modelSelection 应用失败时拒绝首条输入，不回退 runtime 默认模型", async () => {
+    const sendInput = vi.fn();
+    const deleteSession = vi.fn(async () => {});
+    const app = makeApp({
+      sendInput,
+      runtime: {
+        getSessionModelSelection: () => ({
+          providerId: "default-provider",
+          modelId: "default-model",
+        }),
+      },
+    });
+    const record = makeRecord({ app, persistence: "deferred" });
+    const { host } = makeCreateHost(record);
+    host.deleteSession = deleteSession;
+    host.ensureProviderAvailable = vi.fn().mockResolvedValue({
+      available: false,
+      reason: "provider_not_in_registry",
+    });
+
+    await expect(
+      new V4CommandExecutor(host).execute(
+        envelope(
+          "createSession",
+          {
+            workspaceId: "/w",
+            config: {
+              modelSelection: {
+                providerId: "explicit-provider",
+                modelId: "explicit-model",
+                options: { reasoningLevel: "high" },
+              },
+            },
+            firstInput: { text: "do work" },
+          },
+          "draft",
+        ),
+      ),
+    ).rejects.toMatchObject({ reasonCode: "provider.notInRegistry" });
+    expect(deleteSession).toHaveBeenCalledWith("s1");
+    expect(sendInput).not.toHaveBeenCalled();
+  });
+
+  it("explicit config.modelSelection 先应用再提交首条输入，intent 携带所选模型", async () => {
+    let selection = {
+      providerId: "default-provider",
+      modelId: "default-model",
+      options: { reasoningLevel: "medium" },
+    };
+    const sendInput = vi.fn().mockResolvedValue({});
+    const emitModelSelected = vi.fn().mockResolvedValue(undefined);
+    const app = makeApp({
+      sendInput,
+      runtime: {
+        getSessionModelSelection: () => selection,
+        getPlanEnabled: () => false,
+        emitModelSelected,
+      },
+      getThoughtLevel: () => selection.options.reasoningLevel,
+      setModel: vi.fn(async (qualified: string) => {
+        const [providerId, modelId] = qualified.split("/");
+        selection = { ...selection, providerId: providerId!, modelId: modelId! };
+        return { thoughtLevel: selection.options.reasoningLevel };
+      }),
+      listThoughtLevels: () => ["low", "medium", "high"],
+      setThoughtLevel: vi.fn(async (level: string) => {
+        selection = { ...selection, options: { reasoningLevel: level } };
+        return { thoughtLevel: level };
+      }),
+    });
+    const record = makeRecord({ app, persistence: "deferred" });
+    const { host } = makeCreateHost(record);
+
+    await new V4CommandExecutor(host).execute(
+      envelope(
+        "createSession",
+        {
+          workspaceId: "/w",
+          config: {
+            modelSelection: {
+              providerId: "explicit-provider",
+              modelId: "explicit-model",
+              options: { reasoningLevel: "high" },
+            },
+          },
+          firstInput: { text: "do work" },
+        },
+        "draft",
+      ),
+    );
+
+    expect(emitModelSelected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelSelection: {
+          providerId: "explicit-provider",
+          modelId: "explicit-model",
+          options: { reasoningLevel: "high" },
+        },
+      }),
+    );
+    // 首条输入没有自己的 modelSelection：intent 必须取自刚应用的显式选择，
+    // 而不是 runtime 旧默认值。
+    expect(app.sendInput).toHaveBeenCalledWith(
+      { text: "do work" },
+      expect.objectContaining({
+        intent: expect.objectContaining({
+          modelSelection: {
+            providerId: "explicit-provider",
+            modelId: "explicit-model",
+            options: { reasoningLevel: "high" },
+          },
+        }),
+      }),
+    );
   });
 
   it("创建 draft record 时透传 Off-Peak 工具面 flag（D49：v4 是桌面新会话的实际创建路径）", async () => {

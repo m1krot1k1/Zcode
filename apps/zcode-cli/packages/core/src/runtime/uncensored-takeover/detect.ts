@@ -169,17 +169,51 @@ export const TEXT_REFUSAL_REASON = "text-refusal";
  */
 export const REFUSAL_MARKER = "[[ZCODE_REFUSAL]]";
 const REFUSAL_MARKER_PATTERN = /\[\[\s*ZCODE[\s_-]*REFUSAL\s*\]\]/iu;
+const REFUSAL_MARKER_GLOBAL_PATTERN = /\[\[\s*ZCODE[\s_-]*REFUSAL\s*\]\]/giu;
+
+/**
+ * Fenced and inline code are data, not prose: a generated example, test or detector
+ * implementation may contain the protocol token literally. Marker handling must skip those
+ * segments, otherwise a normal code answer is misread as a refusal and its code is corrupted.
+ */
+const CODE_SEGMENT_PATTERN = /```[\s\S]*?(?:```|$)|`[^`\n]*`/gu;
+
+function transformOutsideCode(text: string, transform: (segment: string) => string): string {
+  let result = "";
+  let lastIndex = 0;
+  for (const match of text.matchAll(CODE_SEGMENT_PATTERN)) {
+    const index = match.index ?? 0;
+    result += transform(text.slice(lastIndex, index));
+    result += match[0];
+    lastIndex = index + match[0].length;
+  }
+  return result + transform(text.slice(lastIndex));
+}
+
+/** Keeps prose, replaces code segments with spaces, so marker search never sees code. */
+function maskCodeSegments(text: string): string {
+  let result = "";
+  let lastIndex = 0;
+  for (const match of text.matchAll(CODE_SEGMENT_PATTERN)) {
+    const index = match.index ?? 0;
+    result += text.slice(lastIndex, index);
+    result += " ";
+    lastIndex = index + match[0].length;
+  }
+  return result + text.slice(lastIndex);
+}
 
 export function hasRefusalMarker(text: string): boolean {
-  return REFUSAL_MARKER_PATTERN.test(text);
+  return REFUSAL_MARKER_PATTERN.test(maskCodeSegments(text));
 }
 
 /** Drops the marker line so the user never sees the protocol token in chat. */
 export function stripRefusalMarker(text: string): string {
-  if (!REFUSAL_MARKER_PATTERN.test(text)) return text;
+  if (!hasRefusalMarker(text)) return text;
   // Remove the token itself, never the line: a model may put it before real content.
-  return text
-    .replace(REFUSAL_MARKER_PATTERN, "")
+  return transformOutsideCode(text, (segment) =>
+    segment.replace(REFUSAL_MARKER_GLOBAL_PATTERN, ""),
+  )
     .split("\n")
     .map((line) => line.replace(/\s+$/u, ""))
     .filter((line, index, lines) => line.trim().length > 0 || index === lines.length - 1)

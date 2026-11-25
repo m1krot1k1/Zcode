@@ -67,12 +67,18 @@ async function createSession(
     try {
       await applyRequestedSessionConfig(host, record, payload.config);
     } catch (error) {
-      if (payload.config.mode === "guarded" || payload.firstInput?.mode === "guarded") {
-        // 根因：旧 catch 吞掉模式应用失败后仍提交首轮，Guarded 会静默退化。
+      if (
+        payload.config.mode === "guarded" ||
+        payload.firstInput?.mode === "guarded" ||
+        payload.config.modelSelection !== undefined
+      ) {
+        // 根因：旧 catch 吞掉配置应用失败后仍提交首轮。Guarded 静默退化模式；
+        // 结构化 modelSelection 是显式选型，失败后继续会把首轮交给 runtime 默认模型，
+        // 造成用户看到的模型被静默替换。两者都必须 fail-closed。
         try {
           await host.deleteSession?.(sessionId);
         } catch (closeError) {
-          host.logger?.warn?.("v4 guarded draft cleanup failed", { sessionId, closeError });
+          host.logger?.warn?.("v4 draft config cleanup failed", { sessionId, closeError });
         }
         throw error;
       }

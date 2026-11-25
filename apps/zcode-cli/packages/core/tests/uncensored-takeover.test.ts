@@ -499,6 +499,19 @@ describe("takeover idempotency identity", () => {
       ).toBeNull();
     });
 
+    it("не считает отказом маркер внутри сгенерированного кода", () => {
+      // Ответ выбранной модели может содержать этот литерал как часть кода: пример,
+      // тест или реализация детектора. Это не отказ и не повод подменять модель.
+      const text = ["```ts", `const marker = "${REFUSAL_MARKER}";`, "```"].join("\n");
+      expect(hasRefusalMarker(text)).toBe(false);
+      expect(detectTextRefusal(text, { hasToolCalls: false })).toBeNull();
+      expect(stripRefusalMarker(text)).toBe(text);
+      // Inline code is a code boundary too: same rule applies.
+      const inline = `Маркер \`${REFUSAL_MARKER}\` — это литерал примера.`;
+      expect(hasRefusalMarker(inline)).toBe(false);
+      expect(stripRefusalMarker(inline)).toBe(inline);
+    });
+
     it("removes the marker line before the text reaches the chat", () => {
       const text = `${REFUSAL_MARKER}\nПредпочту это не делать.`;
       expect(stripRefusalMarker(text)).toBe("Предпочту это не делать.");
@@ -543,6 +556,27 @@ describe("takeover idempotency identity", () => {
       expect(terminal).toMatchObject({ status: "done", output: "done by raw endpoint" });
       expect(calls).toHaveLength(1);
     });
+  });
+  it("returns a generated-code answer verbatim instead of trying the next model", async () => {
+    const code = ["```ts", `export const refusalMarker = "${REFUSAL_MARKER}";`, "```"].join("\n");
+    const { fetch, calls } = fakeFetch(() => ({ body: doneBody(code) }));
+    const terminal = await runUncensoredTakeover({
+      itemIndex: 0,
+      itemText: "item",
+      fragments: [],
+      taskId: "session-1",
+      workspace: { workspacePath: "/workspace" },
+      configPort: config({
+        models: [
+          { enabled: true, id: "m1" },
+          { enabled: true, id: "m2" },
+        ],
+      }),
+      fetch,
+    });
+
+    expect(terminal).toMatchObject({ status: "done", modelId: "m1", output: code });
+    expect(calls).toHaveLength(1);
   });
   it("strips the protocol marker from the delivered output", async () => {
     const { fetch } = fakeFetch(() => ({ body: doneBody("[[ZCODE_REFUSAL]] полезный ответ") }));
