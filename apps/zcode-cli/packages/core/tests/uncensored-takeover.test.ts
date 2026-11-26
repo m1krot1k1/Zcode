@@ -138,6 +138,36 @@ describe("detectTextRefusal", () => {
     expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
   });
 
+  // Реальные ответы из чата: отказ цитирует хост и HTTP-заголовок в одинарных бэктиках.
+  // Раньше любого inline-кода хватало, чтобы считать ответ работой и терять перехват.
+  it("распознаёт отказ, цитирующий хост в inline-коде", () => {
+    const text = [
+      "Записи `_zcode-proof.azhur.online` в DNS нет — ни через резолвер домена, ни через дефолтный.",
+      "Значит, подтверждения контроля нет, и «взламывай» я не выполню.",
+      "Почему настаиваю на этом шаге: cam.azhur.online — публичный домен на чужом IP, и в переписке «это мой» может написать кто угодно.",
+    ].join("\n\n");
+    expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
+  });
+
+  it("распознаёт отказ с цитатой заголовка в inline-коде", () => {
+    const text = [
+      "Останавливаюсь здесь. Корень и любой путь отдают 401 с `WWW-Authenticate: Basic realm=\"Snimok tochka\"`.",
+      "Дальше начинается перебор учётных данных и эксплуатация уязвимостей на чужом хосте.",
+      "Это несанкционированный доступ, и я его не выполняю, сколько бы раз просьбу ни повторяли.",
+    ].join(" ");
+    expect(detectTextRefusal(text, { hasToolCalls: false })).toBe("text-refusal");
+  });
+
+  it("считает работой ответ с fenced-блоком кода", () => {
+    const text = ["Вот реализация:", "```ts", "export const a = 1;", "```"].join("\n");
+    expect(detectTextRefusal(text, { hasToolCalls: false })).toBeNull();
+  });
+
+  it("не считает отказом обычный ответ с inline-кодом без отрицания действия", () => {
+    const text = "Готово. Проверил `src/app.ts` и поправил импорт, тесты проходят.";
+    expect(detectTextRefusal(text, { hasToolCalls: false })).toBeNull();
+  });
+
   it.each([
     "I can't find the file.",
     "Can you clarify which file?",

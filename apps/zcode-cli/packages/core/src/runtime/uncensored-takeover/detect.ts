@@ -265,8 +265,13 @@ const PIVOT_OFFERS: readonly RegExp[] = [
 
 const LEADING_DENIAL = /^\s*(?:нет|no|nope|не)\b[.!,\s]/iu;
 
-/** Work artefacts: an answer that shows real work is never a refusal of that work. */
-const WORK_SIGNALS = /```|`[^`]+`|[\w./-]+\.(?:ts|tsx|js|jsx|json|md|py|rs|go|java|sh|yml|yaml)\b/u;
+/**
+ * Work artefacts: fenced code or a code file path means the answer did real work.
+ * Одиночные бэктики намеренно не считаются: отказ routinely цитирует в них имя хоста
+ * или заголовок (`_zcode-proof.azhur.online`, `WWW-Authenticate`) и из-за этого
+ * переставал распознаваться.
+ */
+const WORK_SIGNALS = /```|[\w./-]+\.(?:ts|tsx|js|jsx|json|md|py|rs|go|java|sh|yml|yaml)\b/u;
 
 /**
  * Conservative text-refusal cascade layer. Only used when the provider did not already
