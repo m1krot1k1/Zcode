@@ -193,6 +193,30 @@ test("Push 使用 remote SHA；新分支使用 staging 共同祖先；手动模�
   }
 });
 
+test("新 tag 且 fork 无 staging 时使用 origin/HEAD 作为基线", async (t) => {
+  const { write, git, base, invoke } = await fixture(t);
+  await git("update-ref", "refs/remotes/origin/main", base);
+  await git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+  await write("source.mjs", "export const value = 2;");
+  await git("add", ".");
+  await git("commit", "-m", "tagged");
+  const head = await git("rev-parse", "HEAD");
+  const result = await invoke(["--scope", "push", "--dry-run", "--json"], {
+    ZCODE_PRE_PUSH_STDIN: `refs/tags/v1 ${head} refs/tags/v1 ${zero}`,
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(paths(result), ["a.test.mjs"]);
+});
+
+test("新 tag 且既无 staging 也无 origin/HEAD 时报错", async (t) => {
+  const { git, base, invoke } = await fixture(t);
+  await git("update-ref", "refs/remotes/origin/main", base);
+  const result = await invoke(["--scope", "push", "--dry-run", "--json"], {
+    ZCODE_PRE_PUSH_STDIN: `refs/tags/v1 ${base} refs/tags/v1 ${zero}`,
+  });
+  assert.equal(result.code, 2);
+});
+
 test("无基线、无效基线、非 HEAD 推送均报错；删除 ref 不测试", async (t) => {
   const { invoke, hook, base } = await fixture(t);
   for (const [args, env] of [

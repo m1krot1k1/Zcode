@@ -29,9 +29,18 @@ async function resolvePushBase(root, head, remote) {
 }
 
 async function firstPushBase(root, head) {
-  // 首次推送没有 remote SHA；只使用已确认的集成分支，缺失时严格报错，不猜测其他分支。
-  const staging = await commit(root, "origin/staging");
-  return (await git(root, ["merge-base", staging, head])).toString().trim();
+  // 首次推送没有 remote SHA；origin/staging 是已确认的集成分支，缺失才轮到下一个。
+  // Fork 通常没有 staging：origin/HEAD 是远端登记的默认分支，语义相同。
+  // 否则首个 tag push（remote SHA 全零）会被 pre-push 永久挡住。
+  for (const ref of ["origin/staging", "origin/HEAD"]) {
+    try {
+      const base = await commit(root, ref);
+      return (await git(root, ["merge-base", base, head])).toString().trim();
+    } catch (error) {
+      if (ref === "origin/HEAD") throw error;
+    }
+  }
+  throw new Error("首次推送无法确定基线");
 }
 
 /** 只解析比较基线；改动文件与关联测试全部由 Vitest 官方选择。 */
