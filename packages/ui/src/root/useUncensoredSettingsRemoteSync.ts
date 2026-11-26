@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { logger } from "@/logger.js";
-import { syncUncensoredSettingsToTarget } from "@/lib/uncensoredRemoteSync.js";
+import { syncUncensoredSettingsToTarget } from "@/root/uncensoredRemoteSync.js";
 import type { IServiceAccessor } from "./contract.ts";
 
 /**

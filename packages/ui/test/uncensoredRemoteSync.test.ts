@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ZCodeUncensoredGetConfigResult } from "@zcode/shared";
-import { syncUncensoredSettingsToTarget } from "@/lib/uncensoredRemoteSync.js";
+import { syncUncensoredSettingsToTarget } from "@/root/uncensoredRemoteSync.js";
 
 const UNKNOWN = "\u0000";
 
