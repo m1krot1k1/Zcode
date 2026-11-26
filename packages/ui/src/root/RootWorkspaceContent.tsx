@@ -5,6 +5,7 @@ import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
 import { WorkspaceSettingsLayer } from "@/root/WorkspaceSettingsLayer.js";
+import { useUncensoredSettingsRemoteSync } from "@/root/useUncensoredSettingsRemoteSync.js";
 import type { AppProps } from "@/app-shell/types.js";
 import type { RootProps } from "@/root/types.js";
 import type { IFeedbackService, IServiceAccessor } from "./contract.ts";
@@ -96,6 +97,18 @@ export function RootWorkspaceContent({
   windowsWindowControlsRightPaddingPx,
 }: RootWorkspaceContentProps) {
   const workspaceKey = workspaceIdentity?.trim() || workspaceShellPath;
+
+  // Bugfix: настройки uncensored-провайдеров и их mirror живут только на локальном Host,
+  // а агент remote-workspace читает реестр удалённого Host: без переноса список моделей
+  // в композере пуст, а takeover получает no-enabled-models.
+  useUncensoredSettingsRemoteSync({
+    targetServices: workspaceScopedServices,
+    isRemote:
+      Boolean(workspaceRemoteSessionId) || Boolean(workspaceIdentity?.startsWith("remote:")),
+    remoteSessionId: workspaceRemoteSessionId,
+    workspacePath: workspaceShellPath,
+    workspaceIdentity,
+  });
 
   useEffect(() => {
     logger.info("[RootWorkspaceContent] settings layer visibility changed", {
