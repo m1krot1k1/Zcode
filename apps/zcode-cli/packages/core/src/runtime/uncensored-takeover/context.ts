@@ -57,6 +57,21 @@ export function buildTakeoverMessages(input: {
   ];
 }
 
+/** Суффикс thinking-модели: сервер тратит на reasoning тот же `max_tokens`, что и на ответ. */
+const THINKING_SUFFIX = /:thinking$/iu;
+
+/**
+ * Wire-идентификатор для вызова перехвата. Фиксированный суффикс `:thinking` включает
+ * серверное обдумывание, которое при исчерпании бюджета даёт `finish_reason: "length"` и
+ * пустой `content` — попытка падала в `empty-content` при фактическом ответе в reasoning.
+ * Перехвату нужен готовый ответ, поэтому суффикс снимается только на проводе; атрибуция
+ * (`providerName`, `modelId`) остаётся на исходном id. Теги вида `llama3:8b` не меняются.
+ */
+export function takeoverRequestModelId(modelId: string): string {
+  const stripped = modelId.replace(THINKING_SUFFIX, "");
+  return stripped.length > 0 ? stripped : modelId;
+}
+
 export function buildTakeoverRequestBody(input: {
   modelId: string;
   itemIndex: number;
@@ -64,7 +79,7 @@ export function buildTakeoverRequestBody(input: {
   fragments: readonly TakeoverContextFragment[];
 }): TakeoverRequestBody {
   return {
-    model: input.modelId,
+    model: takeoverRequestModelId(input.modelId),
     messages: buildTakeoverMessages(input),
     max_tokens: TAKEOVER_MAX_TOKENS,
     stream: false,

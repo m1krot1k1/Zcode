@@ -440,7 +440,9 @@ export async function runUncensoredTakeoverGate(
             content: message.content,
           })),
           querySource: "uncensored_takeover",
-          maxOutputTokens: 4096,
+          // Без явного потолка действует объявленный моделью `maxOutputTokens` (иначе —
+          // дефолт резолвера): 4096 обрезал thinking-модель, у которой reasoning съедает
+          // тот же бюджет и ответ уходил в пустой `content`.
         },
         { abortSignal: combined, traceContext: state.turnTraceContext },
       );

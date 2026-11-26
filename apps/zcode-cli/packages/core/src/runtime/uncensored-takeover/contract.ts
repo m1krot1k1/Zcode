@@ -85,7 +85,7 @@ export interface TakeoverChatMessage {
 export interface TakeoverRequestBody {
   model: string;
   messages: [TakeoverChatMessage, TakeoverChatMessage];
-  max_tokens: 4096;
+  max_tokens: 16_384;
   stream: false;
 }
 
@@ -219,5 +219,6 @@ export const TAKEOVER_MAX_ITEM_CHARS = 4_000;
 export const TAKEOVER_MAX_FRAGMENT_CHARS = 4_000;
 export const TAKEOVER_MAX_FRAGMENTS = 3;
 export const TAKEOVER_HTTP_TIMEOUT_MS = 60_000;
-export const TAKEOVER_MAX_TOKENS = 4096 as const;
+/** `max_tokens` включает reasoning: 4096 thinking-модель тратит целиком на него. */
+export const TAKEOVER_MAX_TOKENS = 16_384 as const;
 export const TAKEOVER_REFUSAL_REASONS = ["refusal", "content-filter"] as const;

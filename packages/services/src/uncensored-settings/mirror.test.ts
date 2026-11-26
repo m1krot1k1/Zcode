@@ -69,7 +69,11 @@ describe("uncensored provider mirror", () => {
       expect.objectContaining({
         enabled: true,
         properties: expect.objectContaining({ contextWindow: 1_048_576 }),
-        optionSpecs: expect.objectContaining({ maxOutputTokens: { max: 65_536 } }),
+        optionSpecs: expect.objectContaining({
+          maxOutputTokens: { max: 65_536 },
+          // Thinking-модель не должна тратить бюджет на reasoning в вызове перехвата.
+          reasoningLevel: { values: ["disabled"], map: "{'reasoning_effort': 'none'}" },
+        }),
       }),
       true,
     );

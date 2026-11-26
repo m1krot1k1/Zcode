@@ -13,6 +13,7 @@ import {
   selectContextFragments,
   takeoverAgentId,
   takeoverIdempotencyKey,
+  takeoverRequestModelId,
   UNCENSORED_TAKEOVER_ENTRY_TYPE,
   TAKEOVER_MAX_USER_CONTENT_CHARS,
   type TakeoverFetch,
@@ -261,7 +262,38 @@ describe("takeover request body", () => {
     expect(serialized).not.toContain("error sentinel");
     expect(serialized).not.toContain("write sentinel");
     expect(body.messages[1].content.length).toBeLessThanOrEqual(TAKEOVER_MAX_USER_CONTENT_CHARS);
-    expect(body).toMatchObject({ max_tokens: 4096, model: "m1", stream: false });
+    expect(body).toMatchObject({ max_tokens: 16_384, model: "m1", stream: false });
+  });
+
+  it("strips the :thinking suffix from the wire id only", () => {
+    const thinking = buildTakeoverRequestBody({
+      modelId: "deepseek/x-uncensored:thinking",
+      itemIndex: 0,
+      itemText: "item",
+      fragments: [],
+    });
+    expect(thinking.model).toBe("deepseek/x-uncensored");
+
+    const caseInsensitive = buildTakeoverRequestBody({
+      modelId: "x:Thinking",
+      itemIndex: 0,
+      itemText: "item",
+      fragments: [],
+    });
+    expect(caseInsensitive.model).toBe("x");
+
+    // Ollama-тег — не thinking-суффикс.
+    const tag = buildTakeoverRequestBody({
+      modelId: "llama3:8b",
+      itemIndex: 0,
+      itemText: "item",
+      fragments: [],
+    });
+    expect(tag.model).toBe("llama3:8b");
+  });
+
+  it("keeps the full id for a bare thinking suffix", () => {
+    expect(takeoverRequestModelId(":thinking")).toBe(":thinking");
   });
 
   it("keeps at most three fragments and prioritizes path matches", () => {
@@ -489,6 +521,84 @@ describe("runUncensoredTakeover routing", () => {
     });
     expect(generate).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(0);
+  });
+
+  it("keeps the thinking id for registry lookup while attribution stays original", async () => {
+    const { fetch } = fakeFetch(() => ({ body: doneBody("raw") }));
+    const generate = vi.fn(async () => ({ text: "done", finishReason: "stop" }));
+    const terminal = await runUncensoredTakeover({
+      ...base,
+      configPort: config({
+        providers: [
+          {
+            id: "entry-1",
+            providerId: "mirror-1",
+            name: "Provider 1",
+            apiUrl: "https://p1.test/v1/chat",
+            apiKey: "k1",
+            models: [{ id: "deepseek/x:thinking", enabled: true }],
+          },
+        ],
+      }),
+      generate: { generate },
+      fetch,
+    });
+    // Registry ищет модель по полному id; обдумывание выключает option map.
+    expect(generate.mock.calls[0]?.[0]).toMatchObject({ modelId: "deepseek/x:thinking" });
+    expect(terminal.modelId).toBe("deepseek/x:thinking");
+  });
+
+  it("strips the suffix in the raw body but reports the original id", async () => {
+    const { fetch, calls } = fakeFetch(() => ({ body: doneBody("ok") }));
+    const terminal = await runUncensoredTakeover({
+      ...base,
+      configPort: config({
+        providers: [
+          {
+            id: "entry-1",
+            name: "Provider 1",
+            apiUrl: "https://p1.test/v1/chat",
+            apiKey: "k1",
+            models: [{ id: "deepseek/x:thinking", enabled: true }],
+          },
+        ],
+      }),
+      fetch,
+    });
+    expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({
+      model: "deepseek/x",
+      max_tokens: 16_384,
+    });
+    expect(terminal).toMatchObject({ status: "done", modelId: "deepseek/x:thinking" });
+  });
+
+  it("treats empty content with reasoning as an error, not an answer", async () => {
+    const { fetch } = fakeFetch(() => ({
+      body: JSON.stringify({
+        choices: [
+          {
+            finish_reason: "length",
+            message: { content: "", reasoning: "долго думал и не успел ответить" },
+          },
+        ],
+      }),
+    }));
+    const terminal = await runUncensoredTakeover({
+      ...base,
+      configPort: config({
+        providers: [
+          {
+            id: "entry-1",
+            name: "Provider 1",
+            apiUrl: "https://p1.test/v1/chat",
+            apiKey: "k1",
+            models: [{ id: "deepseek/x:thinking", enabled: true }],
+          },
+        ],
+      }),
+      fetch,
+    });
+    expect(terminal).toMatchObject({ status: "error", reason: "empty-content", output: "" });
   });
 });
 

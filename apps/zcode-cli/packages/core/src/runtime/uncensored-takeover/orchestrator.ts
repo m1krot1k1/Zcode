@@ -80,6 +80,8 @@ export async function runUncensoredTakeover(
       try {
         const generated = await input.generate.generate({
           providerId: provider.providerId,
+          // Thinking-суффикс здесь не снимается: registry ищет модель по полному id.
+          // Серверное обдумывание отключает `reasoning_effort: "none"` из mirror option map.
           modelId: model.id,
           messages: buildTakeoverMessages({
             itemIndex: input.itemIndex,

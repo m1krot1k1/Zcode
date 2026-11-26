@@ -88,6 +88,26 @@ single-provider поля `apiUrl`/`apiKey`/`models` во всех раздела
 - `TurnComplete.response` и `TurnResult.response` в этом случае равны финальному тексту,
   чтобы клиентские фолбэки не дописывали отказ основной модели после ответа резервной.
 
+## Ревизия 2026-11-26: вызов резервной модели без deliberation
+
+- Причина: у thinking-моделей (суффикс `:thinking`) серверный reasoning расходует тот же
+  бюджет вывода, что и ответ. При `max_tokens: 4096` reasoning занимает все токены,
+  провайдер возвращает `finish_reason: "length"` и пустой `message.content`; попытка
+  падает в `error`/`empty-content`, хотя модель фактически рассуждала, а не отказывала.
+- Правило: запрос перехвата не должен включать серверное обдумывание. Mirror-ветка
+  отправляет `reasoning_effort: "none"`; в legacy raw-ветке с wire-идентификатора модели
+  снимается суффикс `:thinking`. Атрибуция (`providerName`, `modelId` в карточке и
+  durable-строке) сохраняет исходный id из конфигурации.
+- Снимается только точный суффикс `:thinking` (регистронезависимо, в конце id); теги вида
+  `llama3:8b` не затрагиваются.
+- Бюджет: raw `max_tokens` поднимается до `16384` как запас для провайдеров, которые
+  обдумывают запрос несмотря на суффикс; mirror-ветка перестаёт жёстко ограничивать вывод
+  `4096` и использует объявленный моделью `maxOutputTokens` (иначе — общий дефолт
+  резолвера), чтобы длинный ответ thinking-модели не обрезался.
+- Reasoning-текст не подставляется вместо ответа: пустой `content` остаётся `error`, а
+  финальный текст — явная ошибка по правилам раздела «Финальный текст хода».
+- Таймаут 60 000 мс и «одна попытка на модель» не меняются.
+
 ## Ревизия 2026-11-24: mirror-провайдер и точечный список
 
 - CLI-подхват использует `providerId` mirror-провайдера из обычного реестра и вызывает
@@ -149,17 +169,17 @@ single-provider поля `apiUrl`/`apiKey`/`models` во всех раздела
 
 ## Владельцы и данные
 
-| Слой | Владелец | Ответственность |
-| --- | --- | --- |
-| Хранилище настроек | новый `packages/services/src/code-intelligence/uncensoredSettings.ts` | `uncensored-settings.json` рядом с индексом, порядок моделей, флаг ключа |
-| Секрет | `ICredentialService` (Host) | ключ `code-intelligence:<workspaceKey>:uncensored-api-key` |
-| Host-обработчик | `packages/services/src/zcode-agent/zcodeAgentServiceSessionMethods.ts` (семейство) | строгий reverse-RPC `uncensored/getConfig`, без логирования ключа |
-| Порт CLI | новый `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/uncensored-config.ts` (по образцу `createProviderRuntimeHeadersPort`, `provider-runtime-headers.ts:20-107`) | один запрос конфигурации на попытку перехвата, таймаут, без ретраев |
-| Runtime | `apps/zcode-cli/packages/core/src/runtime/methods/turn-stop.ts` (`finishModelStepWithoutToolCalls`) и `uncensored-takeover-gate.ts` | детект отказа, контекст, попытки, события, продолжение и единственный владелец финального assistant-текста |
-| Стор идемпотентности | новый `UncensoredTakeoverStore` в CLI session store (владелец `SessionStorePort`, тот же модуль, что todo) | `begin/complete`, дедупликация по ключу |
-| Проекция чата | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection-subagents.ts` | перенос нового поля `takeover` в строку `subagent` |
-| UI настроек | `packages/ui/src/settings/model-provider-section/*` и новый `UncensoredModelSettings` | форма, сохранение, статусы |
-| UI чата | новый компонент карточки takeover | отображение пункта, модели, статуса, вывода |
+| Слой                 | Владелец                                                                                                                                                                | Ответственность                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Хранилище настроек   | новый `packages/services/src/code-intelligence/uncensoredSettings.ts`                                                                                                   | `uncensored-settings.json` рядом с индексом, порядок моделей, флаг ключа                                   |
+| Секрет               | `ICredentialService` (Host)                                                                                                                                             | ключ `code-intelligence:<workspaceKey>:uncensored-api-key`                                                 |
+| Host-обработчик      | `packages/services/src/zcode-agent/zcodeAgentServiceSessionMethods.ts` (семейство)                                                                                      | строгий reverse-RPC `uncensored/getConfig`, без логирования ключа                                          |
+| Порт CLI             | новый `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/uncensored-config.ts` (по образцу `createProviderRuntimeHeadersPort`, `provider-runtime-headers.ts:20-107`) | один запрос конфигурации на попытку перехвата, таймаут, без ретраев                                        |
+| Runtime              | `apps/zcode-cli/packages/core/src/runtime/methods/turn-stop.ts` (`finishModelStepWithoutToolCalls`) и `uncensored-takeover-gate.ts`                                     | детект отказа, контекст, попытки, события, продолжение и единственный владелец финального assistant-текста |
+| Стор идемпотентности | новый `UncensoredTakeoverStore` в CLI session store (владелец `SessionStorePort`, тот же модуль, что todo)                                                              | `begin/complete`, дедупликация по ключу                                                                    |
+| Проекция чата        | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection-subagents.ts`                                                                               | перенос нового поля `takeover` в строку `subagent`                                                         |
+| UI настроек          | `packages/ui/src/settings/model-provider-section/*` и новый `UncensoredModelSettings`                                                                                   | форма, сохранение, статусы                                                                                 |
+| UI чата              | новый компонент карточки takeover                                                                                                                                       | отображение пункта, модели, статуса, вывода                                                                |
 
 `workspaceKey` — тот же, что у code intelligence:
 `identity = workspaceIdentity?.trim() || workspacePath`,
@@ -245,7 +265,15 @@ type UncensoredSettingsWrite = {
 Ответ (strict):
 
 ```ts
-{ apiUrl: string | null; apiKey: string | null; models: { id: string; enabled: boolean }[] }
+{
+  apiUrl: string | null;
+  apiKey: string | null;
+  models: {
+    id: string;
+    enabled: boolean;
+  }
+  [];
+}
 ```
 
 - Имя метода — ровно `uncensored/getConfig`.
@@ -348,7 +376,12 @@ type UncensoredSettingsWrite = {
 - payload строгий, ровно четыре поля:
 
 ```ts
-{ taskId: string; itemIndex: number /* int >= 0 */; itemText: string /* 1..4000 */; reason: string }
+{
+  taskId: string;
+  itemIndex: number /* int >= 0 */;
+  itemText: string /* 1..4000 */;
+  reason: string;
+}
 ```
 
 - `reason` — нормализованное значение из множества отказа.
@@ -424,9 +457,12 @@ Content-Type: application/json
 
 ```json
 {
-  "model": "<id>",
-  "messages": [{ "role": "system", "content": "..." }, { "role": "user", "content": "..." }],
-  "max_tokens": 4096,
+  "model": "<id без суффикса :thinking>",
+  "messages": [
+    { "role": "system", "content": "..." },
+    { "role": "user", "content": "..." }
+  ],
+  "max_tokens": 16384,
   "stream": false
 }
 ```
@@ -434,8 +470,10 @@ Content-Type: application/json
 - `redirect: "error"`: ключ не должен уйти на другой host по редиректу.
 - Таймаут одного запроса — 60 000 мс через `AbortSignal`.
 - Ровно одна попытка на модель; ретраев, повторов таймаута и повторных запросов нет.
-- Разбираются только `choices[0].message.content` (строка) и `choices[0].finish_reason`.
-- Пустой `content` при успешном HTTP — статус `error` этой попытки.
+- Разбираются только `choices[0].message.content` (строка) и `choices[0].finish_reason`;
+  наличие непустого `reasoning` фиксируется как факт, но не подменяет `content`.
+- Пустой `content` при успешном HTTP — статус `error` этой попытки (`empty-content`), в том
+  числе когда бюджет вывода израсходован reasoning-ом (`finish_reason: "length"`).
 - Тело ответа провайдера не попадает в события, строки и логи; фиксируются только
   HTTP-статус и категория.
 
@@ -443,13 +481,13 @@ Content-Type: application/json
 
 Порядок — порядок массива `models` в настройках, учитываются только `enabled: true`.
 
-| Условие попытки | Статус попытки | Действие |
-| --- | --- | --- |
-| HTTP не-2xx, сетевая ошибка, таймаут, невалидный JSON, пустой content | `error` | следующая включённая модель |
-| 2xx, `finish_reason` нормализуется в множество отказа | `refused` | следующая включённая модель |
-| 2xx, `finish_reason` обычный, content — текстовый отказ | `refused` | следующая включённая модель |
-| 2xx, `finish_reason` обычный, content непустой | `done` | стоп, терминальный статус `done` |
-| включённых моделей нет | `no-enabled-models` | стоп, 0 HTTP-вызовов |
+| Условие попытки                                                       | Статус попытки      | Действие                         |
+| --------------------------------------------------------------------- | ------------------- | -------------------------------- |
+| HTTP не-2xx, сетевая ошибка, таймаут, невалидный JSON, пустой content | `error`             | следующая включённая модель      |
+| 2xx, `finish_reason` нормализуется в множество отказа                 | `refused`           | следующая включённая модель      |
+| 2xx, `finish_reason` обычный, content — текстовый отказ               | `refused`           | следующая включённая модель      |
+| 2xx, `finish_reason` обычный, content непустой                        | `done`              | стоп, терминальный статус `done` |
+| включённых моделей нет                                                | `no-enabled-models` | стоп, 0 HTTP-вызовов             |
 
 - Если все попытки неуспешны, терминальный статус равен статусу последней попытки
   (`refused` или `error`).
@@ -559,7 +597,7 @@ If no items remain, reply with a short final summary.
   оркестратором);
 - `refused`, `error`, `no-enabled-models` или пустой `output` — явный текст ошибки, а не
   отказ основной модели: `Fallback model <provider>/<model> did not produce an answer
-  (status: <status>[: <reason>]).`, а при отсутствии модели —
+(status: <status>[: <reason>]).`, а при отсутствии модели —
   `No fallback model produced an answer (status: <status>[: <reason>]).`.
 
 Запись финального текста:
@@ -655,8 +693,9 @@ takeover?: {
 ```
 
 - `output` — полный ответ модели без усечения проекцией; схема допускает до 64 000
-  символов, ответ ограничен `max_tokens: 4096`. Превышение схемного лимита обрезается
-  при построении строки с завершающим `…` (см. остаточные риски).
+  символов. Raw-ветка ограничена `max_tokens: 16384`, mirror-ветка — объявленным моделью
+  лимитом вывода. Превышение схемного лимита обрезается при построении строки с
+  завершающим `…` (см. остаточные риски).
 - Маппинг статуса строки: `running -> running`, `done -> success`,
   `refused -> failed`, `error -> failed`, `no-enabled-models -> failed`; точный статус
   всегда доступен в `takeover.status`.
@@ -842,6 +881,18 @@ Test intent: focused runtime-тесты гейта с fake runtime: послед
 `turnRequestState.entries`; для ветки `finish` проверяется `finalText`, из которого
 формируется `TurnComplete.response`.
 
+### 6. Thinking-модель не теряет ответ в reasoning
+
+Given включённая резервная модель с суффиксом `:thinking`.
+When выполняется попытка.
+Then в raw-запрос уходит id без суффикса и `max_tokens: 16384`, mirror-вызов получает
+`reasoning_effort: "none"`; суффикс снимается только в конце id, тег `llama3:8b` не
+меняется. При пустом `content` и непустом `reasoning` терминальный статус — `error`,
+`reason: "empty-content"`, финальный текст — явная ошибка, а не reasoning и не отказ
+основной модели. При непустом `content` — терминальный `done`, а `modelId` в карточке и
+durable-строке остаётся исходным, с суффиксом.
+Test intent: unit-тесты оркестратора с fake `generate`/`fetch` на оба транспорта.
+
 ## Приложение: проверки и коммит (не критерий приёмки)
 
 Из корня репозитория:
@@ -866,6 +917,9 @@ pnpm verify:pre-push
   случаи `stop`/`tool-calls`/`length`/`unknown`), атрибуция пункта, бюджет контекста,
   `assertTakeoverRequestBodyExcludesFullPrompt`, маршрутизация, `no-enabled-models` без
   HTTP, дедупликация, порядок событий;
+- thinking-модели: снятие суффикса `:thinking` в обеих ветках при сохранении исходного
+  `modelId` в атрибуции, `max_tokens: 16384` в raw-теле, пустой `content` при непустом
+  `reasoning` → `error`/`empty-content`;
 - проекция: `takeover` в live и в холодном replay, оба delivery-профиля;
 - UI: рендер формы и карточки, ручной редактор моделей, i18n-ключи в трёх локалях,
   отсутствие утечки ключа.
@@ -895,6 +949,10 @@ pnpm verify:pre-push
   модели при `max_tokens: 4096`; усечение маркируется `…` и не влияет на статус.
 - Отсутствие ретраев означает, что кратковременный сбой единственной включённой модели
   даёт терминальный `error`; повтор возможен только новой попыткой пользователя.
+- Если провайдер не понимает ни `reasoning_effort: "none"`, ни снятие суффикса, ответ
+  thinking-модели может снова уйти целиком в reasoning. Тогда действует высокий бюджет
+  (raw `16384`), а при исчерпании — явная ошибка `empty-content`, а не подстановка
+  reasoning-текста.
 
 ## Открытые вопросы, требующие кода
 

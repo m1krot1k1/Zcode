@@ -152,7 +152,10 @@ export async function mirrorUncensoredProviders(
           enabled: true,
           properties: modelProperties(contextWindow),
           optionSpecs: {
-            reasoningLevel: { values: ["disabled"], map: "{}" },
+            // Thinking-модели тратят общий с ответом бюджет на reasoning и отдают пустой
+            // content (finish_reason: length). Перехвату нужен готовый ответ, поэтому
+            // единственный уровень явно выключает обдумывание на проводе.
+            reasoningLevel: { values: ["disabled"], map: "{'reasoning_effort': 'none'}" },
             maxOutputTokens: { max: maxOutputTokens },
           },
         },

@@ -18,7 +18,9 @@
 3. 请求恰好两条消息（固定 system + user）；user ≤ 12000 字符；item 优先且 ≤ 4000；fragment ≤ 3 × 4000；
    只来自当前 turn 的成功只读工具结果（路径匹配优先，其后取最新）。无历史、无完整 prompt、无其它 пункт 文本。
 4. HTTP：`POST apiUrl`、仅非空 key 才带 `Authorization`、`Content-Type: application/json`、
-   `{model,messages,max_tokens:4096,stream:false}`、`redirect:"error"`、60s `AbortSignal`、每模型一次尝试。
+   `{model,messages,max_tokens:16384,stream:false}`、`redirect:"error"`、60s `AbortSignal`、每模型一次尝试。
+   wire `model` 去掉精确的 `:thinking` 后缀（thinking 模型会把 max_tokens 全烧在 reasoning 上、正文为空），
+   归因仍保留原始 id。
 5. 路由：按 `models` 顺序仅取 `enabled:true`；refusal/error → 下一个；无启用模型或 config `null` → 0 次 fetch；
    全失败取最后一次状态。
 6. 幂等：键为 `taskId + 归一化 itemText`；`agentId` = `uncensored-takeover:<taskId>:<itemIndex>:<sha256(key)[0..16]>`。
