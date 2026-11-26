@@ -1,5 +1,6 @@
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import type { ZCodeUncensoredProviderConfig } from "@zcode/shared";
+import { UNCENSORED_MIRROR_PREFIX } from "./mirror.js";
 import type {
   UncensoredChatInput,
   UncensoredChatResult,
@@ -27,6 +28,21 @@ export interface UncensoredSettingsServiceOptions {
   mirrorProviders?: (
     providers: readonly ZCodeUncensoredProviderConfig[],
   ) => Promise<ReadonlyMap<string, string>>;
+  /**
+   * Реестровый view для восстановления конфига перехвата: в remote Environment
+   * provisioning приносит mirror-провайдеров с ключами, но не файл uncensored-настроек.
+   * Mirror — производная от настроек, поэтому при пустом хранилище он остаётся верным
+   * источником, пока сам не удалён.
+   */
+  listMirrorProviders?: () => Promise<readonly UncensoredMirrorProviderView[]>;
+}
+
+/** Минимум реестрового view, нужный для восстановления конфигурации перехвата. */
+export interface UncensoredMirrorProviderView {
+  providerId: string;
+  providerName: string | null | undefined;
+  baseUrl: string | null | undefined;
+  models: readonly { modelId: string; enabled: boolean; selectable: boolean }[];
 }
 
 const CHAT_TIMEOUT_MS = 60_000;
@@ -79,6 +95,50 @@ export function createUncensoredSettingsService(
     }
   }
 
+  /**
+   * Восстанавливает конфиг перехвата из реестровых mirror-провайдеров. Секрет здесь не
+   * нужен: вызов идёт по `providerId` через реестр; `apiUrl`/`apiKey` остаются для
+   * legacy raw-ветки целевого Host, где реестр может не резолвиться.
+   */
+  async function takeoverConfigFromMirrors(): Promise<
+    Awaited<ReturnType<UncensoredSettingsStorePort["readTakeoverConfig"]>>["providers"]
+  > {
+    type Providers = Awaited<
+      ReturnType<UncensoredSettingsStorePort["readTakeoverConfig"]>
+    >["providers"];
+    if (!options.listMirrorProviders) return [];
+    let view: readonly UncensoredMirrorProviderView[];
+    try {
+      view = await options.listMirrorProviders();
+    } catch (error) {
+      logger.warn(undefined, "Uncensored mirror lookup for takeover failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+    const providers: Providers = [];
+    for (const provider of view) {
+      const name = provider.providerName ?? "";
+      if (!name.startsWith(UNCENSORED_MIRROR_PREFIX)) continue;
+      const baseUrl = (provider.baseUrl ?? "").replace(/\/+$/u, "");
+      if (!baseUrl) continue;
+      const models = provider.models
+        .filter((model) => model.enabled && model.selectable)
+        .map((model) => ({ id: model.modelId, enabled: true }));
+      if (models.length === 0) continue;
+      const displayName = name.slice(UNCENSORED_MIRROR_PREFIX.length);
+      providers.push({
+        id: displayName,
+        name: displayName,
+        apiUrl: baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`,
+        apiKey: null,
+        providerId: provider.providerId,
+        models,
+      });
+    }
+    return providers;
+  }
+
   return {
     async getConfig(workspace) {
       const status = await store.read(workspace);
@@ -88,16 +148,18 @@ export function createUncensoredSettingsService(
     },
 
     async getTakeoverConfig(workspace) {
-      const status = await store.read(workspace);
       const mapping = await mirrorProviders(workspace, false);
       const config = await store.readTakeoverConfig(workspace);
       // CLI использует mirror-провайдера: тот же normal provider/model, что и в чате.
-      return {
-        providers: config.providers.map((provider) => ({
-          ...provider,
-          providerId: mapping.get(provider.name) ?? null,
-        })),
-      };
+      const providers = config.providers.map((provider) => ({
+        ...provider,
+        providerId: mapping.get(provider.name) ?? provider.providerId ?? null,
+      }));
+      if (providers.length > 0) return { providers };
+      // Remote Environment получает mirror-провайдеров через provisioning, но файла
+      // настроек не получает: без восстановления из реестра полигон всегда отдаёт
+      // «нет включённых моделей» и uncensored-модель не вызывается.
+      return { providers: await takeoverConfigFromMirrors() };
     },
 
     async updateConfig(workspace, write) {
@@ -105,7 +167,10 @@ export function createUncensoredSettingsService(
         const status = await store.write(workspace, write);
         logger.info(undefined, "Uncensored settings updated", {
           providerCount: status.providers.length,
-          modelCount: status.providers.reduce((total, provider) => total + provider.models.length, 0),
+          modelCount: status.providers.reduce(
+            (total, provider) => total + provider.models.length,
+            0,
+          ),
           configuredKeyCount: status.providers.filter((provider) => provider.apiKeyConfigured)
             .length,
         });

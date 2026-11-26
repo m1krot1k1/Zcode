@@ -2,7 +2,10 @@
 // и клиентские подписки (dynamic workflow, off-peak).
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { BuildContext, CoreServices, ProviderServices } from "./bundles.js";
-import { createCodeIntelligenceService, createUncensoredSettingsStore } from "../code-intelligence/index.js";
+import {
+  createCodeIntelligenceService,
+  createUncensoredSettingsStore,
+} from "../code-intelligence/index.js";
 import { createUncensoredSettingsService } from "../uncensored-settings/index.js";
 import { mirrorUncensoredProviders } from "../uncensored-settings/mirror.js";
 import { createCodingPlanSubscriptionService } from "../coding-plan-subscription/codingPlanSubscriptionService.js";
@@ -186,6 +189,21 @@ export function createFeatureServices(args: BuildContext & CoreServices & Provid
     // Host-side mirror: keys never enter the renderer; the registry sees normal providers.
     mirrorProviders: (providers) =>
       mirrorUncensoredProviders(providerRuntime.providerSettings, providers),
+    // Remote Environment получает зеркала и ключи через provisioning без файла настроек:
+    // перехват восстанавливает конфиг из реестра, иначе он всегда видит 0 моделей.
+    listMirrorProviders: async () => {
+      const view = await providerRuntime.providerSettings.getView();
+      return view.providers.map((provider) => ({
+        providerId: provider.providerId,
+        providerName: provider.providerName,
+        baseUrl: provider.effectiveConfig.api?.baseUrl,
+        models: provider.models.map((model) => ({
+          modelId: model.modelId,
+          enabled: model.enabled,
+          selectable: model.selectable,
+        })),
+      }));
+    },
   });
   const _commandsService = createCommandsService({ isDesktopRuntime: true });
   const _hooksService = createHooksService({
