@@ -83,4 +83,41 @@ describe("usePromptEnhancer", () => {
     expect(hook.current.status).toBe("ready");
     expect(hook.current.streamingText).toBe("Better prompt");
   });
+
+  it("повторяет запрос один раз, если Host ещё не поднял канал", async () => {
+    const enhance = vi
+      .fn<PromptEnhancerService["enhance"]>()
+      .mockRejectedValueOnce(new Error("Unknown channel: prompt-enhancer"))
+      .mockResolvedValueOnce(result("Better prompt"));
+    const service = serviceWithEnhance(enhance);
+    const { result: hook } = renderHook(() =>
+      usePromptEnhancer({ promptEnhancerService: service, workspacePath: "/remote/ws" }),
+    );
+
+    let outcome: PromptEnhanceResult | null | undefined;
+    await act(async () => {
+      outcome = await hook.current.enhance("Original prompt");
+    });
+
+    expect(enhance).toHaveBeenCalledTimes(2);
+    expect(outcome).toMatchObject({ enhancedText: "Better prompt" });
+    expect(hook.current.status).toBe("ready");
+  });
+
+  it("не повторяет содержательную ошибку модели", async () => {
+    const enhance = vi
+      .fn<PromptEnhancerService["enhance"]>()
+      .mockRejectedValue(new Error("model failed: 429"));
+    const service = serviceWithEnhance(enhance);
+    const { result: hook } = renderHook(() =>
+      usePromptEnhancer({ promptEnhancerService: service, workspacePath: "/remote/ws" }),
+    );
+
+    await act(async () => {
+      expect(await hook.current.enhance("Original prompt")).toBeNull();
+    });
+
+    expect(enhance).toHaveBeenCalledTimes(1);
+    expect(hook.current.status).toBe("error");
+  });
 });

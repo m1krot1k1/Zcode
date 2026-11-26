@@ -125,3 +125,21 @@ existing skills service. `requiresConsent` stays in the payload as provenance on
 no longer rendered as a confirmation step. MCP/plugin/agent suggestions are still not
 installed automatically, and arbitrary skills keep their manual install path in the
 marketplace panel.
+
+## Транзиентный канал после переключения workspace (2026-11-26)
+
+После смены workspace или переподключения SSH Host пересоздаётся, канал
+`prompt-enhancer` на короткое время ещё не зарегистрирован. Одиночный клик `Enhance`
+падал сразу с `Unknown channel: prompt-enhancer`, и улучшение «переставало работать»
+именно на remote.
+
+- Транспортная ошибка (`unknown channel`, закрытое/потерянное соединение,
+  `not connected`, `ECONNREFUSED`) повторяется до трёх раз с задержками 300/700/1500 мс —
+  за это время Host успевает подняться, а повтор идемпотентен: запрос несёт один
+  `requestId`, стрим-подписка уже установлена.
+- Содержательные ошибки модели (коды провайдера, 4xx/5xx) не повторяются: их повтор
+  только тратит токены и время.
+- Отмена пользователем по-прежнему даёт статус `cancelled` без повтора.
+
+Acceptance: тест `usePromptEnhancer` — транзиентная ошибка → второй вызов и успешный
+результат; ошибка модели → ровно один вызов и статус `error`.

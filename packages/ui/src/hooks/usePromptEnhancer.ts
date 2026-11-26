@@ -62,6 +62,40 @@ function nextRequestId(): string {
   return `enh_${Date.now().toString(36)}_${requestCounter}`;
 }
 
+/**
+ * Транспортные ошибки пересоздаваемого Host: после переключения workspace канал ещё не
+ * зарегистрирован, и одиночный клик терялся с `Unknown channel: prompt-enhancer`.
+ * Повторяем один раз — к этому моменту соединение уже поднято.
+ */
+const TRANSIENT_ENHANCER_ERROR =
+  /unknown channel|connection (?:closed|lost)|not connected|econnrefused/iu;
+/** Пересоздание Host занимает до нескольких секунд: пробуем ещё несколько раз. */
+const TRANSIENT_RETRY_DELAYS_MS = [300, 700, 1_500] as const;
+
+export function isTransientPromptEnhancerError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return TRANSIENT_ENHANCER_ERROR.test(message);
+}
+
+async function enhanceWithRetries(
+  service: PromptEnhancerService,
+  request: PromptEnhanceRequest,
+): Promise<PromptEnhanceResult> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await service.enhance(request);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientPromptEnhancerError(error)) throw error;
+      const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) break;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
 export function usePromptEnhancer(options: UsePromptEnhancerOptions) {
   const [state, setState] = useState<PromptEnhanceState>(INITIAL_STATE);
   const activeRequestId = useRef<string | null>(null);
@@ -124,7 +158,7 @@ export function usePromptEnhancer(options: UsePromptEnhancerOptions) {
       activeRequestId.current = request.requestId;
       setState({ status: "running", streamingText: "", previousDraft: draftText });
       try {
-        const result = await options.promptEnhancerService.enhance(request);
+        const result = await enhanceWithRetries(options.promptEnhancerService, request);
         // Bug 原因：卸载后 Service 可能晚于 cancel 才 resolve（等待 capabilityIndex / 远端取消）。
         // 旧实例不能再把上一个 agent 的文本回传给调用方，否则会经 onApply 写入新表单。
         if (!mounted.current) return null;
