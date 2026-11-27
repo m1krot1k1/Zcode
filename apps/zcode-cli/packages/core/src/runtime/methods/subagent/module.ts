@@ -4,7 +4,7 @@
  */
 export const cliCoreSubagentModule = {
   id: "cli-core-subagent",
-  requires: ["cli-file-transaction", "zcode-cli"],
+  requires: ["cli-core-takeover-tools", "cli-uncensored-takeover", "cli-file-transaction", "zcode-cli"],
   provides: ["cli-core-subagent"],
-  publicEntrypoints: ["index.ts", "contract.ts"],
+  publicEntrypoints: ["index.ts", "contract.ts", "port.ts", "spawn-envelope.ts", "model-factory.ts", "child-tool-policy.ts"],
 } as const;

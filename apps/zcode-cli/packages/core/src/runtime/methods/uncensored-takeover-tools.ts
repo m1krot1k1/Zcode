@@ -12,7 +12,7 @@ export const TAKEOVER_TOOL_ROUNDS = 3;
 /** Потолок выходных токенов одного раунда: длинный вывод читается, но не съедает бюджет. */
 const TOOL_RESULT_MAX_CHARS = 6_000;
 
-interface ExecutedToolCall {
+export interface ExecutedToolCall {
   toolCallId: string;
   toolName: string;
   content: string;

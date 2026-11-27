@@ -1,7 +1,6 @@
 import type { SessionGoal, TraceContext } from "../deps.js";
 import { isTurnCancellationError } from "../helpers/turn-errors.js";
 import type { AgentRuntimeInternal } from "../internal.js";
-import type { TargetCompletionVerificationResult } from "./target-completion-verification.js";
 
 export async function runTargetCompletionVerificationWithTelemetry(
   runtime: AgentRuntimeInternal,
@@ -10,8 +9,10 @@ export async function runTargetCompletionVerificationWithTelemetry(
     target: SessionGoal;
     traceContext: TraceContext;
   },
-  execute: () => Promise<TargetCompletionVerificationResult>,
-): Promise<TargetCompletionVerificationResult> {
+  // Исполнитель отдаёт результат верификации; телеметрия не импортирует вызывающий
+  // модуль, который импортирует её саму.
+  execute: () => Promise<unknown>,
+): Promise<Awaited<ReturnType<typeof execute>>> {
   const scope = runtime.agentTelemetry.detached({
     executionKind: "foreground",
     operation: "goal_completion_verification",

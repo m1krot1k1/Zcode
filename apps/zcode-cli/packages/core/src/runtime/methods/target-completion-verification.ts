@@ -84,7 +84,7 @@ export async function verifyActiveTargetCompletionForContinuation(
       verification,
     };
   };
-  return runTargetCompletionVerificationWithTelemetry(this, input, execute);
+  return (await runTargetCompletionVerificationWithTelemetry(this, input, execute)) as TargetCompletionVerificationResult | null;
 }
 
 async function verifyTargetCompletion(
