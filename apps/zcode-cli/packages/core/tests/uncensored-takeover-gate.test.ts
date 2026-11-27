@@ -30,6 +30,7 @@ interface HarnessOptions {
   todos?: TodoItem[];
   generateText?: string;
   generateThrows?: boolean;
+  generateToolCall?: boolean;
   providers?: unknown[];
   durableEntries?: Array<{
     id: string;
@@ -42,10 +43,12 @@ interface HarnessOptions {
 
 function createHarness(options: HarnessOptions) {
   const events: Array<{ type: SessionEventType; payload: Record<string, unknown> }> = [];
+  const executedCalls: Array<{ name: string; input: unknown }> = [];
   const generated: Array<{
     selection: { providerId: string; modelId: string };
     messages: Array<{ role: string; content: string }>;
     maxOutputTokens?: number;
+    tools?: Array<{ name: string }>;
   }> = [];
   const persistedMessages: Array<{
     messageId: string;
@@ -110,6 +113,15 @@ function createHarness(options: HarnessOptions) {
       persistedParts.push({ part });
     }),
     // Модель с единственным уровнем и малым лимитом: провайдерский диапазон опций.
+    getTools: () => [
+      { name: "Bash", description: "run", inputSchema: { type: "object" } },
+    ],
+    executor: {
+      execute: async (call: { name: string; input: unknown }) => {
+        executedCalls.push(call);
+        return { success: true, output: "OPEN 443", toolCallId: "t", toolName: call.name };
+      },
+    },
     modelFactory: (() => ({
       providerId: "p1",
       modelId: "m1",
@@ -119,14 +131,24 @@ function createHarness(options: HarnessOptions) {
       selection: { providerId: string; modelId: string; options?: Record<string, unknown> };
       messages: Array<{ role: string; content: string }>;
       maxOutputTokens?: number;
+      tools?: Array<{ name: string }>;
     }) => {
       generated.push({
         selection: input.selection,
         messages: input.messages,
         maxOutputTokens: input.maxOutputTokens,
+        tools: input.tools,
       });
       if (options.generateThrows) throw new Error("mirror unavailable");
-      return { text: options.generateText ?? FALLBACK_OUTPUT, finishReason: "stop" };
+      // Первая попытка может просить инструмент; повторный шаг возвращает текст.
+      const callOnce = options.generateToolCall && generated.length === 1;
+      return {
+        text: callOnce ? "" : (options.generateText ?? FALLBACK_OUTPUT),
+        finishReason: "stop",
+        ...(callOnce
+          ? { toolCalls: [{ id: "call-1", name: "Bash", input: { command: "ls" } }] }
+          : {}),
+      };
     },
   };
   const state = {
@@ -158,6 +180,7 @@ function createHarness(options: HarnessOptions) {
     streaming,
     addEntries,
     fetchCalls,
+    executedCalls,
     assistantText: options.assistantText,
   };
 }
@@ -296,6 +319,25 @@ describe("uncensored takeover gate", () => {
     ).toHaveLength(1);
     expect(harness.persistedMessages).toHaveLength(1);
     expect(harness.persistedParts[0]?.part).toMatchObject({ text: FALLBACK_OUTPUT });
+  });
+
+  it("исполняет инструмент резервной модели и завершает вторым ответом", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      generateToolCall: true,
+    });
+
+    const result = await runGate(harness);
+
+    // Инструменты обязаны уйти модели: без них перехват отвечает текстом, не работая.
+    expect(harness.generated[0]?.tools?.map((tool) => tool.name)).toEqual(["Bash"]);
+    expect(harness.executedCalls).toEqual([{ id: "call-1", name: "Bash", input: { command: "ls" } }]);
+    expect(harness.generated).toHaveLength(2);
+    // Второй запрос несёт историю раунда: вызов и результат инструмента.
+    const roles = harness.generated[1]?.messages.map((message) => message.role);
+    expect(roles).toEqual(expect.arrayContaining(["assistant", "tool"]));
+    expect(result).toMatchObject({ action: "finish", finalText: FALLBACK_OUTPUT });
   });
 
   it("shows an explicit error text when the fallback model fails", async () => {

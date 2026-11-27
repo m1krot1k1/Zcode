@@ -12,6 +12,13 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
 import { createRuntimeModel } from "./runtime-model.js";
+import {
+  commitTakeoverToolRound,
+  executeTakeoverToolCall,
+  TAKEOVER_TOOL_ROUNDS,
+  takeoverToolContracts,
+  takeoverRoundMessages,
+} from "./uncensored-takeover-tools.js";
 import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
 import {
   createRuntimeAssistantEntry,
@@ -474,25 +481,58 @@ export async function runUncensoredTakeoverGate(
   // "maxOutputTokens is outside the model option range". Only the raw fallback ran, so the
   // takeover worked at ~50 s per attempt instead of the mirror path.
   const optionFor = (providerId: string, modelId: string) => takeoverModelOptions(this, providerId, modelId);
+  const toolContracts = takeoverToolContracts(this, state);
 
   const generate: UncensoredGeneratePort = {
     generate: async ({ providerId, modelId, messages, signal }) => {
       const timeout = AbortSignal.timeout(60_000);
       const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-      const result = await this.generateWorkspaceText(
-        {
-          selection: { providerId, modelId, options: optionFor(providerId, modelId).options },
-          messages: messages.map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
-          querySource: "uncensored_takeover",
-          ...(optionFor(providerId, modelId).maxOutputTokens === undefined
-            ? {}
-            : { maxOutputTokens: optionFor(providerId, modelId).maxOutputTokens }),
-        },
-        { abortSignal: combined, traceContext: state.turnTraceContext },
-      );
+      const budget = optionFor(providerId, modelId);
+      // Локальный список растёт раундами инструментов: у него появляются роли
+      // assistant/tool, которых нет у двух стартовых сообщений.
+      const requestMessages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: string }> =
+        messages.map((message) => ({ role: message.role, content: message.content }));
+      const request = async (withTools: boolean) =>
+        this.generateWorkspaceText(
+          {
+            selection: { providerId, modelId, options: budget.options },
+            messages: requestMessages,
+            querySource: "uncensored_takeover",
+            ...(withTools && toolContracts.length > 0 ? { tools: toolContracts } : {}),
+            ...(budget.maxOutputTokens === undefined
+              ? {}
+              : { maxOutputTokens: budget.maxOutputTokens }),
+          },
+          { abortSignal: combined, traceContext: state.turnTraceContext },
+        );
+      let result: Awaited<ReturnType<typeof request>>;
+      try {
+        result = await request(true);
+      } catch (error) {
+        // Провайдер может не поддержать инструменты: перехват обязан работать и без них.
+        if (toolContracts.length === 0) throw error;
+        this.logger?.info("Uncensored takeover retried without tools", {
+          module: "core.runtime",
+          event: "uncensored_takeover.tools_unsupported",
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        result = await request(false);
+      }
+      // Инструменты: пока модель их просит — исполняем раунд и повторяем запрос с теми же
+      // сообщениями плюс история. Иначе перехват отвечает текстом «что нужно сделать»,
+      // не выполнив ничего, хотя у основной модели те же права.
+      let calls = (result.toolCalls ?? []).filter((call) => call.name.length > 0);
+      let rounds = 0;
+      while (calls.length > 0 && rounds < TAKEOVER_TOOL_ROUNDS) {
+        const executed = await Promise.all(
+          calls.map((call) => executeTakeoverToolCall(this, state, call)),
+        );
+        commitTakeoverToolRound(this, state, result, calls, executed);
+        requestMessages.push(...takeoverRoundMessages(result.text, calls, executed));
+        rounds += 1;
+        result = await request(true);
+        calls = (result.toolCalls ?? []).filter((call) => call.name.length > 0);
+      }
       return { text: result.text, finishReason: result.finishReason };
     },
   };
