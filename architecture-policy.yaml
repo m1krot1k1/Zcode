@@ -2538,6 +2538,12 @@ exceptions:
   # exception path-exact; do not widen it to the whole zcode-cli tree.
   - rule: unmanaged-new-file
     paths:
+      # Remote egress borrow: an isolated SSH workspace (reachable, no internet
+      # of its own) gets this device's connection through a reverse tunnel. The
+      # relay and its forwarding lifecycle belong beside the SSH backend that
+      # owns the tunnel, in the unmanaged server module — path-exact, as above.
+      - packages/server/src/remote/egressRelay.ts
+      - packages/server/src/remote/sshEgressExposure.ts
       # Этап 6.1b: версия приложения для не-упакованного Electron.
       # electron-updater читает app.getVersion() при импорте main-бандла и падает на "0.0";
       # bootstrap обязан выполниться ДО остальных import'ов, поэтому живёт одним файлом
