@@ -40,6 +40,15 @@ const runtimeModuleLookupRoots = [
   resolve(workspaceRoot, "node_modules", ".pnpm", "node_modules"),
 ];
 const pnpmCommand = "pnpm";
+
+function readWorkspaceVersion() {
+  return JSON.parse(readFileSync(resolve(workspaceRoot, "package.json"), "utf8")).version;
+}
+
+function readGitHead() {
+  return runCommandAndReadStdout("git", ["rev-parse", "HEAD"], workspaceRoot).trim() || null;
+}
+
 const DEFAULT_TARGET_OS = "mac";
 const DEFAULT_TARGET_ARCH = "arm64";
 const desktopDistDir = process.env.ZCODE_DESKTOP_DIST_DIR || "dist";
