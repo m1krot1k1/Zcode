@@ -63,6 +63,21 @@ describe("stdio Desktop presentation surface", () => {
     ).toEqual({
       httpProxy: "http://172.21.240.1:7890",
       noProxy: "localhost,127.0.0.1",
+      // An operator-configured endpoint is first-choice, not a fallback.
+      fallbackOnly: false,
+    });
+    // The device-side relay an isolated host borrows arrives with the flag, and
+    // the flag has to be read here because the env scrub removes the key.
+    expect(
+      resolveRemoteAgentNetworkFromEnv({
+        [ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY_ENV_KEY]: "1",
+        [ZCODE_REMOTE_HTTP_PROXY_ENV_KEY]: "http://127.0.0.1:41234",
+        ZCODE_HTTP_PROXY_FALLBACK_ONLY: "1",
+      }),
+    ).toEqual({
+      httpProxy: "http://127.0.0.1:41234",
+      noProxy: undefined,
+      fallbackOnly: true,
     });
   });
 
