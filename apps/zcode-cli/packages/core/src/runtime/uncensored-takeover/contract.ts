@@ -133,6 +133,11 @@ export interface UncensoredGeneratePort {
 export interface TakeoverReminderInput {
   itemIndex: number;
   terminal: TakeoverTerminal;
+  /**
+   * Сколько инструментов реально исполнила резервная модель. Ноль при `done` значит, что
+   * ответ — текст без действий: его нельзя выдавать за выполненный пункт.
+   */
+  toolsExecuted?: number;
 }
 
 export interface BuildTakeoverEntryInput {

@@ -99,12 +99,26 @@ export function buildTakeoverReminder(input: TakeoverReminderInput): string {
   const model = input.terminal.modelId ?? "none";
   const reason = input.terminal.reason ? `\nReason: ${input.terminal.reason}` : "";
   const output = input.terminal.output.trim().length > 0 ? `\nOutput:\n${input.terminal.output}` : "";
+  // `done` without a single executed tool is a text plan, not work. Объявлять его
+  // выполненным нельзя: основная модель тогда помечает пункт completed, опираясь на
+  // выдуманные команды и «результаты», которых не было.
+  const unverified = input.terminal.status === "done" && (input.toolsExecuted ?? 0) === 0;
+  const statusNote = unverified
+    ? "the fallback model answered without running any tool; the text is a proposal, not a verified result"
+    : REMINDER_STATUS_NOTE[input.terminal.status];
   return [
     `[uncensored-takeover] Task item ${input.itemIndex} was handled by a fallback model.`,
-    `Status: ${input.terminal.status}. Provider: ${provider}. Model: ${model}. ${REMINDER_STATUS_NOTE[input.terminal.status]}.${reason}`,
+    `Status: ${input.terminal.status}. Provider: ${provider}. Model: ${model}. ${statusNote}.${reason}`,
     output,
-    "Do not repeat this item. Mark it completed with TodoWrite, then continue with the remaining items.",
-    "If no items remain, reply with a short final summary.",
+    ...(unverified
+      ? [
+          "No tool ran for this item, so nothing here is verified. Do the work yourself with tools and check the fallback text against real output; do not mark the item completed on that text alone.",
+          "If no items remain, reply with a short final summary.",
+        ]
+      : [
+          "Do not repeat this item. Mark it completed with TodoWrite, then continue with the remaining items.",
+          "If no items remain, reply with a short final summary.",
+        ]),
   ]
     .filter((part) => part.length > 0)
     .join("\n");

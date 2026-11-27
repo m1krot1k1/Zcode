@@ -53,6 +53,8 @@ interface CachedOutcome {
   terminal: TakeoverTerminal;
   /** Turn that already settled this item: a reminder was injected or the final text written. */
   resolvedTurnId?: string;
+  /** Инструменты, исполненные резервной моделью: ноль при `done` — это текст без работы. */
+  toolsExecuted?: number;
 }
 
 /** Per-runtime, therefore per-session, guard. It closes the same-process duplicate window;
@@ -428,6 +430,7 @@ export async function runUncensoredTakeoverGate(
     const reminder = buildTakeoverReminder({
       itemIndex: item.itemIndex,
       terminal: existing.terminal,
+      toolsExecuted: existing.toolsExecuted,
     });
     commitTurnRequestEntries(this, state.turnRequestState, [
       systemReminderAttachmentEntry("uncensored_takeover", reminder),
@@ -482,6 +485,9 @@ export async function runUncensoredTakeoverGate(
   // takeover worked at ~50 s per attempt instead of the mirror path.
   const optionFor = (providerId: string, modelId: string) => takeoverModelOptions(this, providerId, modelId);
   const toolContracts = takeoverToolContracts(this, state);
+  // Сколько инструментов резервная модель реально исполнила в этой попытке. Ноль при
+  // `done` — это план текстом, а не выполненная работа.
+  let toolsExecutedInAttempt = 0;
 
   const generate: UncensoredGeneratePort = {
     generate: async ({ providerId, modelId, messages, signal }) => {
@@ -529,6 +535,7 @@ export async function runUncensoredTakeoverGate(
         );
         commitTakeoverToolRound(this, state, result, calls, executed);
         requestMessages.push(...takeoverRoundMessages(result.text, calls, executed));
+        toolsExecutedInAttempt += executed.length;
         rounds += 1;
         result = await request(true);
         calls = (result.toolCalls ?? []).filter((call) => call.name.length > 0);
@@ -584,7 +591,11 @@ export async function runUncensoredTakeoverGate(
   );
   await this.appendEvent(stoppedEvent, state.turnTraceContext);
   state.events.push(stoppedEvent);
-  outcomes.set(key, { terminal, resolvedTurnId: state.turnId });
+  outcomes.set(key, {
+    terminal,
+    resolvedTurnId: state.turnId,
+    toolsExecuted: toolsExecutedInAttempt,
+  });
 
   if (state.turnAbortSignal.aborted) return { action: "continue" };
   if (noRemainingWork) {
@@ -596,7 +607,11 @@ export async function runUncensoredTakeoverGate(
   commitTurnRequestEntries(this, state.turnRequestState, [
     systemReminderAttachmentEntry(
       "uncensored_takeover",
-      buildTakeoverReminder({ itemIndex: item.itemIndex, terminal }),
+      buildTakeoverReminder({
+        itemIndex: item.itemIndex,
+        terminal,
+        toolsExecuted: toolsExecutedInAttempt,
+      }),
     ),
   ]);
   state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());

@@ -550,6 +550,50 @@ describe("uncensored takeover gate", () => {
     });
   });
 
+  it("не объявляет пункт выполненным, если резервная модель не запускала инструменты", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      todos: [
+        { content: "починить тест", status: "pending", priority: "high" },
+        { content: "собрать отчёт", status: "pending", priority: "medium" },
+      ],
+    });
+
+    const result = await runGate(harness);
+
+    expect(result.action).toBe("continue");
+    const reminder = harness.state.turnRequestState.entries
+      .filter((entry) => entry.kind === "attachment")
+      .map((entry) => String((entry as { content?: unknown }).content ?? ""))
+      .join("\n");
+    // Ответ без единого исполненного инструмента — предложение, а не результат.
+    expect(reminder).toContain("without running any tool");
+    expect(reminder).not.toContain("Mark it completed with TodoWrite");
+    expect(reminder).toContain("Do the work yourself with tools");
+  });
+
+  it("объявляет пункт выполненным, если инструменты действительно исполнялись", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      generateToolCall: true,
+      todos: [
+        { content: "починить тест", status: "pending", priority: "high" },
+        { content: "собрать отчёт", status: "pending", priority: "medium" },
+      ],
+    });
+
+    await runGate(harness);
+
+    const reminder = harness.state.turnRequestState.entries
+      .filter((entry) => entry.kind === "attachment")
+      .map((entry) => String((entry as { content?: unknown }).content ?? ""))
+      .join("\n");
+    expect(reminder).toContain("Mark it completed with TodoWrite");
+    expect(reminder).not.toContain("without running any tool");
+  });
+
   it("hands over a refusal phrased as not evaluating such wording", async () => {
     const harness = createHarness({
       userText: USER_TEXT,
