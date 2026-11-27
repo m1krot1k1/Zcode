@@ -1,11 +1,11 @@
 import type { ModelToolCall, ModelToolContract } from "@zcode/contracts";
-import { createRuntimeAssistantEntry, createRuntimeToolResultEntry } from "../../agent/message-history.js";
-import { modelMessageContentToText } from "../deps.js";
-import { modelContentForToolResult } from "../helpers/index.js";
-import type { AgentRuntimeInternal } from "../internal.js";
-import type { RuntimeModelTextResult } from "../types.js";
-import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
-import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
+import { createRuntimeAssistantEntry, createRuntimeToolResultEntry } from "../../../agent/message-history.js";
+import { modelMessageContentToText } from "../../deps.js";
+import { modelContentForToolResult } from "../../helpers/index.js";
+import type { AgentRuntimeInternal } from "../../internal.js";
+import type { RuntimeModelTextResult } from "../../types.js";
+import { commitTurnRequestEntries } from "../turn-output-token-continuation.js";
+import { recordModelHistoryRound, type RegularTurnLoopState } from "../turn-loop-state.js";
 
 /** Сколько раундов «модель → инструменты» перехват даёт резервной модели. */
 export const TAKEOVER_TOOL_ROUNDS = 3;

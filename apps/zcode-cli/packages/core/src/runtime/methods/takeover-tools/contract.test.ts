@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { cliCoreTakeoverToolsModule } from "./module.js";
-import { TAKEOVER_TOOL_ROUNDS, takeoverRoundMessages } from "./uncensored-takeover-tools.js";
+import { TAKEOVER_TOOL_ROUNDS, takeoverRoundMessages } from "./tools.js";
 
 // Контракт не зависит от реализации: проверяем манифест и форму раунда.
 describe("cli-core-takeover-tools contract", () => {
   it("объявляет ровно свой публичный вход и не даёт циклов", () => {
-    expect(cliCoreTakeoverToolsModule.publicEntrypoints).toEqual(["contract.ts"]);
+    expect(cliCoreTakeoverToolsModule.publicEntrypoints).toEqual(["index.ts", "contract.ts"]);
     expect(cliCoreTakeoverToolsModule.requires).not.toContain("cli-core-takeover-tools");
   });
 

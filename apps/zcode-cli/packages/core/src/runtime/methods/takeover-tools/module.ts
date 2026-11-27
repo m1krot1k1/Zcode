@@ -4,7 +4,7 @@
  */
 export const cliCoreTakeoverToolsModule = {
   id: "cli-core-takeover-tools",
-  requires: ["cli-auto-repair-loop", "cli-core-executor", "cli-core-subagent", "cli-tool-self-repair", "cli-uncensored-takeover", "shared", "zcode-cli"],
+  requires: ["cli-core-executor", "cli-uncensored-takeover", "shared", "zcode-cli"],
   provides: ["cli-core-takeover-tools"],
-  publicEntrypoints: ["index.ts", "contract.ts", "session-shell-environment.ts", "runtime-command-generation.ts", "mcp.ts", "turn-model.ts"],
+  publicEntrypoints: ["index.ts", "contract.ts"],
 } as const;

@@ -18,7 +18,7 @@ import {
   TAKEOVER_TOOL_ROUNDS,
   takeoverToolContracts,
   takeoverRoundMessages,
-} from "./uncensored-takeover-tools.js";
+} from "./takeover-tools/index.js";
 import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
 import {
   createRuntimeAssistantEntry,

@@ -34,6 +34,8 @@ export default defineConfig({
       "packages/core/src/runtime/auto-repair-loop/runtime-factory.test.ts",
       // 4.5b: stateful Playwright-телеметрия — managed-модуль рядом с исходниками.
       "packages/adapters/src/browser/telemetry/contract.test.ts",
+      // 2026-11-27: инструменты резервной модели — managed-модуль рядом с исходниками.
+      "packages/core/src/runtime/methods/takeover-tools/contract.test.ts",
     ],
     // Bugfix: 排除由 Node 原生 test runner 覆盖的文件，保留 Vitest 默认忽略项。
     exclude: [...configDefaults.exclude, ...nodeTestRunnerFiles],

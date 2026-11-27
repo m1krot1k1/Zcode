@@ -1,5 +1,5 @@
 import type { ModelToolCall, ModelToolContract } from "@zcode/contracts";
-import type { ExecutedToolCall } from "./uncensored-takeover-tools.js";
+import type { ExecutedToolCall } from "./tools.js";
 
 /**
  * cli-core-takeover-tools 对外契约: резервная модель перехвата обязана иметь те же

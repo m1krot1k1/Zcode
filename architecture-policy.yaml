@@ -1654,28 +1654,18 @@ modules:
       ui: .
     owner: conversation
   # cli-core-takeover-tools：резервная модель перехвата обязана иметь инструменты.
-  # Модуль — пара реальных файлов, а не каталог methods: соседние скрипты каталога
-  # остаются в unmanaged zcode-cli, их deep-import друг друга не ломается. Артефакты
-  # contract.* читаются из каталога первого root.
   - id: cli-core-takeover-tools
     roots:
-      - apps/zcode-cli/packages/core/src/runtime/methods
+      - apps/zcode-cli/packages/core/src/runtime/methods/takeover-tools
     managed: true
     requires:
-      - cli-auto-repair-loop
       - cli-core-executor
-      - cli-core-subagent
-      - cli-tool-self-repair
       - cli-uncensored-takeover
       - shared
       - zcode-cli
     publicEntrypoints:
-      - apps/zcode-cli/packages/core/src/runtime/methods/index.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/contract.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/session-shell-environment.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/runtime-command-generation.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/turn-model.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/takeover-tools/index.ts
+      - apps/zcode-cli/packages/core/src/runtime/methods/takeover-tools/contract.ts
     layers:
       adapters: .
     owner: agent
@@ -1685,17 +1675,11 @@ modules:
       - apps/zcode-cli/packages/core/src/runtime/methods/subagent
     managed: true
     requires:
-      - cli-core-takeover-tools
-      - cli-uncensored-takeover
       - cli-file-transaction
       - zcode-cli
     publicEntrypoints:
       - apps/zcode-cli/packages/core/src/runtime/methods/subagent/index.ts
       - apps/zcode-cli/packages/core/src/runtime/methods/subagent/contract.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/port.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/spawn-envelope.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/model-factory.ts
-      - apps/zcode-cli/packages/core/src/runtime/methods/subagent/child-tool-policy.ts
     layers:
       adapters: .
     owner: agent
@@ -2668,7 +2652,7 @@ global:
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。
   newFilesEnforcedSince: "2026-09-10"
   acceptedUpstreamCommits: []
-  maxFileLines: 824
+  maxFileLines: 800
   maxContractLines: 300
   maxPublicMethods: 12
   forbidCycles: true
