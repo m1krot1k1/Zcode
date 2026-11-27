@@ -11,6 +11,7 @@ import type { MessageId } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
+import { createRuntimeModel } from "./runtime-model.js";
 import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
 import {
   createRuntimeAssistantEntry,
@@ -30,6 +31,7 @@ import {
   selectContextFragments,
   takeoverAgentId,
   takeoverIdempotencyKey,
+  TAKEOVER_MAX_TOKENS,
   TEXT_REFUSAL_REASON,
   truncateItemText,
   UNCENSORED_TAKEOVER_AGENT_TYPE,
@@ -75,6 +77,46 @@ function takeoverFinalText(terminal: TakeoverTerminal): string {
   }
   const provider = terminal.providerName ?? terminal.providerId ?? "unknown";
   return `Fallback model ${provider}/${terminal.modelId} did not produce an answer (status: ${terminal.status})${reason}.`;
+}
+
+/**
+ * Valid options for one takeover attempt. The registry validates strictly against the model's
+ * own `optionSpecs`: the lowest supported reasoning level, and an output budget inside its
+ * range. Both values come from the runtime model, so a mirror model with `disabled` only and
+ * a small max output no longer fails before any request.
+ */
+function takeoverModelOptions(
+  runtime: AgentRuntimeInternal,
+  providerId: string,
+  modelId: string,
+): { options: { reasoningLevel?: string; maxOutputTokens?: number }; maxOutputTokens?: number } {
+  if (!runtime.modelFactory) return { options: {} };
+  let model;
+  try {
+    model = createRuntimeModel(runtime, {
+      selection: {
+        providerId: createModelProviderId(providerId),
+        modelId: createModelId(modelId),
+      },
+      scope: "workspace",
+      admissionPriority: "background",
+    });
+  } catch {
+    return { options: {} };
+  }
+  const reasoningLevel = model.optionSpecs.reasoningLevel?.values[0];
+  const maxOutputTokens = model.optionSpecs.maxOutputTokens?.max;
+  const budget =
+    typeof maxOutputTokens === "number"
+      ? Math.min(TAKEOVER_MAX_TOKENS, maxOutputTokens)
+      : TAKEOVER_MAX_TOKENS;
+  return {
+    options: {
+      ...(reasoningLevel === undefined ? {} : { reasoningLevel }),
+      maxOutputTokens: budget,
+    },
+    maxOutputTokens: budget,
+  };
 }
 
 /** Fallback model attribution from the terminal fact; `null` when no model produced it. */
@@ -425,24 +467,29 @@ export async function runUncensoredTakeoverGate(
   const workspacePath = this.config.workspacePath?.trim() || this.workingDirectory;
   const workspaceIdentity = this.config.workspaceIdentity;
   // Uses the mirrored normal provider/model — the exact configuration that works in chat.
+  // Options valid for the model the attempt will call. Hardcoded `reasoningLevel: "disabled"`
+  // plus the resolver's default output budget broke the range: the Host option map sends
+  // `reasoning_effort: "none"` while the model's own maxOutputTokens is lower than the default,
+  // and the registry rejected every mirror attempt with
+  // "maxOutputTokens is outside the model option range". Only the raw fallback ran, so the
+  // takeover worked at ~50 s per attempt instead of the mirror path.
+  const optionFor = (providerId: string, modelId: string) => takeoverModelOptions(this, providerId, modelId);
+
   const generate: UncensoredGeneratePort = {
     generate: async ({ providerId, modelId, messages, signal }) => {
       const timeout = AbortSignal.timeout(60_000);
       const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
       const result = await this.generateWorkspaceText(
         {
-          // Host mirror exposes the uncensored model with the explicit "disabled" reasoning
-          // level. Without it the registry rejects the mirror selection before any request and
-          // forces the legacy raw fallback.
-          selection: { providerId, modelId, options: { reasoningLevel: "disabled" } },
+          selection: { providerId, modelId, options: optionFor(providerId, modelId).options },
           messages: messages.map((message) => ({
             role: message.role,
             content: message.content,
           })),
           querySource: "uncensored_takeover",
-          // Без явного потолка действует объявленный моделью `maxOutputTokens` (иначе —
-          // дефолт резолвера): 4096 обрезал thinking-модель, у которой reasoning съедает
-          // тот же бюджет и ответ уходил в пустой `content`.
+          ...(optionFor(providerId, modelId).maxOutputTokens === undefined
+            ? {}
+            : { maxOutputTokens: optionFor(providerId, modelId).maxOutputTokens }),
         },
         { abortSignal: combined, traceContext: state.turnTraceContext },
       );

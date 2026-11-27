@@ -45,6 +45,7 @@ function createHarness(options: HarnessOptions) {
   const generated: Array<{
     selection: { providerId: string; modelId: string };
     messages: Array<{ role: string; content: string }>;
+    maxOutputTokens?: number;
   }> = [];
   const persistedMessages: Array<{
     messageId: string;
@@ -108,11 +109,22 @@ function createHarness(options: HarnessOptions) {
     persistPart: vi.fn(async (part: Record<string, unknown>) => {
       persistedParts.push({ part });
     }),
+    // Модель с единственным уровнем и малым лимитом: провайдерский диапазон опций.
+    modelFactory: (() => ({
+      providerId: "p1",
+      modelId: "m1",
+      optionSpecs: { reasoningLevel: { values: ["disabled"] }, maxOutputTokens: { max: 65_536 } },
+    })) as never,
     generateWorkspaceText: async (input: {
-      selection: { providerId: string; modelId: string };
+      selection: { providerId: string; modelId: string; options?: Record<string, unknown> };
       messages: Array<{ role: string; content: string }>;
+      maxOutputTokens?: number;
     }) => {
-      generated.push({ selection: input.selection, messages: input.messages });
+      generated.push({
+        selection: input.selection,
+        messages: input.messages,
+        maxOutputTokens: input.maxOutputTokens,
+      });
       if (options.generateThrows) throw new Error("mirror unavailable");
       return { text: options.generateText ?? FALLBACK_OUTPUT, finishReason: "stop" };
     },
@@ -236,8 +248,12 @@ describe("uncensored takeover gate", () => {
     expect(harness.generated[0]?.selection).toEqual({
       providerId: "mirror-nano-gpt",
       modelId: "deepseek-uncensored",
-      options: { reasoningLevel: "disabled" },
+      // Регрессия: раньше опции были только `reasoningLevel: "disabled"`, а бюджет вывода
+      // приходил из резолвера и превышал объявленный моделью максимум — registry отвергал
+      // вызов `maxOutputTokens is outside the model option range`, mirror не работал.
+      options: { reasoningLevel: "disabled", maxOutputTokens: 16_384 },
     });
+    expect(harness.generated[0]?.maxOutputTokens).toBe(16_384);
     expect(harness.generated[0]?.messages).toHaveLength(2);
     expect(harness.generated[0]?.messages[1]?.content).toContain(USER_TEXT);
     expect(harness.fetchCalls).toHaveLength(0);
