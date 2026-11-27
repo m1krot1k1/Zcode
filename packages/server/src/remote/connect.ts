@@ -53,6 +53,11 @@ export interface RemoteRuntimeNetworkOptions {
   noProxy?: string;
   /** 只允许 Host 设置权威值覆盖远端自身的旧设置。 */
   authoritative?: boolean;
+  /**
+   * 该代理只是回退：远端先用自己的出网，网络失败后才是本机中继。只应随
+   * Ouroboros 合成的中继下发，不应把 owners 自己配置的代理降为回退。
+   */
+  fallbackOnly?: boolean;
 }
 
 export interface RemoteConnection {
@@ -360,19 +365,30 @@ async function resolveRemoteRuntimeNetwork(
   try {
     // 桌面没配置代理时也要问一次：SSH 会为没有出网的远端合成一个回环中继，
     // 配置了代理的部署则原样返回。空值不再直接短路。
-    const resolvedProxy = (await backend.resolveRuntimeProxy(network?.httpProxy ?? ""))?.trim();
+    const requestedProxy = (network?.httpProxy ?? "").trim();
+    const resolvedProxy = (await backend.resolveRuntimeProxy(requestedProxy))?.trim();
     if (!resolvedProxy) {
       return undefined;
     }
-    if (resolvedProxy !== network?.httpProxy) {
+    // authoritative 的含义是“这个地址是 Ouroboros 给的，不是来自 owners 设置”，
+    // 不是在说“有人配置了”。backend 原样退回我们传进去的地址，说明这是 owners
+    // 自己的代理，就保留调用方给的值。
+    const synthesized = !requestedProxy || resolvedProxy !== requestedProxy;
+    if (synthesized) {
       log(
         "resolved remote runtime proxy",
-        formatWslProxyForLog(network?.httpProxy ?? ""),
+        formatWslProxyForLog(requestedProxy),
         "->",
         formatWslProxyForLog(resolvedProxy),
       );
     }
-    return { ...network, httpProxy: resolvedProxy, authoritative: true };
+    return {
+      ...network,
+      httpProxy: resolvedProxy,
+      ...(synthesized
+        ? { authoritative: true, fallbackOnly: backend.egressRelayFallbackOnly === true }
+        : {}),
+    };
   } catch (error) {
     // 代理解析只是运行时增强；解析失败时沿用设置页原值，避免把远端工作区变成不可连接。
     log(
@@ -408,9 +424,10 @@ function buildRemoteServerCommand(
       envParts.push(
         `${ZCODE_REMOTE_HTTP_PROXY_ENV_KEY}=${quotePosixShellArg(remoteRuntimeNetwork.httpProxy)}`,
       );
-      // The owner chose fallback-only: the remote agent keeps using whatever
-      // egress it has and reaches this tunnel only after a network failure.
-      envParts.push(`${ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY}='1'`);
+      if (remoteRuntimeNetwork.fallbackOnly) {
+        // 只有本机中继才算回退；owners 自己配置的代理保持首选。
+        envParts.push(`${ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY}='1'`);
+      }
     }
     if (remoteRuntimeNetwork.noProxy !== undefined) {
       envParts.push(

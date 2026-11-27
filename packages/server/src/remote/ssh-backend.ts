@@ -108,6 +108,8 @@ export class SSHBackend implements IRemoteBackend {
   private disconnectReported = false;
   private embeddingForwardInstalled = false;
   private readonly egressRelayEnabled: boolean;
+  /** The synthesised relay is a fallback, never the owner's first choice. */
+  readonly egressRelayFallbackOnly: boolean;
   private readonly egressExposure: SshEgressExposure;
   private readonly disconnectEmitter = new Emitter<RemoteDisconnectEvent>();
   readonly onDidDisconnect = this.disconnectEmitter.event;
@@ -137,6 +139,7 @@ export class SSHBackend implements IRemoteBackend {
   constructor(options: SSHBackendOptions) {
     this.client = new SSHClient();
     this.egressRelayEnabled = options.egressRelay === true;
+    this.egressRelayFallbackOnly = this.egressRelayEnabled;
     this.egressExposure = new SshEgressExposure(this.client);
     this.client.on("error", this.onClientError);
     this.client.on("close", this.onClientClose);

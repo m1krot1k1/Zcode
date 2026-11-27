@@ -392,7 +392,11 @@ function hasNetworkFetchPolicy(options: NetworkProxyFetchOptions): boolean {
       options.env ||
       options.httpProxy ||
       options.httpProxyList?.some((entry) => entry.trim()) ||
-      options.noProxy,
+      options.noProxy ||
+      // Without this, fallback-only mode (relay set, no first-choice proxy)
+      // would fall straight through to the bare global fetch and the relay
+      // would never be reached at all.
+      options.fallbackProxy?.trim(),
   );
 }
 

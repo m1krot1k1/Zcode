@@ -95,6 +95,8 @@ export interface CreateLocalServicesOptions {
     httpProxy?: string;
     httpProxyList?: string;
     noProxy?: string;
+    /** The proxy is fallback-only: direct first, relay after a network failure. */
+    fallbackOnly?: boolean;
   };
   /** 所属 Environment 的 ZCode Built-in Provider Config 物理路径。 */
   zcodeBuiltinProviderConfigFilePath: string;

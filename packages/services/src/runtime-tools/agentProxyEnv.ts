@@ -1,6 +1,7 @@
 import {
   ZCODE_AGENT_CA_CERT_ENV_KEY,
   ZCODE_HTTP_PROXY_ENV_KEY,
+  ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY,
   ZCODE_HTTP_PROXY_LIST_ENV_KEY,
   ZCODE_NO_PROXY_ENV_KEY,
   ZCODE_SUBAGENT_MAX_PARALLEL_ENV_KEY,
@@ -29,7 +30,10 @@ const PROXY_ENV_KEYS = [
 ] as const;
 const NO_PROXY_ENV_KEYS = ["NO_PROXY", "no_proxy", ZCODE_NO_PROXY_ENV_KEY] as const;
 
-export function buildAgentProxyEnv(httpProxy: string | undefined): Record<string, string> {
+export function buildAgentProxyEnv(
+  httpProxy: string | undefined,
+  fallbackOnly?: boolean,
+): Record<string, string> {
   const normalized = normalizeProxyValue(httpProxy);
   if (!normalized) {
     return {};
@@ -37,6 +41,11 @@ export function buildAgentProxyEnv(httpProxy: string | undefined): Record<string
   const env: Record<string, string> = {};
   for (const key of PROXY_ENV_KEYS) {
     env[key] = normalized;
+  }
+  if (fallbackOnly) {
+    // Without this the agent treats the relay as a forced proxy and sends an
+    // isolated-capable host through the tunnel even when it has its own egress.
+    env[ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY] = "1";
   }
   return env;
 }
@@ -75,8 +84,9 @@ export function buildAgentRuntimeEnv(input: {
   httpProxyList?: string | undefined;
   noProxy?: string | undefined;
   caCertPath?: string | undefined;
+  fallbackOnly?: boolean;
 }): Record<string, string> {
-  const proxyEnv = buildAgentProxyEnv(input.httpProxy);
+  const proxyEnv = buildAgentProxyEnv(input.httpProxy, input.fallbackOnly);
   const proxyList = readZCodeProxyList(input.httpProxyList);
   return {
     ...proxyEnv,

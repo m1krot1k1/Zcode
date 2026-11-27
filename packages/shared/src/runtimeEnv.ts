@@ -62,7 +62,8 @@ const SANITIZED_RUNTIME_ENV_KEYS = [
   "ALL_PROXY",
   "NO_PROXY",
   ZCODE_HTTP_PROXY_ENV_KEY,
-  ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY,
+  // NOT sanitized: the remote server receives this flag from the desktop and
+  // must hand it to the agent, so it has to survive the environment scrub.
   "NODE_EXTRA_CA_CERTS",
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",

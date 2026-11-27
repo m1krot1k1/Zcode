@@ -2,6 +2,7 @@ import { createLocalServices, type ZCodeAgentCommandResolver } from "@zcode/serv
 import type { IChannel } from "@zcode/rpc";
 import {
   parseServiceAuthorityMode,
+  ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY,
   ZCODE_REMOTE_HTTP_PROXY_ENV_KEY,
   ZCODE_REMOTE_NO_PROXY_ENV_KEY,
   ZCODE_REMOTE_RUNTIME_NETWORK_AUTHORITY_ENV_KEY,
@@ -17,6 +18,11 @@ interface CreateStdioServicesOptions {
 interface RemoteAgentNetworkOptions {
   httpProxy?: string;
   noProxy?: string;
+  /**
+   * The proxy is fallback-only: the agent tries its own egress first. Carried as
+   * a typed field because the runtime env scrub removes the env key.
+   */
+  fallbackOnly?: boolean;
 }
 
 export function resolveRemoteAgentNetworkFromEnv(
@@ -28,6 +34,9 @@ export function resolveRemoteAgentNetworkFromEnv(
   return {
     httpProxy: env[ZCODE_REMOTE_HTTP_PROXY_ENV_KEY]?.trim() || undefined,
     noProxy: env[ZCODE_REMOTE_NO_PROXY_ENV_KEY]?.trim() || undefined,
+    // Read the flag here rather than letting it ride along in env: the runtime
+    // scrub removes it, so the value has to be carried by this typed field.
+    fallbackOnly: env[ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY]?.trim() === "1",
   };
 }
 
