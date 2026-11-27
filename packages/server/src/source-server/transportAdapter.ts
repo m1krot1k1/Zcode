@@ -127,10 +127,6 @@ const SERVER_ROOT_READ_PATH = "~/.zcode/server";
 const SERVER_ROOT_SHELL = '"$HOME/.zcode/server"';
 const SERVER_BIN_SHELL = '"$HOME/.zcode/server/bin/zcode"';
 const STALE_BOOTSTRAP_AGE_MS = 30 * 60 * 1_000;
-// One Core restart costs at most a stop grace plus a kill wait plus a ready wait; the
-// poll budget covers that worst case and the status round-trips between them.
-const RESTART_READY_BUDGET_MS = 60_000;
-const RESTART_READY_POLL_MS = 250;
 const INSTALL_PROGRESS_MESSAGES: Record<SourceServerInstallProgress["phase"], string> = {
   "verify-archive": "Verifying Source Server archive",
   extract: "Extracting Source Server files",
@@ -146,9 +142,6 @@ type DirectChannelBackend = IRemoteBackend & {
 interface ServerStatusShape {
   state?: string;
   port?: number | null;
-  /** Changes when the Core is replaced; identity for a restart, not just a state word. */
-  startedAt?: number | null;
-  generation?: number;
 }
 
 class BackendSourceServerTransportAdapter implements SourceServerTransportAdapter {
@@ -423,110 +416,15 @@ class BackendSourceServerTransportAdapter implements SourceServerTransportAdapte
       });
     }
     const backend = await this.getBackend(target);
-    // The daemon was started by a boot-time supervisor (or already runs from a previous
-    // connection), so it cannot inherit this process's environment. Hand it the device
-    // relay as a file; the Core reads it at start.
-    const handoff = await this.deliverAgentNetworkHandoff(target, backend, context);
-    // Capture the pre-restart Core identity BEFORE it moves. `restart --json` only
-    // acknowledges: the supervisor defers the operation, so an early poll still sees the
-    // OLD Core reporting `ready` on the OLD port.
-    const beforeRestart = handoff.requiresRestart
-      ? await this.readStatus(target, context)
-      : undefined;
-    const restarted = handoff.requiresRestart
-      ? await this.restartCoreForRelay(target, context)
-      : false;
-    const finalPort = restarted
-      ? await this.awaitRestartedCorePort(target, beforeRestart, context)
-      : (port as number);
-    // The token belongs to the Core running NOW. It is minted fresh on every Core start
-    // (`createIngressToken` renames a new random token over the file), so reading it
-    // before the restart settles yields "new port + old token" and every request 401s.
+    // The daemon was started by a boot-time supervisor, so it cannot inherit this
+    // process's environment. Hand it the device relay as a file instead; its agent
+    // spawn reads that file, so a changed relay address needs no Core restart.
+    await this.deliverAgentNetworkHandoff(target, backend, context);
     const ingressToken = (
       await backend.readFile(`${SERVER_ROOT_READ_PATH}/run/ingress-token`)
     ).trim();
     if (!ingressToken) throw new Error("Source Server ingress token is missing");
-    return { port: finalPort, ingressToken };
-  }
-
-  /** One `status --json`, or undefined when the daemon could not answer. */
-  private async readStatus(
-    target: RemoteTarget,
-    context: TransportContext,
-  ): Promise<ServerStatusShape | undefined> {
-    const result = await this.exec(target, ["status", "--json"], context);
-    if (result.exitCode !== 0) return undefined;
-    try {
-      return readLastJsonLine(result.stdout) as ServerStatusShape;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
-   * Wait for a Core that is genuinely a different Core, then return its port.
-   *
-   * Identity, not just state: the supervisor acknowledges `restart` before it begins
-   * (`startAcknowledgedLifecycleOperation` defers the operation by `setImmediate`), so
-   * an early poll sees `ready` with the previous process's `startedAt`. A persisted
-   * status snapshot reused when the control socket is briefly unavailable has the same
-   * shape. Only a changed `startedAt` proves the replacement is live.
-   */
-  private async awaitRestartedCorePort(
-    target: RemoteTarget,
-    beforeRestart: ServerStatusShape | undefined,
-    context: TransportContext,
-  ): Promise<number> {
-    const deadline = Date.now() + RESTART_READY_BUDGET_MS;
-    const previousStartedAt = beforeRestart?.startedAt ?? null;
-    let lastState: string | undefined;
-    while (Date.now() < deadline) {
-      throwIfAborted(context.signal);
-      const status = await this.readStatus(target, context);
-      if (status) {
-        lastState = status.state;
-        if (status.state === "crash-loop-stopped" || status.state === "stop-failed") {
-          throw new Error(
-            `Source Server could not restart to apply the device egress relay (state=${status.state})`,
-          );
-        }
-        const startedAt = status.startedAt ?? null;
-        const isReplacement =
-          previousStartedAt === null ? startedAt !== null : startedAt !== previousStartedAt;
-        if (status.state === "ready" && isReplacement) {
-          if (!Number.isInteger(status.port) || (status.port as number) <= 0) {
-            throw new Error("Restarted Source Server reported no ingress port");
-          }
-          return status.port as number;
-        }
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, RESTART_READY_POLL_MS));
-    }
-    throw new Error(
-      `Source Server did not become ready after applying the device egress relay (last state=${lastState ?? "unknown"})`,
-    );
-  }
-
-  /** Ask the supervisor to replace the Core; only the Core moves, not the daemon. */
-  private async restartCoreForRelay(
-    target: RemoteTarget,
-    context: TransportContext,
-  ): Promise<boolean> {
-    context.onLog?.({
-      phase: "daemon",
-      message: "Restarting Source Server to apply the device egress relay",
-    });
-    const restarted = await this.exec(target, ["restart", "--json"], context);
-    if (restarted.exitCode !== 0) {
-      // A refusal is not fatal: the handoff is already on disk and applies at the next
-      // Core start. Report it and keep the current connection working.
-      context.onLog?.({
-        phase: "daemon",
-        message: `Source Server did not accept the relay restart; it will apply at the next start (exit ${restarted.exitCode})`,
-      });
-      return false;
-    }
-    return true;
+    return { port: port as number, ingressToken };
   }
 
   /**
@@ -536,15 +434,17 @@ class BackendSourceServerTransportAdapter implements SourceServerTransportAdapte
    * asked (`egressRelayFallbackOnly`). An owner-configured proxy stays with the
    * remote's own settings — the daemon reads it itself, first-choice, exactly as
    * before. A backend without a relay (WSL, Docker) writes nothing.
+   *
+   * Never restarts the Core. The relay's remote port is OS-assigned and therefore
+   * different on every SSH connection, so "the bytes changed" is the normal case, not
+   * an upgrade signal; a restart here would interrupt work on every reconnect.
    */
   private async deliverAgentNetworkHandoff(
     target: RemoteTarget,
     backend: IRemoteBackend,
     context: TransportContext,
-  ): Promise<{ requiresRestart: boolean }> {
-    if (!backend.resolveRuntimeProxy || backend.egressRelayFallbackOnly !== true) {
-      return { requiresRestart: false };
-    }
+  ): Promise<void> {
+    if (!backend.resolveRuntimeProxy || backend.egressRelayFallbackOnly !== true) return;
     let relayUrl: string | undefined;
     try {
       relayUrl = (await backend.resolveRuntimeProxy(""))?.trim() || undefined;
@@ -553,15 +453,14 @@ class BackendSourceServerTransportAdapter implements SourceServerTransportAdapte
         phase: "daemon",
         message: `egress relay unavailable: ${error instanceof Error ? error.message : String(error)}`,
       });
-      return { requiresRestart: false };
+      return;
     }
-    if (!relayUrl) return { requiresRestart: false };
-    const applied = await applyRemoteAgentNetworkHandoff({
+    if (!relayUrl) return;
+    await applyRemoteAgentNetworkHandoff({
       backend,
       network: { httpProxy: relayUrl, fallbackOnly: true },
       log: (message) => context.onLog?.({ phase: "daemon", message }),
     });
-    return { requiresRestart: applied.requiresCoreRestart };
   }
 
   public async openChannel(

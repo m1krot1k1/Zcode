@@ -14,8 +14,15 @@ import { describe, expect, it } from "vitest";
  *
  * The transport dials an already-running supervisor-started daemon, so there is no
  * spawn whose environment could carry `ZCODE_REMOTE_*`. The handoff is a file the Core
- * reads at start; it is written only when the remote bytes actually differ, so a
- * reconnect of a healthy workspace restarts nothing.
+ * re-reads on every agent spawn.
+ *
+ * The regression this file exists to prevent: the relay's remote loopback port is
+ * assigned by the OS on EVERY SSH connection (`forwardIn("127.0.0.1", 0, …)`), so a
+ * reconnect legitimately produces a different address. An earlier version treated
+ * "bytes changed" as a reason to restart the Core, which meant every reconnect of
+ * every SSH workspace — including hosts with working internet — killed running work
+ * there. The two cases below therefore use DIFFERENT relay URLs for the reconnect:
+ * a fixture that holds the port constant hides exactly this bug.
  */
 
 function completedStream(stdoutText = "", code = 0): StdioStream {
@@ -118,34 +125,45 @@ describe("remote agent network handoff", () => {
 
 describe("applying the handoff", () => {
   const relay = { httpProxy: "http://127.0.0.1:41234", fallbackOnly: true };
-  it("writes once and asks for a Core restart when the remote differs", async () => {
+
+  it("writes the handoff when the remote holds nothing", async () => {
     const backend = new HandoffBackend();
     const applied = await applyRemoteAgentNetworkHandoff({ backend, network: relay });
-    expect(applied).toEqual({ outcome: "written", requiresCoreRestart: true });
+    expect(applied).toEqual({ outcome: "written" });
     expect(backend.files.get("~/.zcode/server/remote-agent-network.json")).toBe(
       serializeRemoteAgentNetworkHandoff(relay),
     );
   });
 
-  it("is idempotent: an unchanged handoff restarts nothing", async () => {
+  it("is idempotent: identical bytes are not rewritten", async () => {
     const backend = new HandoffBackend();
     await applyRemoteAgentNetworkHandoff({ backend, network: relay });
     const writesBefore = backend.commands.length;
     const second = await applyRemoteAgentNetworkHandoff({ backend, network: relay });
-    expect(second).toEqual({ outcome: "unchanged", requiresCoreRestart: false });
-    // No second write command: reconnecting a healthy workspace costs one read.
+    expect(second).toEqual({ outcome: "unchanged" });
     expect(backend.commands.length).toBe(writesBefore);
   });
 
-  it("rewrites when the relay address changed, so a fresh tunnel is published", async () => {
+  /**
+   * The reconnect case, with the port CHANGED — which is what a real reconnect does
+   * (`forwardIn("127.0.0.1", 0, …)` asks the OS for a fresh port). The new address
+   * must be published, and it must be published WITHOUT any signal to restart the
+   * Core: the Core reads the file at spawn time, and a restart would kill the work
+   * already running on that workspace.
+   */
+  it("republishes a changed relay address and never asks to restart the Core", async () => {
     const backend = new HandoffBackend();
     await applyRemoteAgentNetworkHandoff({ backend, network: relay });
     const moved = await applyRemoteAgentNetworkHandoff({
       backend,
       network: { httpProxy: "http://127.0.0.1:51000", fallbackOnly: true },
     });
-    expect(moved.requiresCoreRestart).toBe(true);
+    expect(moved).toEqual({ outcome: "written" });
+    // Not just absent from this result: the result cannot express a restart at all.
+    expect(moved).not.toHaveProperty("requiresCoreRestart");
     expect(backend.files.get("~/.zcode/server/remote-agent-network.json")).toContain("51000");
+    // No restart command reaches the remote, whatever the outcome.
+    expect(backend.commands.some((command) => command.includes("restart"))).toBe(false);
   });
 
   it("writes nothing at all when the device offers no relay", async () => {
@@ -153,7 +171,6 @@ describe("applying the handoff", () => {
     const applied = await applyRemoteAgentNetworkHandoff({ backend, network: undefined });
     expect(applied).toEqual({
       outcome: "skipped",
-      requiresCoreRestart: false,
       reason: "no relay offered",
     });
     expect(backend.commands).toEqual([]);
@@ -163,7 +180,7 @@ describe("applying the handoff", () => {
     const backend = new HandoffBackend();
     backend.execExitCode = 1;
     const applied = await applyRemoteAgentNetworkHandoff({ backend, network: relay });
-    expect(applied).toMatchObject({ outcome: "skipped", requiresCoreRestart: false });
+    expect(applied).toMatchObject({ outcome: "skipped" });
     expect(applied.reason).toContain("exited with 1");
   });
 });

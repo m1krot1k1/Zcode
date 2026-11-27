@@ -58,17 +58,17 @@ export async function readRemoteAgentNetworkHandoff(
 export interface ApplyRemoteAgentNetworkHandoffResult {
   /** "written" only when the remote bytes changed. */
   outcome: "written" | "unchanged" | "skipped";
-  /** True when a running Core must restart to see a changed handoff. */
-  requiresCoreRestart: boolean;
   reason?: string;
 }
 
 /**
  * Write the handoff when it differs from what the remote already has.
  *
- * Idempotent by design: a connection that finds its own previous handoff unchanged
- * writes nothing and restarts nothing, so reconnecting a healthy workspace costs one
- * file read and no service disruption.
+ * No Core restart is implied by a change, and none may be added. The relay's remote
+ * loopback port is assigned by the OS per SSH connection, so a reconnect legitimately
+ * produces a new address; making that a restart signal would interrupt running work on
+ * every reconnect of every SSH workspace, including hosts whose own egress works fine.
+ * The Core re-reads this file per agent spawn, so new bytes apply to the next spawn.
  */
 export async function applyRemoteAgentNetworkHandoff(input: {
   backend: IRemoteBackend;
@@ -77,12 +77,12 @@ export async function applyRemoteAgentNetworkHandoff(input: {
 }): Promise<ApplyRemoteAgentNetworkHandoffResult> {
   const { backend, network, log } = input;
   if (!network?.httpProxy) {
-    return { outcome: "skipped", requiresCoreRestart: false, reason: "no relay offered" };
+    return { outcome: "skipped", reason: "no relay offered" };
   }
   const desired = serializeRemoteAgentNetworkHandoff(network).trim();
   const current = await readRemoteAgentNetworkHandoff(backend);
   if (current === desired) {
-    return { outcome: "unchanged", requiresCoreRestart: false };
+    return { outcome: "unchanged" };
   }
   const result = await collectCommand(
     await backend.exec(buildRemoteAgentNetworkHandoffCommand(network)),
@@ -95,10 +95,9 @@ export async function applyRemoteAgentNetworkHandoff(input: {
     );
     return {
       outcome: "skipped",
-      requiresCoreRestart: false,
       reason: `handoff write exited with ${result.exitCode}`,
     };
   }
   log?.("egress relay handoff written for a supervisor-started Source Server");
-  return { outcome: "written", requiresCoreRestart: true };
+  return { outcome: "written" };
 }

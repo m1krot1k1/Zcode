@@ -219,9 +219,12 @@ export function createAgentServices(
       if (!isDesktopAttachedRemote) await subagentsService.prepareRuntimeState(context);
       // 显式下发的 Agent 网络（Host 合成的回退中继）优先生效，不管当前入口是
       // desktop-attached stdio 还是 supervisor 启动的 standalone Source Server。
+      // 每次 spawn 重新解析：SSH 反向隧道每次重连都会拿到一个新的远端 loopback 端口，
+      // 若把端口冻结在 Core 启动时刻，实际会把一个已经死掉的地址交给 Agent。
       // 不能放宽成“任何已配置的代理”：owners 自己设置的代理必须继续走下面的首选语义。
-      const agentNetwork = options?.remoteAgentNetwork
-        ? options.remoteAgentNetwork
+      const providedNetwork = await options?.resolveRemoteAgentNetwork?.();
+      const agentNetwork = providedNetwork
+        ? providedNetwork
         : {
             httpProxy: settings.httpProxy,
             httpProxyList: settings.httpProxyList,

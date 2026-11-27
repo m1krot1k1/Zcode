@@ -15,7 +15,7 @@ import { installParentDisconnectHandler, installStdinCloseHandler } from "./pare
 
 import { resolveCoreServerId } from "./serverIdentity.js";
 import { createTaskActivityTracker } from "./taskActivityTracker.js";
-import { resolveServerCoreAgentNetwork } from "./remoteAgentNetwork.js";
+import { createAgentNetworkResolver, resolveServerCoreAgentNetwork } from "./remoteAgentNetwork.js";
 import { resolveServerLayout } from "../runtime/paths.js";
 
 declare const __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: string | undefined;
@@ -59,14 +59,14 @@ export async function runServerCore(generation: number): Promise<void> {
     );
   }
   const sourceServerId = (await resolveCoreServerId()) ?? hostname() ?? "zcode-server";
-  // 隔离远端靠 Host 下发的回退中继才能访问模型。这个值不是从配置里“猜”的，而是 Host 一次
-  // 性下发的；没有就是没有，Core 不得自己合成一个代理。
+  // 隔离远端靠 Host 下发的回退中继才能访问模型。这里只做一次诊断读取；真正交给 Agent 的
+  // 是每次 spawn 重新读的 resolver —— 中继的远端端口由 OS 每次 SSH 连接重新分配。
   const agentNetwork = await resolveServerCoreAgentNetwork(layout);
   if (agentNetwork.network) {
     // eslint-disable-next-line no-console -- the supervisor forks this entry with stdio
     // ignored, so a service logger would be invisible to a core started by hand.
     console.log(
-      `[server-core] agent network handoff applied from ${agentNetwork.source} (fallbackOnly=${agentNetwork.network.fallbackOnly === true})`,
+      `[server-core] agent network handoff available from ${agentNetwork.source} (fallbackOnly=${agentNetwork.network.fallbackOnly === true})`,
     );
   } else if (agentNetwork.handoffProblem) {
     console.warn(`[server-core] agent network handoff unusable: ${agentNetwork.handoffProblem}`);
@@ -76,7 +76,7 @@ export async function runServerCore(generation: number): Promise<void> {
       sourceServerId,
       zcodeBuiltinProviderConfigFilePath,
       providerProvisioningTargetEnabled: true,
-      remoteAgentNetwork: agentNetwork.network,
+      resolveRemoteAgentNetwork: createAgentNetworkResolver(layout),
       topicResourceRelayChannel: (request) => topicResourcePeers.getChannel(request),
     });
   const taskActivityTracker = createTaskActivityTracker(services.getOptional(IZCodeAgentService));

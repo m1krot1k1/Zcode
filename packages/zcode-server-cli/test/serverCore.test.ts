@@ -135,9 +135,9 @@ describe("runServerCore startup wiring", () => {
       zcodeBuiltinProviderConfigFilePath: materializedPath,
       sourceServerId: "server-installation-id",
       providerProvisioningTargetEnabled: true,
-      // The Core forwards whatever handoff it resolved; with none on disk this is
-      // undefined, and `resolveSpawnEnv` then keeps the remote's own settings.
-      remoteAgentNetwork: undefined,
+      // The spawn path gets a RESOLVER, never a boot-time snapshot: the relay's remote
+      // port is OS-assigned per SSH connection, so a captured address goes stale.
+      resolveRemoteAgentNetwork: expect.any(Function),
       topicResourceRelayChannel: expect.any(Function),
     });
     expect(createIngressToken).toHaveBeenCalledWith(layout);
@@ -165,15 +165,17 @@ describe("runServerCore startup wiring", () => {
 
     await runServerCore(1);
 
-    expect(createServerHostServices).toHaveBeenCalledWith(
-      expect.objectContaining({
-        remoteAgentNetwork: {
-          httpProxy: "http://127.0.0.1:41234",
-          noProxy: undefined,
-          fallbackOnly: true,
-        },
-      }),
-    );
+    // The spawn path receives a RESOLVER, not a captured value: the relay's remote port
+    // changes on every SSH reconnect, so a boot-time snapshot would go stale.
+    const call = createServerHostServices.mock.calls.at(-1)?.[0] as {
+      resolveRemoteAgentNetwork?: () => Promise<unknown>;
+    };
+    expect(call.resolveRemoteAgentNetwork).toBeTypeOf("function");
+    await expect(call.resolveRemoteAgentNetwork?.()).resolves.toEqual({
+      httpProxy: "http://127.0.0.1:41234",
+      noProxy: undefined,
+      fallbackOnly: true,
+    });
   });
 
   it("waits for owner host initialization before opening RPC", async () => {

@@ -204,7 +204,7 @@ export async function createServerHostServices(options: {
   zcodeBuiltinProviderConfigFilePath: string;
   providerProvisioningTargetEnabled?: boolean;
   /** Host 下发的 Agent 网络配置；没有就是没有，不得在此层合成默认值。 */
-  remoteAgentNetwork?: CreateLocalServicesOptions["remoteAgentNetwork"];
+  resolveRemoteAgentNetwork?: CreateLocalServicesOptions["resolveRemoteAgentNetwork"];
 }) {
   const projectStorageHostId = remoteHostIdFromWorkspaceIdentity(
     buildServerRemoteWorkspaceIdentity({
@@ -239,7 +239,7 @@ export async function createServerHostServices(options: {
     serviceAuthorityMode: "standalone-server",
     // Source Server 也是 Host 下发的网络配置的消费者：隔离远端靠这里的回退中继才能访问模型。
     // 与 stdio 入口共用一个解析器，否则两边会再次分叉。
-    remoteAgentNetwork: options.remoteAgentNetwork,
+    resolveRemoteAgentNetwork: options.resolveRemoteAgentNetwork,
     // Source Server является владельцем процесса на машине исполнения workspace;
     // delegated OpenCode должен запускаться здесь, а не в Desktop окне с удалённым cwd.
     enableOpenCodeAcpRuntime: true,

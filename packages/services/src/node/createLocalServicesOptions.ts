@@ -91,8 +91,8 @@ export interface CreateLocalServicesOptions {
   runtimeProcessEnvPatch?: Record<string, string>;
   /** 本地桌面上次 workspace 缺失时，仅用于 Agent 子进程 spawn.cwd 兜底。 */
   zcodeAgentSpawnFallbackCwd?: string;
-  /** Host 下发给远端一次性 Agent 网络配置；来源可以是 stdio 入口的 env，也可以是 Source Server 读取的 handoff 文件。 */
-  remoteAgentNetwork?: RemoteAgentNetworkOptions;
+  /** Host 下发的 Agent 网络配置；每次 Agent spawn 重新解析，不随 Core 启动一次性冻结。 */
+  resolveRemoteAgentNetwork?: () => Promise<RemoteAgentNetworkOptions | undefined>;
   /** 所属 Environment 的 ZCode Built-in Provider Config 物理路径。 */
   zcodeBuiltinProviderConfigFilePath: string;
   /** HTTP Server 只有在调用方明确配置认证时才暴露跨 Environment Provisioning target。 */
