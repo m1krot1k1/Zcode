@@ -24,6 +24,16 @@ vi.mock("../src/root/WorkspaceSettingsLayer.js", () => ({
   },
 }));
 
+// RootWorkspaceContent 挂载时会调用 useUncensoredSettingsRemoteSync，它经
+// useBaseWorkspaceServices() → useServices() 读取根服务。本用例只关心 settings
+// 遮罩拿到的是 workspace 作用域的服务，因此给出最小实现，让断言仍落在
+// workspaceScopedServices 上。
+vi.mock("../src/hooks/useServices.js", () => ({
+  ServiceProvider: ({ children }: { children: unknown }) => children,
+  useServices: () => ({}),
+  useOptionalServices: () => ({}),
+}));
+
 function makeServices(id: string): IServiceAccessor {
   return { __testId: id } as unknown as IServiceAccessor;
 }

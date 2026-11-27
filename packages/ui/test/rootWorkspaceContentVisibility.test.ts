@@ -18,6 +18,11 @@ vi.mock("@/App.js", () => ({
 
 vi.mock("@/hooks/useServices.js", () => ({
   ServiceProvider: ({ children }: { children: unknown }) => children,
+  // RootWorkspaceContent 里的 useUncensoredSettingsRemoteSync 通过
+  // useBaseWorkspaceServices() → useServices() 读取服务；只 mock ServiceProvider
+  // 会让该 hook 找不到导出，整棵树在测试里崩掉。这里给出最小可用服务对象。
+  useServices: () => ({}),
+  useOptionalServices: () => ({}),
 }));
 
 vi.mock("@/i18n/IntlProvider.js", () => ({

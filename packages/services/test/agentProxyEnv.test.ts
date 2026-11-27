@@ -288,8 +288,19 @@ describe("node/agent passes a provided remote network through regardless of entr
     // 承重项：`isDesktopAttachedRemote && options?.remoteAgentNetwork` 让 supervisor 启动的
     // standalone Source Server 永远丢弃 Host 下发的网络配置，回退中继走不到 agent。
     // 恢复这个条件，就等于恢复“server-core 读不到、agent 也拿不到”。
-    expect(spawnEnvBlock).not.toContain("isDesktopAttachedRemote && options?.remoteAgentNetwork");
-    expect(spawnEnvBlock).toContain("options?.remoteAgentNetwork");
+    // 现在网络由 `resolveRemoteAgentNetwork` 在每次 spawn 重新解析（SSH 重连会换端口，
+    // 冻结在 Core 启动时刻的地址已经死掉），所以断言落在解析器上，不能落在旧字段上。
+    //
+    // 断言的是“结论”，不是某一种写法：只要取得网络的那个表达式里出现
+    // isDesktopAttachedRemote，不管写成 &&、三元还是提前 return，都是同一个回归。
+    const providedIdx = spawnEnvBlock.indexOf("const providedNetwork");
+    expect(providedIdx).toBeGreaterThan(-1);
+    const providedStatement = spawnEnvBlock.slice(
+      providedIdx,
+      spawnEnvBlock.indexOf(";", providedIdx) + 1,
+    );
+    expect(providedStatement).toContain("resolveRemoteAgentNetwork");
+    expect(providedStatement).not.toContain("isDesktopAttachedRemote");
   });
 
   it("still carries fallbackOnly as the typed spawn patch value", () => {
