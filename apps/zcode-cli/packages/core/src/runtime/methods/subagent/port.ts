@@ -1,7 +1,4 @@
-/**
- * Сборка SubagentPort: связывает parent runtime с child AgentRuntime, tool policy,
- * permission/MCP/skill preflight и activity watchdog.
- */
+/** SubagentPort: parent runtime, child AgentRuntime, tool policy, permission/MCP, watchdog. */
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
