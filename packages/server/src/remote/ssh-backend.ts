@@ -6,7 +6,7 @@ import type { Duplex } from "node:stream";
 import { posix } from "node:path";
 import { Emitter } from "@zcode/rpc";
 import { resolveZCodeRuntimeEnv } from "@zcode/shared";
-import { createEgressRelay, type EgressRelay } from "@zcode/server/remote/egressRelay.js";
+import { SshEgressExposure } from "./sshEgressExposure.js";
 import type {
   IRemoteBackend,
   RemoteDisconnectEvent,
@@ -108,9 +108,7 @@ export class SSHBackend implements IRemoteBackend {
   private disconnectReported = false;
   private embeddingForwardInstalled = false;
   private readonly egressRelayEnabled: boolean;
-  private egressRelay: EgressRelay | undefined;
-  private egressRelayForwardPort: number | undefined;
-  private egressRelayUrl: string | undefined;
+  private readonly egressExposure: SshEgressExposure;
   private readonly disconnectEmitter = new Emitter<RemoteDisconnectEvent>();
   readonly onDidDisconnect = this.disconnectEmitter.event;
 
@@ -139,6 +137,7 @@ export class SSHBackend implements IRemoteBackend {
   constructor(options: SSHBackendOptions) {
     this.client = new SSHClient();
     this.egressRelayEnabled = options.egressRelay === true;
+    this.egressExposure = new SshEgressExposure(this.client);
     this.client.on("error", this.onClientError);
     this.client.on("close", this.onClientClose);
     this.client.on("end", this.onClientEnd);
@@ -228,11 +227,13 @@ export class SSHBackend implements IRemoteBackend {
         this.hasEverConnected = true;
         this.disconnectReported = false;
         this.installLocalEmbeddingForward();
-        this.installEgressRelayForward().catch((error: unknown) => {
-          console.warn(
-            `[ssh] egress relay forward unavailable: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        });
+        if (this.egressRelayEnabled) {
+          this.egressExposure.install().catch((error: unknown) => {
+            console.warn(
+              `[ssh] egress relay forward unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
+        }
         resolve();
       };
       const handleConnectError = (error: unknown) => {
@@ -269,77 +270,6 @@ export class SSHBackend implements IRemoteBackend {
   }
 
   /**
-   * Expose this device's egress to the remote host: start (once) a loopback
-   * relay on the device and reverse-forward a remote loopback port to it.
-   *
-   * `forwardIn` is re-requested after every reconnect because the tunnel dies
-   * with the SSH connection, and the remote port is re-chosen each time so a
-   * previous generation's listener can never be reused by mistake.
-   */
-  private async installEgressRelayForward(): Promise<void> {
-    if (!this.egressRelayEnabled) return;
-    if (!this.egressRelay) {
-      this.egressRelay = await createEgressRelay();
-    }
-    if (this.egressRelayForwardPort !== undefined) return;
-
-    const relayPort = this.egressRelay.port;
-    const forwardIn = (
-      this.client as unknown as {
-        forwardIn(
-          address: string,
-          port: number,
-          callback: (error?: Error, assignedPort?: number) => void,
-        ): void;
-      }
-    ).forwardIn.bind(this.client);
-
-    const assignedPort = await new Promise<number>((resolve, reject) => {
-      forwardIn("127.0.0.1", 0, (error, port) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        if (typeof port !== "number" || port <= 0) {
-          reject(new Error("ssh server did not assign a remote egress port"));
-          return;
-        }
-        resolve(port);
-      });
-    });
-
-    // One listener per connection: the remote half of a later forward must not
-    // reach a relay that a previous generation replaced.
-    (
-      this.client as unknown as {
-        on(
-          event: "tcp connection",
-          listener: (
-            details: { destPort: number },
-            accept: () => Duplex,
-            reject: () => void,
-          ) => void,
-        ): void;
-      }
-    ).on("tcp connection", (details, accept, reject) => {
-      if (details.destPort !== assignedPort) {
-        reject();
-        return;
-      }
-      const channel = accept();
-      const socket = netConnect({ host: "127.0.0.1", port: relayPort });
-      socket.on("error", () => channel.destroy());
-      channel.on("error", () => socket.destroy());
-      channel.pipe(socket);
-      socket.pipe(channel);
-    });
-
-    this.egressRelayForwardPort = assignedPort;
-    this.egressRelayUrl = `http://127.0.0.1:${assignedPort}`;
-    console.log(`[ssh] egress relay exposed to remote on port ${assignedPort}`);
-  }
-
-  /**
    * Report the proxy the remote host should use to reach this device's egress.
    * SSH needs a reverse forward rather than a host-gateway rewrite: the remote
    * loopback is a different machine from this one.
@@ -352,16 +282,23 @@ export class SSHBackend implements IRemoteBackend {
       return proxyUrl;
     }
     await this.ensureConnected();
-    await this.installEgressRelayForward();
-    return this.egressRelayUrl ?? proxyUrl;
+    if (!this.egressRelayEnabled) return proxyUrl;
+    try {
+      await this.egressExposure.install();
+    } catch (error) {
+      console.warn(
+        `[ssh] egress relay forward unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return proxyUrl;
+    }
+    return this.egressExposure.proxyUrl ?? proxyUrl;
   }
 
   private reportDisconnect(reason: RemoteDisconnectReason, error?: Error): void {
     this.embeddingForwardInstalled = false;
     // A reconnect gets a fresh tunnel and therefore a fresh remote loopback
     // port; the stale proxy URL must not be handed to a later spawn.
-    this.egressRelayForwardPort = undefined;
-    this.egressRelayUrl = undefined;
+    this.egressExposure.reset();
     const shouldReport =
       !this.disposed && !this.disconnectReported && (this.connected || this.hasEverConnected);
 
@@ -789,14 +726,8 @@ export class SSHBackend implements IRemoteBackend {
     } catch {
       // Forward may never have been installed; disposal stays best-effort.
     }
-    if (this.egressRelayForwardPort !== undefined) {
-      try {
-        this.client.unforwardIn("127.0.0.1", this.egressRelayForwardPort, () => {});
-      } catch {
-        // The tunnel dies with the connection anyway; keep disposal total.
-      }
-      this.egressRelayForwardPort = undefined;
-      this.egressRelayUrl = undefined;
+    if (this.egressRelayEnabled) {
+      this.egressExposure.dispose();
     }
     // Closing the relay here would also break a concurrent reconnect that is
     // about to reuse it; it is bound to loopback, holds no remote state and is
