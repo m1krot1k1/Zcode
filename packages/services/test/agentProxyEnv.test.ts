@@ -273,6 +273,33 @@ describe("official MCP trust: host and agent must agree on the ZCode API origin"
 /* 上面的用例证明"注入之后两侧一致"，但证明不了 Host 装配真的注入了。
    resolveSpawnEnv 是 Node 入口 agent 阶段的内联闭包（services/src/node/agent.ts），
    为它搭 mock 不划算；这里退而对接线做源码断言，至少能挡住"整行被删/被接错解析器"。 */
+describe("node/agent passes a provided remote network through regardless of entry", () => {
+  const source = readFileSync(
+    resolve(process.cwd(), "packages/services/src/node/agent.ts"),
+    "utf8",
+  );
+  const spawnEnvStart = source.indexOf("resolveSpawnEnv: async (");
+  const spawnEnvBlock = source.slice(
+    spawnEnvStart,
+    source.indexOf("...buildAgentTelemetrySpawnEnv({", spawnEnvStart),
+  );
+
+  it("does not gate the handoff on desktop-attached authority", () => {
+    // 承重项：`isDesktopAttachedRemote && options?.remoteAgentNetwork` 让 supervisor 启动的
+    // standalone Source Server 永远丢弃 Host 下发的网络配置，回退中继走不到 agent。
+    // 恢复这个条件，就等于恢复“server-core 读不到、agent 也拿不到”。
+    expect(spawnEnvBlock).not.toContain("isDesktopAttachedRemote && options?.remoteAgentNetwork");
+    expect(spawnEnvBlock).toContain("options?.remoteAgentNetwork");
+  });
+
+  it("still carries fallbackOnly as the typed spawn patch value", () => {
+    // 不能只把地址传下去：flag 会在 env 清洗里被剔除，必须从 typed 字段重新发出。
+    expect(spawnEnvBlock).toContain(
+      'fallbackOnly: "fallbackOnly" in agentNetwork ? agentNetwork.fallbackOnly : undefined',
+    );
+  });
+});
+
 describe("node/agent wires the authoritative origin into resolveSpawnEnv", () => {
   const source = readFileSync(
     resolve(process.cwd(), "packages/services/src/node/agent.ts"),

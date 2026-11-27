@@ -15,6 +15,7 @@ import { installParentDisconnectHandler, installStdinCloseHandler } from "./pare
 
 import { resolveCoreServerId } from "./serverIdentity.js";
 import { createTaskActivityTracker } from "./taskActivityTracker.js";
+import { resolveServerCoreAgentNetwork } from "./remoteAgentNetwork.js";
 import { resolveServerLayout } from "../runtime/paths.js";
 
 declare const __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: string | undefined;
@@ -58,11 +59,24 @@ export async function runServerCore(generation: number): Promise<void> {
     );
   }
   const sourceServerId = (await resolveCoreServerId()) ?? hostname() ?? "zcode-server";
+  // 隔离远端靠 Host 下发的回退中继才能访问模型。这个值不是从配置里“猜”的，而是 Host 一次
+  // 性下发的；没有就是没有，Core 不得自己合成一个代理。
+  const agentNetwork = await resolveServerCoreAgentNetwork(layout);
+  if (agentNetwork.network) {
+    // eslint-disable-next-line no-console -- the supervisor forks this entry with stdio
+    // ignored, so a service logger would be invisible to a core started by hand.
+    console.log(
+      `[server-core] agent network handoff applied from ${agentNetwork.source} (fallbackOnly=${agentNetwork.network.fallbackOnly === true})`,
+    );
+  } else if (agentNetwork.handoffProblem) {
+    console.warn(`[server-core] agent network handoff unusable: ${agentNetwork.handoffProblem}`);
+  }
   const { services, workspaceIdentityMapper, migrationFailedPathCount } =
     await createServerHostServices({
       sourceServerId,
       zcodeBuiltinProviderConfigFilePath,
       providerProvisioningTargetEnabled: true,
+      remoteAgentNetwork: agentNetwork.network,
       topicResourceRelayChannel: (request) => topicResourcePeers.getChannel(request),
     });
   const taskActivityTracker = createTaskActivityTracker(services.getOptional(IZCodeAgentService));

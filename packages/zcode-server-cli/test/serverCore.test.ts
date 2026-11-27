@@ -1,5 +1,7 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveServerLayout } from "../src/runtime/paths.js";
 
 const createServerHostServices = vi.fn();
@@ -44,6 +46,14 @@ const PROCESS_EVENTS = ["message", "SIGTERM", "SIGINT"] as const;
 const processEmitter: NodeJS.EventEmitter = process;
 
 describe("runServerCore startup wiring", () => {
+  // Throwaway roots created by individual cases, removed after the suite.
+  const tempRoots: string[] = [];
+  afterAll(async () => {
+    await Promise.all(
+      tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    );
+  });
+
   const layout = resolveServerLayout("/tmp/zcode-server-core-test/.zcode/server");
   const materializedPath = join(
     environmentConfigRoot,
@@ -125,9 +135,45 @@ describe("runServerCore startup wiring", () => {
       zcodeBuiltinProviderConfigFilePath: materializedPath,
       sourceServerId: "server-installation-id",
       providerProvisioningTargetEnabled: true,
+      // The Core forwards whatever handoff it resolved; with none on disk this is
+      // undefined, and `resolveSpawnEnv` then keeps the remote's own settings.
+      remoteAgentNetwork: undefined,
       topicResourceRelayChannel: expect.any(Function),
     });
     expect(createIngressToken).toHaveBeenCalledWith(layout);
+  });
+
+  it("resolves the Desktop agent network handoff before assembling host services", async () => {
+    // 承重项：Core 必须先读到 Host 下发的网络配置并把它交给 createServerHostServices，
+    // 否则 supervisor 启动的 standalone Source Server 永远不会把回退中继传给 agent。
+    // A throwaway server root, not the shared fixture: this test writes a file and must
+    // not leak it into the next case's layout.
+    const handoffRoot = join(tmpdir(), `zcode-core-handoff-${process.pid}-${Date.now()}`);
+    tempRoots.push(handoffRoot);
+    const handoffLayout = resolveServerLayout(join(handoffRoot, ".zcode", "server"));
+    process.env.ZCODE_SERVER_ROOT = handoffLayout.serverRoot;
+    await mkdir(handoffLayout.serverRoot, { recursive: true });
+    await writeFile(
+      join(handoffLayout.serverRoot, "remote-agent-network.json"),
+      JSON.stringify({
+        httpProxy: "http://127.0.0.1:41234",
+        noProxy: null,
+        fallbackOnly: true,
+      }),
+      "utf8",
+    );
+
+    await runServerCore(1);
+
+    expect(createServerHostServices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        remoteAgentNetwork: {
+          httpProxy: "http://127.0.0.1:41234",
+          noProxy: undefined,
+          fallbackOnly: true,
+        },
+      }),
+    );
   });
 
   it("waits for owner host initialization before opening RPC", async () => {

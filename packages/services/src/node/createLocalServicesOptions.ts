@@ -25,6 +25,7 @@ import type {
   DynamicWorkflowMode,
   ProviderProvisioningTrigger,
   ServiceAuthorityMode,
+  RemoteAgentNetworkOptions,
   ZCodeAutomation,
   ZCodeAutomationRun,
 } from "@zcode/shared";
@@ -90,14 +91,8 @@ export interface CreateLocalServicesOptions {
   runtimeProcessEnvPatch?: Record<string, string>;
   /** 本地桌面上次 workspace 缺失时，仅用于 Agent 子进程 spawn.cwd 兜底。 */
   zcodeAgentSpawnFallbackCwd?: string;
-  /** desktop-attached remote server 从 Desktop Host 收到的一次性 Agent 网络配置。 */
-  remoteAgentNetwork?: {
-    httpProxy?: string;
-    httpProxyList?: string;
-    noProxy?: string;
-    /** The proxy is fallback-only: direct first, relay after a network failure. */
-    fallbackOnly?: boolean;
-  };
+  /** Host 下发给远端一次性 Agent 网络配置；来源可以是 stdio 入口的 env，也可以是 Source Server 读取的 handoff 文件。 */
+  remoteAgentNetwork?: RemoteAgentNetworkOptions;
   /** 所属 Environment 的 ZCode Built-in Provider Config 物理路径。 */
   zcodeBuiltinProviderConfigFilePath: string;
   /** HTTP Server 只有在调用方明确配置认证时才暴露跨 Environment Provisioning target。 */

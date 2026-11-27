@@ -217,14 +217,16 @@ export function createAgentServices(
       const [settings] = await Promise.all([settingService.get(), providerRuntime.start()]);
       // 本地 Host 准备解析快照；远程 CLI 继续由自己的文件 loader 读取和迁移配置。
       if (!isDesktopAttachedRemote) await subagentsService.prepareRuntimeState(context);
-      const agentNetwork =
-        isDesktopAttachedRemote && options?.remoteAgentNetwork
-          ? options.remoteAgentNetwork
-          : {
-              httpProxy: settings.httpProxy,
-              httpProxyList: settings.httpProxyList,
-              noProxy: settings.httpProxyNoProxy,
-            };
+      // 显式下发的 Agent 网络（Host 合成的回退中继）优先生效，不管当前入口是
+      // desktop-attached stdio 还是 supervisor 启动的 standalone Source Server。
+      // 不能放宽成“任何已配置的代理”：owners 自己设置的代理必须继续走下面的首选语义。
+      const agentNetwork = options?.remoteAgentNetwork
+        ? options.remoteAgentNetwork
+        : {
+            httpProxy: settings.httpProxy,
+            httpProxyList: settings.httpProxyList,
+            noProxy: settings.httpProxyNoProxy,
+          };
       const cuaPluginEnabled = isCuaEnabledForContext(context);
       let cuaProductHelperEnv: Record<string, string> = {};
       if (cuaPluginEnabled && (process.platform === "darwin" || process.platform === "win32")) {

@@ -2544,6 +2544,14 @@ exceptions:
       # owns the tunnel, in the unmanaged server module — path-exact, as above.
       - packages/server/src/remote/egressRelay.ts
       - packages/server/src/remote/sshEgressExposure.ts
+      # The consumer half of the same feature: the Device writes the relay as a
+      # handoff file next to the daemon's server root (a supervisor-started daemon
+      # cannot inherit the launcher's environment), and the Core reads it at start.
+      # The shared resolver is one function both entries import, so it lives in the
+      # unmanaged shared module beside runtimeEnv.ts, whose key list it must match.
+      - packages/server/src/source-server/remoteAgentNetworkHandoff.ts
+      - packages/shared/src/remoteAgentNetwork.ts
+      - packages/zcode-server-cli/src/server-core/remoteAgentNetwork.ts
       # Этап 6.1b: версия приложения для не-упакованного Electron.
       # electron-updater читает app.getVersion() при импорте main-бандла и падает на "0.0";
       # bootstrap обязан выполниться ДО остальных import'ов, поэтому живёт одним файлом
