@@ -70,7 +70,7 @@ import {
   recordTruncatedToolCallRecovery,
 } from "./turn-output-token-continuation.js";
 import { synthesizeTruncatedToolCallSettlements } from "../../tool/self-repair/index.js";
-import { stripRefusalMarker } from "../uncensored-takeover/index.js";
+import { detectRefusal, stripRefusalMarker } from "../uncensored-takeover/index.js";
 import { recoverModelStepAfterContextExceeded } from "./turn-model-step-compact-recovery.js";
 import { handleOutputTokenLimitOutcome } from "./turn-model-step-output-limit.js";
 import {
@@ -588,6 +588,32 @@ async function runModelBackedTurnStepImpl(
     outputTokenContinuation === "none" &&
     responseLength === 0 &&
     toolCalls.length === 0;
+  // 原因：供应商把拒答做成「200 + 空正文」时，可疑空结果在这里先抛错，gate 根本没机会
+  // 看到它——用户拿到的是 ModelError，而不是 uncensored 接管后的答案。
+  // 修复依据：停止原因本身就是拒答（refusal/content-filter）时，空正文是拒答的一种形态，
+  // 不是坏响应；把它交给正常无工具分支，让 gate 先判定，gate 不认领才回到空结果保护。
+  const refusalShapedEmptyResult =
+    responseLength === 0 &&
+    toolCalls.length === 0 &&
+    !localTerminalResponse &&
+    outputTokenContinuation === "none" &&
+    // 只有真的配了接管才改道：没配时这条「空正文」必须继续落回下面的可疑空结果错误，
+    // 否则用户会从一条明确报错变成一次静默的空成功回合。
+    this.config.uncensoredTakeover !== undefined &&
+    detectRefusal({
+      finishReason: result.finishReason,
+      rawFinishReason,
+    }) !== null;
+  if (refusalShapedEmptyResult) {
+    return await finishModelStepWithoutToolCalls.call(this, state, {
+      assistantPersistenceAnchor,
+      assistantCreatedAt,
+      assistantMessageId,
+      modelTraceContext,
+      querySource,
+      result,
+    });
+  }
   if (
     emptyMainTurnResult ||
     (!localTerminalResponse &&

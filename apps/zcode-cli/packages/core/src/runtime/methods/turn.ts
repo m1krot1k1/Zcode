@@ -33,7 +33,7 @@ import {
   captureHighspeedFallbackSelection,
   applySubmissionExecutionState,
 } from "./turn-model.js";
-import { shouldRunRootSwarmPlanner } from "../helpers/swarm-planner-gate.js";
+import { shouldRunRootSwarmPlanner, isExplicitRoutingCommandInput } from "../helpers/swarm-planner-gate.js";
 import { executeSwarmRun } from "./turn-swarm-execute.js";
 import {
   createTurnAbortScope,
@@ -423,6 +423,8 @@ export async function executeTurnCommand(
               ownsRootRunBudget,
               orchestrationMode: options?.intent?.orchestrationMode,
               internalSwarmRootRunId: options?.internalSwarmRootRunId,
+              // `/start` 这类命令自己拥有本回合的编排；两条编排同时开会互相拆台。
+              explicitRoutingCommand: isExplicitRoutingCommandInput(displayInput),
             })
           ) {
             const swarmHandled = await executeSwarmRun.call(this, loopState, input, {

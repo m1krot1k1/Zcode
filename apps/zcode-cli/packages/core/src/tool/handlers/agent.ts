@@ -531,12 +531,19 @@ const agentHandler: ToolHandler = async (input, context) => {
       },
     );
   }
-  // 修复依据：仅当 start 把 DAG 和顶层验收条件一起传入时忽略该 DAG。
-  // orchestrator 按完整 prompt 和这些条件自行规划，避免反复 schema 失败。
-  const taskGraph =
-    isStart && parsed.task_graph !== undefined && parsed.acceptance_criteria !== undefined
-      ? undefined
-      : parsed.task_graph;
+  // 原因：start 同时带 DAG 和顶层验收条件时，旧路径**静默丢弃** DAG 并按普通 orchestrator
+  // 启动——用户看到「swarm 经 /start 运行时行为莫名其妙」，而提交的图从未执行，
+  // 结果里也没有任何一条说明。修复依据：不再无声丢弃。`task_graph` 的节点各自持有验收
+  // 条件（全调用方共用的不变量），所以冲突时该让路的是顶层条件——把这次让路作为一条
+  // 可见的警告随工具结果返回给模型，模型据此如实告诉用户，而不是假装图跑过了。
+  const startGraphWithTopLevelCriteria =
+    isStart && parsed.task_graph !== undefined && parsed.acceptance_criteria !== undefined;
+  const taskGraph = parsed.task_graph;
+  const startGraphWarning = startGraphWithTopLevelCriteria
+    ? `⚠️ START_GRAPH_CRITERIA_IGNORED: start passed task_graph together with top-level acceptance_criteria. ` +
+      `The ${parsed.task_graph?.nodes.length ?? 0} node(s) in your graph run; their own acceptance_criteria apply, ` +
+      `and the top-level acceptance_criteria are ignored. Tell the user that, and do not present the graph as having run with those top-level criteria.`
+    : undefined;
 
   // 同一批里的多个 Agent 各自独立：root 默认改为后台启动，先返回的 agent 结果立即
   // 进入通知队列。Turn-scoped caller 不能后台化，否则它的 runtime 关闭时会取消孩子。
@@ -549,7 +556,10 @@ const agentHandler: ToolHandler = async (input, context) => {
     toolCallId: context.toolCallId,
   });
 
-  if (taskGraph && (runInBackground || parsed.acceptance_criteria !== undefined)) {
+  // `/start` 的「图 + 顶层条件」组合已在上面处理：保留图、丢弃条件并记日志。
+  // 其余调用方仍受这条不变量约束，不得把两者混用。
+  const topLevelCriteriaConflicts = parsed.acceptance_criteria !== undefined && !startGraphWithTopLevelCriteria;
+  if (taskGraph && (runInBackground || topLevelCriteriaConflicts)) {
     throw createCoreError(
       CoreErrorType.ToolExecutionFailed,
       runInBackground
@@ -719,7 +729,7 @@ const agentHandler: ToolHandler = async (input, context) => {
         },
       );
     }
-    return context.subagentPort.runTaskDag(
+    const dagResult = await context.subagentPort.runTaskDag(
       {
         ...sharedRequest,
         agentType,
@@ -733,6 +743,10 @@ const agentHandler: ToolHandler = async (input, context) => {
       },
       options,
     );
+    // 让路说明随结果回到模型，而不是留在没人读的日志里。
+    return startGraphWarning === undefined
+      ? dagResult
+      : `${startGraphWarning}\n\n${typeof dagResult === "string" ? dagResult : JSON.stringify(dagResult)}`;
   }
 
   return context.subagentPort.launch(

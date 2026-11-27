@@ -187,10 +187,14 @@ function createHarness(options: HarnessOptions) {
 
 async function runGate(
   harness: ReturnType<typeof createHarness>,
-  overrides: { assistantText?: string; finishReason?: string } = {},
+  overrides: {
+    assistantText?: string;
+    finishReason?: string;
+    querySource?: string;
+  } = {},
 ) {
   return await runUncensoredTakeoverGate.call(harness.runtime as never, harness.state as never, {
-    querySource: "main_turn",
+    querySource: overrides.querySource ?? "main_turn",
     result: {
       finishReason: overrides.finishReason ?? "stop",
       text: overrides.assistantText ?? harness.assistantText,
@@ -281,6 +285,50 @@ describe("uncensored takeover gate", () => {
     expect(harness.generated[0]?.messages[1]?.content).toContain(USER_TEXT);
     expect(harness.fetchCalls).toHaveLength(0);
   });
+
+  // 回归：gate 原本只服务 `main_turn`，于是 `/start`（根只调 Task）与所有 subagent 回合里的
+  // 拒答根本到不了备用模型——用户看到「普通模型拒了，uncensored 没接」。
+  it.each(["main_turn", "subagent"])("takes over a refusal in a %s turn", async (querySource) => {
+    const harness = createHarness({ userText: USER_TEXT, assistantText: synthesizedRefusal() });
+
+    const result = await runGate(harness, { querySource });
+
+    expect(result.action).toBe("finish");
+    expect(result.action === "finish" && result.finalText).toBe(FALLBACK_OUTPUT);
+    expect(harness.generated).toHaveLength(1);
+  });
+
+  // 内部派生的查询不是拒答现场：它们没有待交付的条目，接管只会多花一次调用并写脏历史。
+  it.each([
+    "session_title",
+    "compact",
+    "swarm_planner",
+    "goal_completion_verification",
+    "web_fetch_processing",
+    "read_session_context",
+  ])("never takes over inside a %s query", async (querySource) => {
+    const harness = createHarness({ userText: USER_TEXT, assistantText: synthesizedRefusal() });
+
+    const result = await runGate(harness, { querySource });
+
+    expect(result.action).toBe("unhandled");
+    expect(harness.generated).toHaveLength(0);
+    expect(harness.fetchCalls).toHaveLength(0);
+  });
+
+  // 供应商把拒答做成「200 + 空正文」是拒答的另一种形态，不是空结果故障。
+  it.each(["refusal", "content-filter"])(
+    "takes over an empty response whose finish reason is %s",
+    async (finishReason) => {
+      const harness = createHarness({ userText: USER_TEXT, assistantText: "" });
+
+      const result = await runGate(harness, { assistantText: "", finishReason });
+
+      expect(result.action).toBe("finish");
+      expect(result.action === "finish" && result.finalText).toBe(FALLBACK_OUTPUT);
+      expect(harness.generated).toHaveLength(1);
+    },
+  );
 
   it("keeps the fallback answer as the last text after a repeated refusal", async () => {
     const harness = createHarness({

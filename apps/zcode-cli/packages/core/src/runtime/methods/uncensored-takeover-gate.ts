@@ -57,6 +57,17 @@ interface CachedOutcome {
   toolsExecuted?: number;
 }
 
+/**
+ * 本 gate 服务的回合类型。拒答是回合级事实，与路由身份无关：`/start` 的根回合
+ * (`main_turn`) 与它派生的每个 `subagent` 回合都要有备用模型接管，否则用户在
+ * 「普通模型拒答 → uncensored」这条路上只要走 `/start` 或 Swarm 就断掉。
+ *
+ * 反例（不得加入）：`session_title`、`compact`、`goal_completion_verification`、
+ * `swarm_planner`、`web_fetch_processing`、`read_session_context` 等内部派生查询。
+ * 它们没有待交付的任务条目，重试只会产生额外调用并往里写多余历史。
+ */
+const TAKEOVER_ELIGIBLE_QUERY_SOURCES: ReadonlySet<string> = new Set(["main_turn", "subagent"]);
+
 /** Per-runtime, therefore per-session, guard. It closes the same-process duplicate window;
  * the durable session entry closes the restart window. Limitation: a second process sharing
  * one session relies on `sessionEntries` being implemented by its SessionStorePort.
@@ -348,7 +359,13 @@ export async function runUncensoredTakeoverGate(
   state: RegularTurnLoopState,
   options: { querySource: string; result: RuntimeModelTextResult },
 ): Promise<UncensoredTakeoverGateResult> {
-  if (options.querySource !== "main_turn") return { action: "unhandled" };
+  // 原因：原生 gate 只认 `main_turn`，于是 `/start`（根只调 Task）和所有 subagent 回合里的
+  // 拒答永远到不了备用模型——用户把任务交给 start/swarm 后，一旦主模型拒答，整条链就断在
+  // 那里，风格上正是「普通模型拒答后没有转交 uncensored」。修复依据：拒答是回合级事实，
+  // 与路由身份无关；凡是用户可见的推理回合（main/start orchestrator/worker subagent）都应
+  // 走同一门。内部派生的查询（标题、压缩、planner、web search 处理）不是拒答现场：
+  // 它们没有待交付的条目，重试只会烧钱并污染历史。
+  if (!TAKEOVER_ELIGIBLE_QUERY_SOURCES.has(options.querySource)) return { action: "unhandled" };
   const takeover = this.config.uncensoredTakeover;
   if (!takeover) return { action: "unhandled" };
   const providerReason = detectRefusal({

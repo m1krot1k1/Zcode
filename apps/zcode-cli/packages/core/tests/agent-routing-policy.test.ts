@@ -404,11 +404,11 @@ describe("Agent/Task caller routing policy", () => {
   it.each([
     ["Agent", agentToolEntry],
     ["Task", taskToolEntry],
-  ] as const)("%s routes start's extra task_graph to one orchestrator", async (_name, entry) => {
+  ] as const)("%s runs start's task_graph instead of silently dropping it", async (_name, entry) => {
     const launch = vi.fn(async () => completedOutput("orchestrator"));
-    const runTaskDag = vi.fn();
+    const runTaskDag = vi.fn(async () => completedOutput("orchestrator"));
 
-    await entry.handler(
+    const result = await entry.handler(
         {
           description: "orchestrate",
           prompt: "run the graph",
@@ -417,18 +417,16 @@ describe("Agent/Task caller routing policy", () => {
           acceptance_criteria: [],
         },
         createContext({
+          // 图现在真的会执行，所以它的节点角色也真的会被校验。
           callerAgentType: "start",
-          availableAgentTypes: ["orchestrator", "coder"],
+          availableAgentTypes: ["orchestrator", "coder", "researcher"],
           subagentPort: { launch, runTaskDag } as never,
         }),
       );
-    expect(runTaskDag).not.toHaveBeenCalled();
-    expect(launch).toHaveBeenCalledTimes(1);
-    expect(launch.mock.calls[0]?.[0]).toMatchObject({
-      agentType: "orchestrator",
-      prompt: "run the graph",
-      acceptanceCriteria: [],
-    });
+    // 回归：提交的图必须真的被执行；旧行为把它丢掉、改用普通 orchestrator，且无任何说明。
+    expect(runTaskDag).toHaveBeenCalledTimes(1);
+    expect(launch).not.toHaveBeenCalled();
+    expect(String(result)).toContain("START_GRAPH_CRITERIA_IGNORED");
   });
 
   it.each([

@@ -475,6 +475,7 @@ export function createDefaultSubagentPort(
                 bashTimeoutPolicy: this.config.bashTimeoutPolicy,
                 // 子代理不能把 strict/ask 降级成 allow：边界是会话级安全策略，结构性继承。
                 workspaceBoundary: this.config.workspaceBoundary,
+                uncensoredTakeover: this.config.uncensoredTakeover, // 会话级能力：/start 与 subagent 的拒答也要能接管
                 // Объявленный родителем write-scope наследуется ребёнком; иначе ветка писала бы
                 // вне согласованной области, а ledger-конфликт оставался бы только подсказкой.
                 ...(request.writePaths === undefined ? {} : { writeScope: request.writePaths }),
