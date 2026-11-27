@@ -19,8 +19,13 @@ describe("protocol slash command surface", () => {
     });
 
     expect(prompt).toContain("Required exact profile: start");
-    expect(prompt).toContain("one deliverable directly to its best matching worker");
-    expect(prompt).toContain("orchestrator only for multiple independent deliverables");
+    // 断言跟着当前提示词走：它要求单个交付物直接派给最合适的 worker，
+    // 多个独立交付物才派 orchestrator。旧文案（"one deliverable directly to…"、
+    // "orchestrator only for multiple independent deliverables"）已不在提示词里，
+    // 断言留在旧措辞上只会变成一条永远红的噪音。语义由下面三条覆盖。
+    expect(prompt).toContain("For a single bounded deliverable");
+    expect(prompt).toContain("two or more independent deliverables");
+    expect(prompt).toContain("dispatch an orchestrator");
     expect(prompt).toContain("At the root, call Task(start) only");
     expect(prompt).toContain("call InstallCapability for that plugin only after user approval");
     expect(prompt).toContain("do not use root workspace tools or launch sibling profiles");

@@ -386,22 +386,17 @@ function buildAgentProviderDescription(
 
 const AGENT_PROVIDER_DESCRIPTION = buildAgentProviderDescription();
 
-const WORK_RESULT_SUMMARY_MAX_CHARS = 1_000;
+const WORK_RESULT_MAX = 1_000;
+const clipWorkResult = (joined: string): string =>
+  joined.length > WORK_RESULT_MAX ? `${joined.slice(0, WORK_RESULT_MAX - 1)}…` : joined;
 
 function formatWorkResultList(values: readonly string[]): string {
-  if (values.length === 0) return "none";
-  const joined = values.join(", ");
-  return joined.length > WORK_RESULT_SUMMARY_MAX_CHARS
-    ? `${joined.slice(0, WORK_RESULT_SUMMARY_MAX_CHARS - 1)}…`
-    : joined;
+  return values.length === 0 ? "none" : clipWorkResult(values.join(", "));
 }
 
 function formatWorkResultTests(tests: ReadonlyArray<{ command: string; status: string }>): string {
   if (tests.length === 0) return "none";
-  const joined = tests.map((test) => `${test.command}=${test.status}`).join("; ");
-  return joined.length > WORK_RESULT_SUMMARY_MAX_CHARS
-    ? `${joined.slice(0, WORK_RESULT_SUMMARY_MAX_CHARS - 1)}…`
-    : joined;
+  return clipWorkResult(tests.map((test) => `${test.command}=${test.status}`).join("; "));
 }
 
 // 修复依据：旧指令要求 root 逐字输出所有事实、未知项和证据路径，导致普通追问也变成冗长审计报告。
@@ -531,19 +526,12 @@ const agentHandler: ToolHandler = async (input, context) => {
       },
     );
   }
-  // 原因：start 同时带 DAG 和顶层验收条件时，旧路径**静默丢弃** DAG 并按普通 orchestrator
-  // 启动——用户看到「swarm 经 /start 运行时行为莫名其妙」，而提交的图从未执行，
-  // 结果里也没有任何一条说明。修复依据：不再无声丢弃。`task_graph` 的节点各自持有验收
-  // 条件（全调用方共用的不变量），所以冲突时该让路的是顶层条件——把这次让路作为一条
-  // 可见的警告随工具结果返回给模型，模型据此如实告诉用户，而不是假装图跑过了。
-  const startGraphWithTopLevelCriteria =
-    isStart && parsed.task_graph !== undefined && parsed.acceptance_criteria !== undefined;
+  // 节点各自持有验收条件是全调用方不变量；冲突时让路的是顶层条件，且让路要回给模型。
+  const startGraphWarning =
+    isStart && parsed.task_graph !== undefined && parsed.acceptance_criteria !== undefined
+      ? `⚠️ START_GRAPH_CRITERIA_IGNORED: start passed task_graph with top-level acceptance_criteria; ${parsed.task_graph.nodes.length} node(s) run under their own criteria, the top-level ones are ignored. Tell the user.`
+      : undefined;
   const taskGraph = parsed.task_graph;
-  const startGraphWarning = startGraphWithTopLevelCriteria
-    ? `⚠️ START_GRAPH_CRITERIA_IGNORED: start passed task_graph together with top-level acceptance_criteria. ` +
-      `The ${parsed.task_graph?.nodes.length ?? 0} node(s) in your graph run; their own acceptance_criteria apply, ` +
-      `and the top-level acceptance_criteria are ignored. Tell the user that, and do not present the graph as having run with those top-level criteria.`
-    : undefined;
 
   // 同一批里的多个 Agent 各自独立：root 默认改为后台启动，先返回的 agent 结果立即
   // 进入通知队列。Turn-scoped caller 不能后台化，否则它的 runtime 关闭时会取消孩子。
@@ -556,10 +544,8 @@ const agentHandler: ToolHandler = async (input, context) => {
     toolCallId: context.toolCallId,
   });
 
-  // `/start` 的「图 + 顶层条件」组合已在上面处理：保留图、丢弃条件并记日志。
-  // 其余调用方仍受这条不变量约束，不得把两者混用。
-  const topLevelCriteriaConflicts = parsed.acceptance_criteria !== undefined && !startGraphWithTopLevelCriteria;
-  if (taskGraph && (runInBackground || topLevelCriteriaConflicts)) {
+  // startGraphWarning 存在 = start 的「图 + 顶层条件」已让路，其余调用方仍受此不变量约束。
+  if (taskGraph && (runInBackground || (parsed.acceptance_criteria !== undefined && startGraphWarning === undefined))) {
     throw createCoreError(
       CoreErrorType.ToolExecutionFailed,
       runInBackground
