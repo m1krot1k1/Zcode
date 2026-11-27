@@ -33,6 +33,13 @@ interface NetworkProxyFetchOptions {
   httpProxy?: string;
   httpProxyList?: readonly string[];
   noProxy?: string;
+  /**
+   * Fallback-only proxy: requests go direct first and reach it only after a
+   * network failure. Used for the device-side egress relay an isolated remote
+   * workspace borrows, where forcing every request through the tunnel would
+   * slow down and couple hosts that already have their own egress.
+   */
+  fallbackProxy?: string;
   /** Пробрасывает нефатальное предупреждение наверх; текст строит {@link formatProxyFallbackWarning}. */
   onProxyFallback?: (notice: ProxyFallbackNotice) => void;
   /** Точка инъекции низкоуровневого транспорта: тесты кольца не открывают реальные сокеты. */
@@ -101,6 +108,37 @@ export function createNetworkProxyFetch(options: NetworkProxyFetchOptions): Netw
   };
 
   return async (input, init) => {
+    // Fallback-only mode: try direct first, and reach for the proxy only after a
+    // network failure. A host with working egress therefore never pays for the
+    // tunnel, and an isolated host still recovers instead of dying.
+    const fallbackProxy = options.fallbackProxy?.trim();
+    if (fallbackProxy && !options.httpProxy && !options.httpProxyList?.some((e) => e.trim())) {
+      const requestUrlForFallback = readFetchInputUrl(input);
+      const bypassFallback =
+        !requestUrlForFallback ||
+        (requestUrlForFallback.protocol !== "http:" &&
+          requestUrlForFallback.protocol !== "https:") ||
+        resolveProxyForRequest(requestUrlForFallback, { ...options, httpProxy: fallbackProxy })
+          .noProxyMatched;
+      if (!bypassFallback) {
+        try {
+          return await directFetch(input, init);
+        } catch (error) {
+          if (!isProxyUnavailableError(error)) throw error;
+          announceProxyFallback(
+            [{ code: readProxyErrorCode(error), direct: true, proxy: proxyEndpointKey(fallbackProxy) }],
+            false,
+            options,
+          );
+          const request = await normalizeFetchRequest(input, init);
+          return send(request, {
+            ca: resolveTlsCaCertFile(options) ? getTlsCaCertificates() : undefined,
+            proxyUrl: fallbackProxy,
+          });
+        }
+      }
+    }
+
     const requestUrl = readFetchInputUrl(input);
     if (!requestUrl || (requestUrl.protocol !== "http:" && requestUrl.protocol !== "https:")) {
       return directFetch(input, init);

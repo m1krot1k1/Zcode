@@ -18,6 +18,7 @@ import { performHandshake } from "./handshake.js";
 import { deployServer } from "./deploy.js";
 import type { DeployOptions } from "./deploy.js";
 import { assertSupportedRemoteEnvironment } from "@zcode/server/remote/remotePlatformSupport.js";
+import { ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY } from "@zcode/shared";
 import { quotePosixShellArg } from "./posixShell.js";
 import { formatWslProxyForLog } from "./wslProxy.js";
 
@@ -36,8 +37,13 @@ export interface ConnectOptions extends DeployOptions {
   appVersion?: string;
   /** 远端 server/agent 需要继承的非敏感产品环境变量；调用方可传较宽的 env，server 侧会按白名单过滤。 */
   remoteRuntimeEnv?: Record<string, string | undefined>;
-  /** Desktop Host 为 desktop-attached WSL server 提供的显式 Agent 网络配置。 */
+  /** Desktop Host 为 desktop-attached 远端 server 提供的显式 Agent 网络配置。 */
   remoteRuntimeNetwork?: RemoteRuntimeNetworkOptions;
+  /**
+   * Desktop Host 的代理设置。远端没有自己的出网时，backend 会据此合成一个
+   * 回环中继并通过 SSH 反向隧道暴露给远端；为空时由 backend 自行决定。
+   */
+  remoteRuntimeProxy?: { httpProxy?: string; noProxy?: string };
   /** 远端 stdio 关闭后的回调（用于上层感知断连并触发回收） */
   onDidRemoteClose?: (event: { code: number }) => void;
 }
@@ -187,7 +193,9 @@ async function connectRemoteUnchecked(
 
   const remoteRuntimeNetwork = await resolveRemoteRuntimeNetwork(
     backend,
-    options?.remoteRuntimeNetwork,
+    // Desktop 没传显式网络配置时，仍要读设置页的代理：SSH 用它（或在为空时
+    // 合成回环中继）把出网能力渡给远端。
+    options?.remoteRuntimeNetwork ?? options?.remoteRuntimeProxy,
     log,
   );
 
@@ -343,28 +351,30 @@ async function resolveRemoteRuntimeNetwork(
   network: RemoteRuntimeNetworkOptions | undefined,
   log: (...args: unknown[]) => void,
 ): Promise<RemoteRuntimeNetworkOptions | undefined> {
-  if (!network || !backend.resolveRuntimeProxy) {
-    // 只有实现了远端代理解析能力的 WSL backend 才接收这条权威网络边界；
+  if (!backend.resolveRuntimeProxy) {
+    // 只有实现了远端代理解析能力的 backend 才接收这条权威网络边界；
     // SSH/Docker 即使误传 options 也保持原有启动命令。
     return undefined;
   }
-  if (!network.httpProxy?.trim()) {
-    return network;
-  }
 
   try {
-    const resolvedProxy = await backend.resolveRuntimeProxy(network.httpProxy);
-    if (resolvedProxy !== network.httpProxy) {
+    // 桌面没配置代理时也要问一次：SSH 会为没有出网的远端合成一个回环中继，
+    // 配置了代理的部署则原样返回。空值不再直接短路。
+    const resolvedProxy = (await backend.resolveRuntimeProxy(network?.httpProxy ?? ""))?.trim();
+    if (!resolvedProxy) {
+      return undefined;
+    }
+    if (resolvedProxy !== network?.httpProxy) {
       log(
-        "resolved remote runtime proxy via wsl-host-gateway",
-        formatWslProxyForLog(network.httpProxy),
+        "resolved remote runtime proxy",
+        formatWslProxyForLog(network?.httpProxy ?? ""),
         "->",
         formatWslProxyForLog(resolvedProxy),
       );
     }
-    return { ...network, httpProxy: resolvedProxy };
+    return { ...network, httpProxy: resolvedProxy, authoritative: true };
   } catch (error) {
-    // 代理解析只是运行时增强；解析失败时沿用设置页原值，避免把 WSL 本地工作区变成不可连接。
+    // 代理解析只是运行时增强；解析失败时沿用设置页原值，避免把远端工作区变成不可连接。
     log(
       "remote runtime proxy resolution failed; using configured endpoint",
       error instanceof Error ? error.message : String(error),
@@ -398,6 +408,9 @@ function buildRemoteServerCommand(
       envParts.push(
         `${ZCODE_REMOTE_HTTP_PROXY_ENV_KEY}=${quotePosixShellArg(remoteRuntimeNetwork.httpProxy)}`,
       );
+      // The owner chose fallback-only: the remote agent keeps using whatever
+      // egress it has and reaches this tunnel only after a network failure.
+      envParts.push(`${ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY}='1'`);
     }
     if (remoteRuntimeNetwork.noProxy !== undefined) {
       envParts.push(

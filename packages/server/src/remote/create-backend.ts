@@ -21,6 +21,9 @@ export async function createRemoteBackend(target: RemoteTarget): Promise<IRemote
         privateKeyPath: target.privateKeyPath,
         privateKeyPassphrase: target.privateKeyPassphrase,
         privateKey,
+        // Always offered: the agent reaches for it only after its own direct
+        // attempt fails, so a host with working egress is unaffected.
+        egressRelay: true,
       });
     }
     case "wsl": {

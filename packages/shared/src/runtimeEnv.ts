@@ -1,5 +1,12 @@
 export const ZCODE_RUNTIME_ENV_KEY = "ZCODE_RUNTIME_ENV";
 export const ZCODE_HTTP_PROXY_ENV_KEY = "ZCODE_HTTP_PROXY";
+/**
+ * Marks ZCODE_HTTP_PROXY as a fallback: the agent tries its own direct egress
+ * first and reaches the proxy only after a network failure. Set when a remote
+ * workspace borrows the device's connection through an SSH reverse tunnel, so
+ * a host that already has internet keeps using it.
+ */
+export const ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY = "ZCODE_HTTP_PROXY_FALLBACK_ONLY";
 /** Ordered model-provider proxy ring. One normalized endpoint per line. */
 export const ZCODE_HTTP_PROXY_LIST_ENV_KEY = "ZCODE_HTTP_PROXY_LIST";
 export const ZCODE_NO_PROXY_ENV_KEY = "ZCODE_NO_PROXY";
@@ -54,6 +61,8 @@ const SANITIZED_RUNTIME_ENV_KEYS = [
   "HTTPS_PROXY",
   "ALL_PROXY",
   "NO_PROXY",
+  ZCODE_HTTP_PROXY_ENV_KEY,
+  ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY,
   "NODE_EXTRA_CA_CERTS",
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",

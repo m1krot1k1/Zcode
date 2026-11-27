@@ -17,6 +17,7 @@ import {
   readConfiguredProxyEndpoints,
   type ProxyFallbackNotice,
 } from "../../network/proxy-fetch.js";
+import { ZCODE_HTTP_PROXY_ENV_KEY, ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY } from "@zcode/shared";
 
 export function createProviderBusinessErrorFetch(
   options: ProviderBusinessErrorFetchOptions,
@@ -90,6 +91,8 @@ interface ProviderProxyFetchOptions {
   fetch?: ProviderFetch;
   httpProxy?: string;
   noProxy?: string;
+  /** Fallback-only proxy: direct first, proxy only after a network failure. */
+  fallbackProxy?: string;
   onProxyFallback?: (notice: ProxyFallbackNotice) => void;
 }
 
@@ -97,8 +100,20 @@ export function createProviderProxyFetch(options: ProviderProxyFetchOptions): Pr
   // Node 的 global fetch 不会自动读取 HTTP_PROXY/http_proxy。
   // 模型 provider 走代理环；MCP 仍只用单个 httpProxy，避免工具流量跟着 429 换出口。
   const httpProxyList = readConfiguredProxyEndpoints(options.env);
+  // The device-side egress relay an isolated remote workspace borrows also
+  // arrives as ZCODE_HTTP_PROXY, but the owner asked for it as a FALLBACK: keep
+  // using the host's own egress when it has one and reach the relay only after a
+  // network failure. The flag distinguishes it from an operator-chosen proxy,
+  // which stays first-choice.
+  const env = options.env;
+  const relayIsFallbackOnly = env?.[ZCODE_HTTP_PROXY_FALLBACK_ONLY_ENV_KEY]?.trim() === "1";
+  const fallbackProxy = relayIsFallbackOnly
+    ? env?.[ZCODE_HTTP_PROXY_ENV_KEY]?.trim() || options.fallbackProxy
+    : options.fallbackProxy;
   return createNetworkProxyFetch({
     ...options,
     ...(httpProxyList.length > 0 ? { httpProxyList } : {}),
+    ...(relayIsFallbackOnly ? { httpProxy: undefined } : {}),
+    ...(fallbackProxy ? { fallbackProxy } : {}),
   });
 }
