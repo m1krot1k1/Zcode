@@ -1,0 +1,10 @@
+{
+  "source": "wojons/skills",
+  "skillId": "git-release",
+  "name": "git-release",
+  "scope": "workspace",
+  "hash": "sha256:f3a03452d1fa87e73d5da0edc09f6800af5e0db863ac02c1707b04a20c1278e4",
+  "remoteHash": "f3a03452d1fa87e73d5da0edc09f6800af5e0db863ac02c1707b04a20c1278e4",
+  "installedAt": "2026-11-27T08:30:48.061Z",
+  "manager": "skills.sh"
+}
