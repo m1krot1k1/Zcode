@@ -12,6 +12,7 @@ import {
   collectRuntimeModuleClosureEntries,
 } from "./runtime-dependency-closure.mjs";
 import { resolveDesktopProductIdentity } from "./desktop-product-identity.mjs";
+import { verifyPackagedRemoteAssets } from "./verify-packaged-remote-assets.mjs";
 import {
   findDesktopNativePackageViolations,
   parseAsarListWithPackState,
@@ -726,6 +727,15 @@ export function resolveAppAsarPath(
   arch,
   { root = desktopRoot, distDir = desktopDistDir, productIdentity = desktopProductIdentity } = {},
 ) {
+  return resolve(resolvePackagedResourcesDir(os, arch, { root, distDir, productIdentity }), "app.asar");
+}
+
+/** The `resources/` directory electron-builder writes for one target. */
+export function resolvePackagedResourcesDir(
+  os,
+  arch,
+  { root = desktopRoot, distDir = desktopDistDir, productIdentity = desktopProductIdentity } = {},
+) {
   if (os === "mac") {
     return resolve(
       root,
@@ -734,7 +744,6 @@ export function resolveAppAsarPath(
       `${productIdentity.macExecutableName}.app`,
       "Contents",
       "Resources",
-      "app.asar",
     );
   }
 
@@ -744,7 +753,6 @@ export function resolveAppAsarPath(
       distDir,
       arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked",
       "resources",
-      "app.asar",
     );
   }
 
@@ -754,7 +762,6 @@ export function resolveAppAsarPath(
       distDir,
       arch === "arm64" ? "linux-arm64-unpacked" : "linux-unpacked",
       "resources",
-      "app.asar",
     );
   }
 
@@ -861,6 +868,14 @@ async function main() {
 
   await runTimedAsync("bundle:electron-builder", () =>
     runElectronBuilderWithRetry(buildArgs, buildEnv),
+  );
+
+  runTimedSync("bundle:verify-packaged-remote-assets", () =>
+    verifyPackagedRemoteAssets({
+      resourcesDir: resolvePackagedResourcesDir(os, arch),
+      expectedVersion: readWorkspaceVersion(),
+      expectedRevision: readGitHead(),
+    }),
   );
 
   runTimedSync("bundle:verify-runtime-dependencies", () =>
