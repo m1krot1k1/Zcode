@@ -1,4 +1,4 @@
-import type { ModelToolCall, ModelToolContract } from "@zcode/contracts";
+import type { ModelInputMessage, ModelToolCall, ModelToolContract } from "@zcode/contracts";
 import { createRuntimeAssistantEntry, createRuntimeToolResultEntry } from "../../../agent/message-history.js";
 import { modelMessageContentToText } from "../../deps.js";
 import { modelContentForToolResult } from "../../helpers/index.js";
@@ -96,23 +96,34 @@ export function takeoverToolContracts(
   );
 }
 
-/** Сообщения одного раунда: ответ модели с вызовами и результаты инструментов. */
+/**
+ * Сообщения одного раунда для повторного запроса: assistant со **структурными**
+ * `toolCalls` и tool-результаты с `toolCallId`/`toolName`.
+ *
+ * РЕГРЕССИЯ (живой лог 2026-11-28, 11:45:37Z): раньше раунд собирался текстом —
+ * `{role:"tool", content:"Bash (ok): …"}`, — и адаптер (`adapters/src/model/transform.ts`)
+ * отвергал его ещё до сети: «Tool model messages require toolCallId and toolName».
+ * Инструменты исполнялись, а результаты до модели не доезжали, и раунд обрывался.
+ * Текстовое представление вызовов не заменяет их: провайдер сопоставляет результат
+ * с вызовом только по этим двум полям.
+ */
 export function takeoverRoundMessages(
   text: string,
   calls: readonly ModelToolCall[],
   executed: readonly ExecutedToolCall[],
-): Array<{ role: "assistant" | "tool"; content: string }> {
-  const callBlock = calls
-    .map((call) => `- ${call.name} ${JSON.stringify(call.input ?? {})}`)
-    .join("\n");
+): ModelInputMessage[] {
   return [
     {
       role: "assistant",
-      content: [text.trim(), `Tool calls:\n${callBlock}`].filter(Boolean).join("\n\n"),
+      content: text.trim(),
+      toolCalls: calls.map((call) => ({ id: call.id, name: call.name, input: call.input })),
     },
     ...executed.map((item) => ({
       role: "tool" as const,
-      content: `${item.toolName} (${item.isError ? "error" : "ok"}):\n${item.content}`,
+      content: item.content,
+      toolCallId: item.toolCallId,
+      toolName: item.toolName,
+      isError: item.isError,
     })),
   ];
 }

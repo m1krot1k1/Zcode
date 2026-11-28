@@ -1,4 +1,4 @@
-import type { ModelToolCall, ModelToolContract } from "@zcode/contracts";
+import type { ModelInputMessage, ModelToolCall, ModelToolContract } from "@zcode/contracts";
 import type { ExecutedToolCall } from "./tools.js";
 
 /**
@@ -25,10 +25,10 @@ export interface CliCoreTakeoverToolsContract {
     calls: readonly ModelToolCall[],
     executed: readonly ExecutedToolCall[],
   ): void;
-  /** Сообщения раунда для повторного запроса к модели. */
+  /** Сообщения раунда для повторного запроса: структурные toolCalls и tool-результаты. */
   roundMessages(
     text: string,
     calls: readonly ModelToolCall[],
     executed: readonly ExecutedToolCall[],
-  ): Array<{ role: "assistant" | "tool"; content: string }>;
+  ): ModelInputMessage[];
 }

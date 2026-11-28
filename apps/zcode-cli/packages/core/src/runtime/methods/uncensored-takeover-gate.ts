@@ -7,7 +7,7 @@ import {
   SessionEventType,
   TurnMachineImpl,
 } from "../deps.js";
-import type { MessageId } from "../deps.js";
+import type { MessageId, ModelInputMessage } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
@@ -510,9 +510,13 @@ export async function runUncensoredTakeoverGate(
       const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
       const budget = optionFor(providerId, modelId);
       // Локальный список растёт раундами инструментов: у него появляются роли
-      // assistant/tool, которых нет у двух стартовых сообщений.
-      const requestMessages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: string }> =
-        messages.map((message) => ({ role: message.role, content: message.content }));
+      // assistant/tool, которых нет у двух стартовых сообщений. Тип — полноценный
+      // `ModelInputMessage`: раунд несёт структурные `toolCalls`/`toolCallId`, без
+      // которых адаптер отвергает запрос до сети.
+      const requestMessages: ModelInputMessage[] = messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+      }));
       const request = async (withTools: boolean) =>
         this.generateWorkspaceText(
           {

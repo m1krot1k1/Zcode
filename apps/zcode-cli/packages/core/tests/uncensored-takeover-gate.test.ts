@@ -48,7 +48,14 @@ function createHarness(options: HarnessOptions) {
   const executedCalls: Array<{ name: string; input: unknown }> = [];
   const generated: Array<{
     selection: { providerId: string; modelId: string };
-    messages: Array<{ role: string; content: string }>;
+    messages: Array<{
+      role: string;
+      content: string;
+      toolCallId?: string;
+      toolName?: string;
+      isError?: boolean;
+      toolCalls?: Array<{ id: string; name: string; input: unknown }>;
+    }>;
     maxOutputTokens?: number;
     tools?: Array<{ name: string }>;
   }> = [];
@@ -140,7 +147,14 @@ function createHarness(options: HarnessOptions) {
     } as never,
     generateWorkspaceText: async (input: {
       selection: { providerId: string; modelId: string; options?: Record<string, unknown> };
-      messages: Array<{ role: string; content: string }>;
+      messages: Array<{
+        role: string;
+        content: string;
+        toolCallId?: string;
+        toolName?: string;
+        isError?: boolean;
+        toolCalls?: Array<{ id: string; name: string; input: unknown }>;
+      }>;
       maxOutputTokens?: number;
       tools?: Array<{ name: string }>;
     }) => {
@@ -397,6 +411,36 @@ describe("uncensored takeover gate", () => {
     const roles = harness.generated[1]?.messages.map((message) => message.role);
     expect(roles).toEqual(expect.arrayContaining(["assistant", "tool"]));
     expect(result).toMatchObject({ action: "finish", finalText: FALLBACK_OUTPUT });
+  });
+
+  // РЕГРЕССИЯ (живой лог 2026-11-28, 11:45:37Z): раунд собирался ТЕКСТОМ, и адаптер
+  // отвергал второй запрос ещё до сети — «Tool model messages require toolCallId and
+  // toolName». Инструменты исполнялись, результаты до модели не доезжали.
+  //
+  // Тест утверждает то, что нужно провайдеру, а не формулировку: assistant-сообщение
+  // несёт структурные `toolCalls`, а каждый tool-результат — свои `toolCallId`/`toolName`.
+  // Проверено мутацией: если вернуть текстовую сборку раунда, тест падает.
+  it("собирает раунд структурно: toolCalls и toolCallId/toolName, а не текстом", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      generateToolCall: true,
+    });
+
+    await runGate(harness);
+
+    const round = harness.generated[1]?.messages ?? [];
+    const assistant = round.find((message) => message.role === "assistant" && message.toolCalls);
+    expect(assistant?.toolCalls).toEqual([
+      { id: "call-1", name: "Bash", input: { command: "ls" } },
+    ]);
+
+    const toolMessages = round.filter((message) => message.role === "tool");
+    expect(toolMessages).toHaveLength(1);
+    // Провайдер сопоставляет результат с вызовом только по этим двум полям.
+    expect(toolMessages[0]).toMatchObject({ toolCallId: "call-1", toolName: "Bash" });
+    // Текстовая склейка «Bash (ok): …» в content не заменяет структурные поля.
+    expect(toolMessages[0]?.content).not.toContain("Bash (ok):");
   });
 
   it("shows an explicit error text when the fallback model fails", async () => {
