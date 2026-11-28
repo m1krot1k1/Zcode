@@ -31,6 +31,14 @@ interface HarnessOptions {
   generateText?: string;
   generateThrows?: boolean;
   generateToolCall?: boolean;
+  /** Сколько раундов инструментов отдать до текста; хвост запросов возвращает пустой content. */
+  generateToolRounds?: number;
+  /**
+   * Модель просит инструмент КАЖДЫЙ запрос и никогда не пишет закрывающего текста.
+   * Это и есть реальное исчерпание `TAKEOVER_TOOL_ROUNDS`: последний ответ несёт
+   * `finish_reason: "tool_calls"` и `content: ""`.
+   */
+  exhaustToolRounds?: boolean;
   providers?: unknown[];
   /** Объявленный факт поддержки tools; `undefined` — факта нет (не «нет способности»). */
   supportsToolCall?: boolean;
@@ -167,6 +175,28 @@ function createHarness(options: HarnessOptions) {
       if (options.generateThrows) throw new Error("mirror unavailable");
       // Первая попытка может просить инструмент; повторный шаг возвращает текст.
       const callOnce = options.generateToolCall && generated.length === 1;
+      // `generateToolRounds: N` — модель просит инструмент N раундов подряд и так и не
+      // пишет закрывающего текста. Это не ошибка: работа уже сделана.
+      // `exhaustToolRounds` — модель просит инструмент каждый раз и не пишет закрывающего
+      // текста. Гейт выходит по счётчику раундов, оставляя непустые `toolCalls` и пустой
+      // `text` — ровно та форма, на которой ломался рендер.
+      if (options.exhaustToolRounds) {
+        return {
+          text: "",
+          finishReason: "tool_calls",
+          toolsExecuted: 1,
+          toolCalls: [{ id: `call-${generated.length}`, name: "Bash", input: { command: "ls" } }],
+        };
+      }
+      const toolRounds = options.generateToolRounds ?? 0;
+      if (toolRounds > 0 && generated.length <= toolRounds) {
+        return {
+          text: "",
+          finishReason: "tool_calls",
+          toolsExecuted: 1,
+          toolCalls: [{ id: `call-${generated.length}`, name: "Bash", input: { command: "ls" } }],
+        };
+      }
       return {
         text: callOnce ? "" : (options.generateText ?? FALLBACK_OUTPUT),
         finishReason: "stop",
@@ -464,6 +494,35 @@ describe("uncensored takeover gate", () => {
     expect(stopped?.payload.takeover).toMatchObject({ status: "error" });
   });
 
+  // РЕГРЕССИЯ (находка 2026-11-28, восьмой шов, видимая сторона): когда модель
+  // исчерпала все раунды инструментов и не написала закрывающего текста, `terminal` был
+  // `done` с пустым `output` — и ЭТА функция, единственная решающая, что увидит человек,
+  // отдавала «Fallback model ... did not produce an answer (status: done)». Так что
+  // выполненная работа читалась владельцем ровно как его жалоба: «ничего не выполнила».
+  //
+  // Мутация: без ветки `done && toolsExecuted > 0` тест падает на первом expect.
+  it("показывает выполненную работу, а не ошибку, когда инструменты отработали", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      exhaustToolRounds: true,
+    });
+
+    const result = await runGate(harness);
+
+    expect(result.action).toBe("finish");
+    const finalText = harness.persistedParts[0]?.part.text as string;
+    // Главное: НЕ текст ошибки и НЕ «пустой ответ».
+    expect(finalText).not.toContain("did not produce an answer");
+    expect(finalText).not.toContain("empty-response");
+    // Назван факт: сколько инструментов реально отработало.
+    expect(finalText).toContain("3 tool call");
+    // И указание не повторять уже сделанное — иначе основная модель удвоит побочный эффект.
+    expect(finalText).toContain("do not repeat");
+    // Ни одного запроса в raw-HTTP: работа уже сделана гейтом.
+    expect(harness.fetchCalls).toHaveLength(0);
+  });
+
   it("shows an explicit error text for an empty fallback answer", async () => {
     const harness = createHarness({
       userText: USER_TEXT,
@@ -542,6 +601,50 @@ describe("uncensored takeover gate", () => {
       modelId: "deepseek-uncensored",
       output: FALLBACK_OUTPUT,
     });
+  });
+
+  // РЕГРЕССИЯ (находка 2026-11-28, девятый шов со стороны гейта): durable-строка несла
+  // выполненную работу (`done`, пустой `output`, `toolsExecuted > 0`), но читатель не
+  // возвращал `toolsExecuted` в terminal — и холодный повтор снова видел «пустой ответ».
+  //
+  // Мутация: убрать `...toolsExecuted` из readDurableOutcome — тест падает.
+  it("восстанавливает выполненную работу из durable-строки", async () => {
+    const durable = buildTakeoverEntry({
+      sessionId: "session-1",
+      taskId: "session-1",
+      itemIndex: 0,
+      itemText: USER_TEXT,
+      agentId: "uncensored-takeover:session-1:0:1111111111111111",
+      terminal: {
+        status: "done",
+        providerId: "mirror-nano-gpt",
+        providerName: "nano-gpt",
+        modelId: "deepseek-uncensored",
+        output: "",
+        toolsExecuted: 3,
+      },
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      durableEntries: [durable],
+    });
+
+    const result = await runGate(harness);
+
+    // Найдено в durable без единого HTTP-запроса и без новой модели.
+    expect(harness.generated).toHaveLength(0);
+    expect(harness.fetchCalls).toHaveLength(0);
+    expect(result.action).toBe("continue");
+    // Reminder-ветка читает `existing.toolsExecuted`, не `terminal.toolsExecuted`.
+    const reminder = JSON.stringify(harness.addEntries.mock.calls[0]?.[0]);
+    // Нельзя говорить «работала без инструментов»: три инструмента реально отработали.
+    expect(reminder).not.toContain("without running any tool");
+    expect(reminder).not.toContain("do the work yourself");
+    // И наоборот: совет не повторять и отметить выполненным.
+    expect(reminder).toContain("Do not repeat this item");
   });
 
   it("reuses a durable outcome without a second event or HTTP call", async () => {

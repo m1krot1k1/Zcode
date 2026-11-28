@@ -4,6 +4,8 @@ import {
   attributeTodoItem,
   attributeTurnItem,
   buildTakeoverRequestBody,
+  buildTakeoverEntry,
+  parseTakeoverEntryData,
   detectRefusal,
   detectTextRefusal,
   hasRefusalMarker,
@@ -868,6 +870,49 @@ describe("takeover idempotency identity", () => {
     expect(calls).toEqual(["mirror-nano-gpt"]);
   });
 
+  // РЕГРЕССИЯ (находка 2026-11-28, восьмой шов): единственный выход, который строит terminal
+  // на УСПЕШНОМ ответе с закрывающим текстом, терял `toolsExecuted`. Тогда reminder говорил
+  // «answered without running any tool» про ход, который отработал инструменты, а durable
+  // строка теряла факт целиком.
+  //
+  // Мутация: убрать `...toolsExecuted` из этого return — тест падает. (Проверено запуском;
+  // первая версия этого теста брала пустой `text` и попадала в СОСЕДНЮЮ ветку — зелёная
+  // на мутанте. Именно поэтому текст здесь непустой.)
+  it("переносит toolsExecuted в terminal и при закрывающем тексте", async () => {
+    const terminal = await runUncensoredTakeover({
+      configPort: {
+        getConfig: async () => ({
+          providers: [
+            {
+              id: "nano-gpt",
+              name: "nano-gpt",
+              apiUrl: "https://takeover.test/v1/chat",
+              apiKey: "secret",
+              providerId: "mirror-nano-gpt",
+              models: [{ id: "uncensored", enabled: true }],
+            },
+          ],
+        }),
+      },
+      workspace: { workspacePath: "/workspace" },
+      taskId: "task-carry-tools-with-text",
+      itemIndex: 0,
+      itemText: "сделай работу",
+      fragments: [],
+      generate: {
+        generate: async () => ({
+          text: "Готово, файл создан.",
+          finishReason: "stop",
+          toolsExecuted: 2,
+        }),
+      },
+    });
+
+    expect(terminal.status).toBe("done");
+    expect(terminal.output).toBe("Готово, файл создан.");
+    expect(terminal.toolsExecuted).toBe(2);
+  });
+
   it("по-прежнему считает пустой ответ без инструментов ошибкой", async () => {
     const terminal = await runUncensoredTakeover({
       configPort: {
@@ -897,5 +942,65 @@ describe("takeover idempotency identity", () => {
     // Ноль исполненных инструментов и пустой текст — это действительно пустой ответ.
     expect(terminal.status).toBe("error");
     expect(terminal.reason).toBe("empty-response");
+  });
+
+  // РЕГРЕССИЯ (находка 2026-11-28, девятый шов): durable-строка не сохраняла
+  // `toolsExecuted`, а её читатель не возвращал его в terminal. Из-за этого ХОЛОДНЫЙ
+  // повтор того же пункта (и любой дубликат в той же сессии) видел только пустой `output`
+  // и снова объявлял выполненную работу ошибкой — фикс жил только в горячем пути.
+  //
+  // Мутация: убрать поле из buildTakeoverEntry ИЛИ из readDurableOutcome — тест падает
+  // на втором expect. Оба шва закрыты одним тестом именно потому, что по отдельности
+  // каждый из них выглядит правильным.
+  it("переносит toolsExecuted в durable-строку и обратно в terminal", async () => {
+    const entry = buildTakeoverEntry({
+      sessionId: "session-1",
+      taskId: "task-durable-tools",
+      itemIndex: 0,
+      itemText: "сделай работу",
+      agentId: "uncensored-takeover:session-1:0:abc",
+      terminal: {
+        status: "done",
+        providerId: "mirror-nano-gpt",
+        providerName: "nano-gpt",
+        modelId: "uncensored",
+        output: "",
+        toolsExecuted: 3,
+      },
+      createdAt: 1,
+      updatedAt: 2,
+    });
+
+    // Писатель: поле в durable payload (иначе строка теряет факт навсегда).
+    expect(entry.data).toMatchObject({ toolsExecuted: 3 });
+    // Строгий парсер обязан принять запись — лишнее поле в `.strict()` сделало бы
+    // parseTakeoverEntryData null, и строка молча выпала бы из поиска.
+    const parsed = parseTakeoverEntryData(entry.data);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.toolsExecuted).toBe(3);
+  });
+
+  it("не пишет toolsExecuted, когда его нет", () => {
+    const entry = buildTakeoverEntry({
+      sessionId: "session-2",
+      taskId: "task-no-tools-field",
+      itemIndex: 0,
+      itemText: "сделай работу",
+      agentId: "uncensored-takeover:session-2:0:def",
+      terminal: {
+        status: "error",
+        providerId: null,
+        providerName: null,
+        modelId: null,
+        output: "",
+        reason: "empty-response",
+      },
+      createdAt: 1,
+      updatedAt: 2,
+    });
+
+    // Отсутствие факта — не ноль: поле остаётся отсутствующим, и читатель не выдумывает 0.
+    expect(Object.prototype.hasOwnProperty.call(entry.data, "toolsExecuted")).toBe(false);
+    expect(parseTakeoverEntryData(entry.data)).not.toBeNull();
   });
 });

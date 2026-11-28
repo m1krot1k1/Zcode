@@ -91,6 +91,14 @@ export type UncensoredTakeoverGateResult =
  */
 function takeoverFinalText(terminal: TakeoverTerminal): string {
   if (terminal.status === "done" && terminal.output.trim().length > 0) return terminal.output;
+  // `done` с исполненными инструментами — законченная работа без закрывающей прозы (модель,
+  // ответившая вызовом инструмента, присылает пустой content). Это НЕ ошибка: текст об ошибке
+  // здесь снова сказал бы владельцу «ничего не выполнила» про выполненную работу.
+  const toolsExecuted = terminal.toolsExecuted ?? 0;
+  if (terminal.status === "done" && toolsExecuted > 0) {
+    const provider = terminal.providerName ?? terminal.providerId ?? "unknown";
+    return `The fallback model ran ${toolsExecuted} tool call(s) for this item and did not write closing text (${provider}/${terminal.modelId ?? "unknown"}). The work is already done and its output is in the session; do not repeat it.`;
+  }
   const reason = terminal.reason ? `: ${terminal.reason}` : "";
   if (!terminal.modelId) {
     return `No fallback model produced an answer (status: ${terminal.status})${reason}.`;
@@ -290,6 +298,12 @@ async function readDurableOutcome(
           output: payload.output,
           ...(payload.reason ? { reason: payload.reason } : {}),
         },
+        // Факт пишется ОДНИМ полем cached outcome, потому что единственный потребитель
+        // durable-строки — reminder-ветка ниже, и она читает именно `existing.toolsExecuted`.
+        // Класть его ещё и в `terminal` было бы полем без читателя.
+        ...(payload.toolsExecuted === undefined
+          ? {}
+          : { toolsExecuted: payload.toolsExecuted }),
       };
     }
   } catch (error) {

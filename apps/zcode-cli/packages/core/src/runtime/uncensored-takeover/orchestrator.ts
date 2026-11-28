@@ -173,6 +173,11 @@ export async function runUncensoredTakeover(
           modelId: model.id,
           // The token can come back from the model (it sees the host prompt), never show it.
           output: stripRefusalMarker(generated.text),
+          // Без этого поля пустой `text` доезжает до рендера и в durable-строку без факта,
+          // и оба объявляют выполненную работу ошибкой.
+          ...(generated.toolsExecuted === undefined
+            ? {}
+            : { toolsExecuted: generated.toolsExecuted }),
         };
       } catch (error) {
         // A mirrored provider can be unresolvable in this runtime (registry view, model id).

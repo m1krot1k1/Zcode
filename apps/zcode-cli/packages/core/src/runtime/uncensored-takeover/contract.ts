@@ -175,6 +175,10 @@ export const uncensoredTakeoverEntryPayloadSchema = z
     status: z.enum(["running", "done", "refused", "error", "no-enabled-models"]),
     output: z.string(),
     reason: z.string().optional(),
+    // Сколько инструментов реально исполнилось. Без поля в durable-строке холодный повтор
+    // (и любой дубликат) теряет факт и объявляет выполненную работу «текстом без проверки»
+    // либо «пустым ответом». Опционально: старые строки поля не имеют.
+    toolsExecuted: z.number().int().nonnegative().optional(),
     agentId: z.string().min(1),
     createdAt: z.number().int().nonnegative(),
     updatedAt: z.number().int().nonnegative(),

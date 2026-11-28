@@ -43,6 +43,9 @@ export function buildTakeoverEntry(
       status: input.terminal.status,
       output: input.terminal.output,
       ...(input.terminal.reason ? { reason: input.terminal.reason } : {}),
+      ...(input.terminal.toolsExecuted === undefined
+        ? {}
+        : { toolsExecuted: input.terminal.toolsExecuted }),
       agentId: input.agentId,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
