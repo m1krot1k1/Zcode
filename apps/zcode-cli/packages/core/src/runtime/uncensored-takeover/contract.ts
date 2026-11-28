@@ -96,6 +96,12 @@ export interface TakeoverTerminal {
   modelId: string | null;
   output: string;
   reason?: string;
+  /**
+   * Сколько инструментов резервная модель реально исполнила. `done` с пустым `output` и
+   * этим числом больше нуля — законный исход: модель работала инструментами и не написала
+   * закрывающего текста. Без поля вызывающая сторона не отличает это от пустого ответа.
+   */
+  toolsExecuted?: number;
 }
 
 export interface RunUncensoredTakeoverInput {

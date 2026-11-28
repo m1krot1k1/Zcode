@@ -815,4 +815,87 @@ describe("takeover idempotency identity", () => {
     expect(terminal.status).toBe("done");
     expect(terminal.output).toBe("полезный ответ");
   });
+
+  // РЕГРЕССИЯ (находка ревью 2026-11-28): исчерпание раундов инструментов оставляет
+  // пустой `text` и `toolsExecuted: 3`. Ветка пустого ответа не читала `toolsExecuted`,
+  // объявляла это `empty-response` и уходила на СЛЕДУЮЩЕГО провайдера — который строит
+  // запрос из исходного пункта и повторяет те же инструменты (двойной побочный эффект),
+  // а владелец видел «ничего не выполнила».
+  //
+  // Мутация: со старым `continue` тест падает (status "error" + второй провайдер).
+  it("не считает пустой текст ошибкой, если инструменты исполнились", async () => {
+    const calls: string[] = [];
+    const terminal = await runUncensoredTakeover({
+      configPort: {
+        getConfig: async () => ({
+          providers: [
+            {
+              id: "nano-gpt",
+              name: "nano-gpt",
+              apiUrl: "https://takeover.test/v1/chat",
+              apiKey: "secret",
+              providerId: "mirror-nano-gpt",
+              models: [{ id: "uncensored", enabled: true }],
+            },
+            {
+              id: "second",
+              name: "second",
+              apiUrl: "https://takeover.test/v2/chat",
+              apiKey: "secret",
+              providerId: "mirror-second",
+              models: [{ id: "other", enabled: true }],
+            },
+          ],
+        }),
+      },
+      workspace: { workspacePath: "/workspace" },
+      taskId: "task-empty-with-tools",
+      itemIndex: 0,
+      itemText: "сделай работу",
+      fragments: [],
+      generate: {
+        generate: async ({ providerId }) => {
+          calls.push(providerId);
+          // Форма реального ответа модели на вызов инструмента: пустой content.
+          return { text: "", finishReason: "tool_calls", toolsExecuted: 3 };
+        },
+      },
+    });
+
+    expect(terminal.status).toBe("done");
+    expect(terminal.toolsExecuted).toBe(3);
+    // Ни одного запроса ко второму провайдеру: работа уже сделана.
+    expect(calls).toEqual(["mirror-nano-gpt"]);
+  });
+
+  it("по-прежнему считает пустой ответ без инструментов ошибкой", async () => {
+    const terminal = await runUncensoredTakeover({
+      configPort: {
+        getConfig: async () => ({
+          providers: [
+            {
+              id: "nano-gpt",
+              name: "nano-gpt",
+              apiUrl: "https://takeover.test/v1/chat",
+              apiKey: "secret",
+              providerId: "mirror-nano-gpt",
+              models: [{ id: "uncensored", enabled: true }],
+            },
+          ],
+        }),
+      },
+      workspace: { workspacePath: "/workspace" },
+      taskId: "task-empty-without-tools",
+      itemIndex: 0,
+      itemText: "сделай работу",
+      fragments: [],
+      generate: {
+        generate: async () => ({ text: "   ", finishReason: "stop", toolsExecuted: 0 }),
+      },
+    });
+
+    // Ноль исполненных инструментов и пустой текст — это действительно пустой ответ.
+    expect(terminal.status).toBe("error");
+    expect(terminal.reason).toBe("empty-response");
+  });
 });

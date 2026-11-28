@@ -119,7 +119,34 @@ export async function runUncensoredTakeover(
           };
           continue;
         }
+        // Пустой текст сам по себе не значит «пустой ответ»: модель, ответившая вызовом
+        // инструмента, присылает `finish_reason: "tool_calls"` и ПУСТОЙ `content` — это
+        // измеренная форма, а не сбой. Факт `toolsExecuted` уже читается выше (строка с
+        // `hasToolCalls`); здесь он обязан решать так же, иначе выполненная работа
+        // объявляется ошибкой и уходит на следующего провайдера, который строит запрос из
+        // ИСХОДНОГО пункта и повторяет те же инструменты — двойной побочный эффект.
+        const toolsExecuted = generated.toolsExecuted ?? 0;
         if (!generated.text.trim()) {
+          if (toolsExecuted > 0) {
+            input.logger?.info?.(
+              "Uncensored takeover completed work without closing text",
+              logContext(input, {
+                providerId: provider.providerId,
+                modelId: model.id,
+                status: "completed",
+                toolsExecuted,
+                durationMs,
+              }),
+            );
+            return {
+              status: "done",
+              providerId: provider.providerId,
+              providerName: provider.name,
+              modelId: model.id,
+              output: "",
+              toolsExecuted,
+            };
+          }
           last = {
             status: "error",
             providerId: provider.providerId,
