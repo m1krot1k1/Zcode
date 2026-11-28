@@ -554,6 +554,8 @@ export function createDefaultSubagentPort(
                 // 它们该与父一样喂治理器信号（父是 observer 则子也是 observer）。
                 modelRequestAdmission: this.modelRequestAdmission,
                 modelFactory: childModelFactory,
+                // Те же факты модели: без них гейт перехвата в дочернем runtime не читает уровень.
+                modelFacts: this.modelFacts,
                 resolveEffectiveModelSelection: deps.resolveEffectiveModelSelection,
                 // 子 runtime 自己仍使用 request.sessionId 做事件持久化和 trace 归档；对外阻塞交互
                 // （permission / AskUserQuestion / provider runtime headers）一律路由回父 session——

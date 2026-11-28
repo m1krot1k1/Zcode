@@ -58,6 +58,12 @@ export interface ScriptWorkflowAgentRuntimeDeps {
   mcpPort?: McpPort;
   /** 父会话的 model factory：child 与主 turn 从同一份 Registry 视图造 Model，不各自冻结。 */
   modelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]>;
+  /**
+   * 父会话的模型声明事实。child 的拒答接管必须自己读 reasoningLevel：
+   * 缺了它，镜像请求会以 `invalid_model_request` 失败并落到不传 tools 的 raw 路径。
+   * 必填而非可选：漏传是静默降级，只有类型检查能挡住。
+   */
+  modelFacts: AgentRuntimeDeps["modelFacts"];
   permissionService: PermissionService;
   /**
    * 插件与内置技能根（主会话 skill 端口的同一份 root 集合）。子代理不能起工作流，
@@ -280,6 +286,7 @@ function createRuntimeDeps(
     logger: deps.logger,
     mcpPort: deps.mcpPort,
     modelFactory: deps.modelFactory,
+    modelFacts: deps.modelFacts,
     resolveEffectiveModelSelection: deps.appOptions.resolveEffectiveModelSelection,
     // permissionBroker + providerRuntimeHeadersPort 都在这里面：父 runtime 派生，路由身份已改写成父会话。
     ...deps.runtime.createChildClientPorts(clientPortsContext),

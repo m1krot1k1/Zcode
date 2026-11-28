@@ -114,6 +114,7 @@ export function prepareAppSession(
     logger,
     mcpPort,
     modelFactory,
+    modelFacts,
     permissionService,
     pluginSkillRoots: pluginOutcome.skillRoots,
     bundledSkillRoots,
@@ -199,6 +200,8 @@ export function prepareAppSession(
                 // 父会话的 model factory：actor 与主 turn 从同一份 Registry 视图造 Model，
                 // 不各自冻结一份。
                 modelFactory,
+                // 同一理由：actor 的拒答接管也要自己读声明的 reasoningLevel。
+                modelFacts,
                 permissionService,
                 pluginSkillRoots: pluginOutcome.skillRoots,
                 bundledSkillRoots,
