@@ -526,14 +526,34 @@ export async function runUncensoredTakeoverGate(
           },
           { abortSignal: combined, traceContext: state.turnTraceContext },
         );
+      // Объявленный факт «модель не умеет tools» — положительное свидетельство, а не догадка:
+      // идём текстовым путём сразу, не тратя заведомо падающий раунд. Отсутствие факта
+      // (`undefined`) не доказывает ничего, поэтому tools отправляются как обычно.
+      const declaresNoTools =
+        toolContracts.length > 0 &&
+        this.modelFacts?.supportsToolCall({
+          providerId: createModelProviderId(providerId),
+          modelId: createModelId(modelId),
+        }) === false;
+      // Отправлены ли инструменты в текущем запросе: повтор «без tools» имеет смысл только
+      // тогда, когда они там были.
+      let toolsSent = toolContracts.length > 0 && !declaresNoTools;
+      if (declaresNoTools) {
+        this.logger?.info("Uncensored takeover skips tools: model declares no tool support", {
+          module: "core.runtime",
+          event: "uncensored_takeover.tools_declared_unsupported",
+          providerId,
+          modelId,
+        });
+      }
       let result: Awaited<ReturnType<typeof request>>;
       try {
-        result = await request(true);
+        result = await request(toolsSent);
       } catch (error) {
         // Снять инструменты допустимо только тогда, когда провайдер отверг именно их.
         // Раньше снимались при ЛЮБОЙ ошибке — включая таймаут, 401, 429 и 5xx — и симптом
         // владельца («ничего не выполнила») возвращался дословно: повтор шёл текстом.
-        if (toolContracts.length === 0) throw error;
+        if (!toolsSent) throw error;
         if (isModelSelectionError(error)) {
           // Форма запроса/выбора неверна (в первую очередь незаполненный reasoning-уровень).
           // Повтор без tools её не лечит и только прячет причину: пробрасываем как есть.
@@ -556,6 +576,7 @@ export async function runUncensoredTakeoverGate(
           reason: error instanceof Error ? error.message : String(error),
         });
         result = await request(false);
+        toolsSent = false;
       }
       // Инструменты: пока модель их просит — исполняем раунд и повторяем запрос с теми же
       // сообщениями плюс история. Иначе перехват отвечает текстом «что нужно сделать»,
@@ -572,6 +593,9 @@ export async function runUncensoredTakeoverGate(
         requestMessages.push(...takeoverRoundMessages(result.text, calls, executed));
         toolsExecutedInAttempt += executed.length;
         rounds += 1;
+        // После раунда инструментов текстовая ветка уже недоступна по факту: результат
+        // фиксирован в истории, и следующая попытка тоже идёт с tools.
+        toolsSent = true;
         try {
           result = await request(true);
         } catch (error) {

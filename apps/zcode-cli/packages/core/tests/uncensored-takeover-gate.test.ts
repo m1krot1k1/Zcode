@@ -32,6 +32,8 @@ interface HarnessOptions {
   generateThrows?: boolean;
   generateToolCall?: boolean;
   providers?: unknown[];
+  /** Объявленный факт поддержки tools; `undefined` — факта нет (не «нет способности»). */
+  supportsToolCall?: boolean;
   durableEntries?: Array<{
     id: string;
     sessionID: string;
@@ -134,7 +136,7 @@ function createHarness(options: HarnessOptions) {
         reasoningLevel: { values: ["disabled"] },
         maxOutputTokens: { max: 65_536 },
       }),
-      supportsToolCall: () => true,
+      supportsToolCall: () => options.supportsToolCall,
     } as never,
     generateWorkspaceText: async (input: {
       selection: { providerId: string; modelId: string; options?: Record<string, unknown> };
@@ -798,5 +800,57 @@ describe("uncensored takeover gate", () => {
     // Итог не выдаёт себя за чистый ответ модели.
     expect(result.action).toBe("finish");
     expect(result.action === "finish" && result.finalText).toContain("уже выполненных инструментов");
+  });
+});
+
+/**
+ * Объявленный факт `supportsToolCall` как настоящее свидетельство, а не мёртвая поверхность.
+ *
+ * Порт `RuntimeModelFactsPort.supportsToolCall` был объявлен и реализован в registry, но
+ * потребителя не имел ни одного: решение «идти ли с tools» принималось только по тексту
+ * ошибки провайдера. Положительный факт `false` теперь сразу выбирает текстовый путь —
+ * не тратится заведомо падающий оплаченный раунд. Отсутствие факта (`undefined`) ничего
+ * не доказывает и tools отправляются: это тот же принцип «unknown is not no», что и в
+ * остальных внешних фактах.
+ */
+describe("uncensored takeover — объявленный supportsToolCall", () => {
+  it("declared false: первый же запрос идёт без tools", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      supportsToolCall: false,
+    });
+
+    const result = await runGate(harness);
+
+    expect(result.action).toBe("finish");
+    expect(harness.generated).toHaveLength(1);
+    expect(harness.generated[0]?.tools).toBeUndefined();
+    // Решение видно в логе: без этой строки нельзя отличить «факт сработал» от «провайдер отверг».
+    const loggedEvents = (
+      (harness.runtime as unknown as { logger: { info: { mock: { calls: unknown[][] } } } }).logger
+        .info.mock.calls as unknown[][]
+    ).map((call) => (call[1] as { event?: string } | undefined)?.event);
+    expect(loggedEvents).toContain("uncensored_takeover.tools_declared_unsupported");
+  });
+
+  it("declared true: tools отправляются как обычно", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      supportsToolCall: true,
+    });
+
+    await runGate(harness);
+
+    expect(harness.generated[0]?.tools?.length).toBeGreaterThan(0);
+  });
+
+  it("undefined: отсутствие факта не доказывает отсутствие способности — tools идут", async () => {
+    const harness = createHarness({ userText: USER_TEXT, assistantText: synthesizedRefusal() });
+
+    await runGate(harness);
+
+    expect(harness.generated[0]?.tools?.length).toBeGreaterThan(0);
   });
 });
