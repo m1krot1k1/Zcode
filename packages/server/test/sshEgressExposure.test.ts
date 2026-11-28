@@ -99,4 +99,101 @@ describe("SshEgressExposure", () => {
     expect(reject).toHaveBeenCalledTimes(1);
     expect(accept).not.toHaveBeenCalled();
   });
+
+  /**
+   * A fresh connection reaches install() twice at once: `handleReady` fires it
+   * fire-and-forget and `transportAdapter.deliverAgentNetworkHandoff` awaits
+   * `resolveRuntimeProxy()`. The `forwardPort` guard sits before two awaits, so
+   * both callers passed it and each requested its own reverse forward — two
+   * remote ports, one leaked, and the published URL depended on which
+   * `forwardIn` callback returned last.
+   *
+   * The fixture below resolves `forwardIn` on a later tick on purpose: the
+   * synchronous fake in this file is what hid the window from the suite.
+   *
+   * The duplicate forward is only half of it: the relay guard is in the same
+   * position, so each concurrent caller also bound its own loopback proxy
+   * server. Measured on the shipped code with `getActiveResourcesInfo`, one
+   * fresh connect added two listening servers and leaked one; with the fix it
+   * adds one. Counting `forwardIn` calls is the assertion that follows from
+   * both.
+   */
+  function asyncFakeClient(ports: number[]): FakeClient & { forwardCount(): number } {
+    const listeners: Array<(d: { destPort: number }, a: () => never, r: () => void) => void> = [];
+    let forwards = 0;
+    let next = 0;
+    return {
+      on(event, listener) {
+        if (event === "tcp connection") listeners.push(listener);
+      },
+      off(event, listener) {
+        if (event !== "tcp connection") return;
+        const index = listeners.indexOf(listener);
+        if (index >= 0) listeners.splice(index, 1);
+      },
+      forwardIn(_address, _port, cb) {
+        forwards += 1;
+        const assigned = ports[next++];
+        setTimeout(() => cb(undefined, assigned), 5);
+      },
+      unforwardIn() {},
+      emit(details, accept, reject) {
+        for (const listener of Array.from(listeners)) listener(details, accept, reject);
+      },
+      listenerCount: () => listeners.length,
+      forwardCount: () => forwards,
+    };
+  }
+
+  it("requests one forward when two callers install at once", async () => {
+    const client = asyncFakeClient([44001, 44002]);
+    const exposure = new SshEgressExposure(client as never);
+
+    // Exactly the production order: fire-and-forget first, awaited second.
+    const fireAndForget = exposure.install();
+    const awaited = exposure.install();
+    await Promise.allSettled([fireAndForget, awaited]);
+
+    expect(client.forwardCount()).toBe(1);
+    expect(client.listenerCount()).toBe(1);
+    expect(exposure.proxyUrl).toBe("http://127.0.0.1:44001");
+  });
+
+  it("does not publish a forward that a reconnect overtook", async () => {
+    const client = asyncFakeClient([45001, 45002]);
+    const exposure = new SshEgressExposure(client as never);
+
+    const installing = exposure.install();
+    // The connection drops while the forward request is still in flight.
+    exposure.reset();
+    await installing;
+
+    expect(exposure.proxyUrl).toBeUndefined();
+    const accept = vi.fn(() => fakeSocket());
+    const reject = vi.fn();
+    client.emit({ destPort: 45001 }, accept, reject);
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The other half of that window, and the one dedupe can break: if the
+   * in-flight install is deduped by a promise that is not scoped to the
+   * generation, the reconnected connection is handed the dead generation's
+   * install, which correctly refuses to publish — and the live connection ends
+   * up with no tunnel at all, worse than the duplicate this replaces.
+   */
+  it("gives the reconnected generation its own tunnel", async () => {
+    const client = asyncFakeClient([46001, 46002]);
+    const exposure = new SshEgressExposure(client as never);
+
+    const overtaken = exposure.install();
+    exposure.reset();
+    const reconnected = exposure.install();
+    await Promise.allSettled([overtaken, reconnected]);
+
+    // One forward per generation, and the live one is published.
+    expect(client.forwardCount()).toBe(2);
+    expect(client.listenerCount()).toBe(1);
+    expect(exposure.proxyUrl).toBe("http://127.0.0.1:46002");
+  });
 });
