@@ -2,8 +2,7 @@ import type { ToolSearchExecutionContext, ToolSearchMode } from "@zcode/contract
 import type { RequestVerificationReason } from "@zcode/shared";
 import type { GetAgentDefinitions, LoadAgentDefinitions } from "../subagent/definitions.js";
 import type { WorkLedger } from "../runtime-task/work-ledger.js";
-import type { RuntimeInputPresentation, TurnExecutionModelFallbackReason } from "@zcode/contracts";
-import { PermissionService, ToolScheduler } from "./deps.js";
+import type { RuntimeInputPresentation, TurnExecutionModelFallbackReason } from "@zcode/contracts";import { PermissionService, ToolScheduler } from "./deps.js";
 import type {
   JsonSchema,
   AgentExecutionTelemetryPort,
@@ -435,6 +434,7 @@ export interface AgentRuntimeDeps {
   sessionStore?: SessionStorePort;
   sessionMailboxPort?: SessionMailboxPort;
   modelFactory: RuntimeModelFactory;
+  modelFacts?: import("./uncensored-takeover/index.js").RuntimeModelFactsPort;
   /** 可选宿主能力：解析未来执行的显式意图；不用于修改已冻结 Model。 */
   resolveEffectiveModelSelection?: (selection: ModelSelection) => EffectiveModelSelectionResult;
   modelIoDir?: string;

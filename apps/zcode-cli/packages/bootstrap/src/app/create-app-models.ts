@@ -5,13 +5,16 @@ import { createModelAdapter } from "../model-factory.js";
 import type { AppEnvironment } from "./create-app-env.js";
 import type { CreateAppDeps, CreateAppState } from "./create-app-contracts.js";
 import type { AppPorts } from "./create-app-ports.js";
-import { ApiProviderModelRuntime } from "./provider-registry-model-runtime.js";
+import { ApiProviderModelRuntime, createRegistryModelFactsPort } from "./provider-registry-model-runtime.js";
+import type { RuntimeModelFactsPort } from "@zcode/core";
 import { getWorkflowConcurrencyGovernor } from "./workflow-concurrency-governor.js";
 
 /** Модельный рантайм: adapter, provider runtime и общий model factory. */
 export interface AppModels {
   modelAdapter: ReturnType<typeof createModelAdapter>;
   modelFactory: ApiProviderModelRuntime["modelFactory"];
+  /** Объявленные факты модели без её создания: разрывает цикл валидации перехвата. */
+  modelFacts: RuntimeModelFactsPort;
   workflowConcurrencyGovernor: ReturnType<typeof getWorkflowConcurrencyGovernor>;
 }
 
@@ -74,5 +77,9 @@ export async function prepareAppModels(
   // runtime 与 expert workflow facade 都**共享**父会话这一份 factory——Registry 视图更新后
   // 新建的 Model 才看得到，child 不各自冻结一份。
   const modelFactory = providerModelRuntime.modelFactory;
-  return { modelAdapter, modelFactory, workflowConcurrencyGovernor };
+  // Факты модели из того же Registry, что и factory, но без создания Model: вызывающий,
+  // которому нужен reasoningLevel, не может получить его через factory (та валидирует выбор
+  // и сама требует этот уровень — цикл).
+  const modelFacts = createRegistryModelFactsPort(options.providerRegistry);
+  return { modelAdapter, modelFactory, modelFacts, workflowConcurrencyGovernor };
 }

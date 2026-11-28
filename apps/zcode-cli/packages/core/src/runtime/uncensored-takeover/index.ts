@@ -66,3 +66,5 @@ export {
 } from "./durable-entry.js";
 export { attemptTakeoverModel, defaultTakeoverFetch, type TakeoverAttemptOutcome } from "./http.js";
 export { runUncensoredTakeover } from "./orchestrator.js";
+export { isModelSelectionError, isToolsRejection } from "./model-facts.js";
+export type { RuntimeModelFactsPort } from "./model-facts.js";

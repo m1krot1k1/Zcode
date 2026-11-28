@@ -11,7 +11,7 @@ import type { MessageId } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
-import { createRuntimeModel } from "./runtime-model.js";
+import { isModelSelectionError, isToolsRejection } from "../uncensored-takeover/index.js";
 import {
   commitTakeoverToolRound,
   executeTakeoverToolCall,
@@ -100,32 +100,30 @@ function takeoverFinalText(terminal: TakeoverTerminal): string {
 }
 
 /**
- * Valid options for one takeover attempt. The registry validates strictly against the model's
- * own `optionSpecs`: the lowest supported reasoning level, and an output budget inside its
- * range. Both values come from the runtime model, so a mirror model with `disabled` only and
- * a small max output no longer fails before any request.
+ * Valid options for one takeover attempt, read from the model's DECLARED facts.
+ *
+ * Why not build a Model and read `optionSpecs` off it (the previous shape): the factory
+ * validates the selection first and throws `reasoning-level-missing` exactly when
+ * `selection.options.reasoningLevel` is absent. So "build a model to learn which level is
+ * allowed" cannot work — the level is needed to pass the validation that would reveal it.
+ * That cycle was swallowed by a bare `catch` returning `{options:{}}`, the mirror request
+ * then failed for a second, unrelated reason, and the gate reported it as "tools unsupported".
+ *
+ * Declared facts have no such cycle: they come from the registry, not from a Model instance.
+ * An unknown model keeps the previous permissive shape (no level, a bounded budget) rather
+ * than a silently empty one, so the request is still well formed.
  */
 function takeoverModelOptions(
   runtime: AgentRuntimeInternal,
   providerId: string,
   modelId: string,
 ): { options: { reasoningLevel?: string; maxOutputTokens?: number }; maxOutputTokens?: number } {
-  if (!runtime.modelFactory) return { options: {} };
-  let model;
-  try {
-    model = createRuntimeModel(runtime, {
-      selection: {
-        providerId: createModelProviderId(providerId),
-        modelId: createModelId(modelId),
-      },
-      scope: "workspace",
-      admissionPriority: "background",
-    });
-  } catch {
-    return { options: {} };
-  }
-  const reasoningLevel = model.optionSpecs.reasoningLevel?.values[0];
-  const maxOutputTokens = model.optionSpecs.maxOutputTokens?.max;
+  const facts = runtime.modelFacts?.optionSpecs({
+    providerId: createModelProviderId(providerId),
+    modelId: createModelId(modelId),
+  });
+  const reasoningLevel = facts?.reasoningLevel?.values[0];
+  const maxOutputTokens = facts?.maxOutputTokens?.max;
   const budget =
     typeof maxOutputTokens === "number"
       ? Math.min(TAKEOVER_MAX_TOKENS, maxOutputTokens)
@@ -532,8 +530,26 @@ export async function runUncensoredTakeoverGate(
       try {
         result = await request(true);
       } catch (error) {
-        // Провайдер может не поддержать инструменты: перехват обязан работать и без них.
+        // Снять инструменты допустимо только тогда, когда провайдер отверг именно их.
+        // Раньше снимались при ЛЮБОЙ ошибке — включая таймаут, 401, 429 и 5xx — и симптом
+        // владельца («ничего не выполнила») возвращался дословно: повтор шёл текстом.
         if (toolContracts.length === 0) throw error;
+        if (isModelSelectionError(error)) {
+          // Форма запроса/выбора неверна (в первую очередь незаполненный reasoning-уровень).
+          // Повтор без tools её не лечит и только прячет причину: пробрасываем как есть.
+          this.logger?.warn("Uncensored takeover request shape rejected", {
+            module: "core.runtime",
+            event: "uncensored_takeover.request_invalid",
+            reason: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
+        if (!isToolsRejection(error)) {
+          // Транспорт, таймаут, авторизация, квота, отмена — к инструментам отношения не
+          // имеют. Пробрасываем честно: orchestrator перейдёт к следующей модели, а не
+          // выдаст текстовый ответ за работу.
+          throw error;
+        }
         this.logger?.info("Uncensored takeover retried without tools", {
           module: "core.runtime",
           event: "uncensored_takeover.tools_unsupported",
@@ -550,14 +566,46 @@ export async function runUncensoredTakeoverGate(
         const executed = await Promise.all(
           calls.map((call) => executeTakeoverToolCall(this, state, call)),
         );
+        // Раунд сначала фиксируется в истории: после этого выполненная работа уже
+        // существует как факт, даже если следующий запрос упадёт.
         commitTakeoverToolRound(this, state, result, calls, executed);
         requestMessages.push(...takeoverRoundMessages(result.text, calls, executed));
         toolsExecutedInAttempt += executed.length;
         rounds += 1;
-        result = await request(true);
+        try {
+          result = await request(true);
+        } catch (error) {
+          // ЗАПРЕЩЕНО откатываться на путь без инструментов после того, как инструменты
+          // уже исполнились: там их нет по устройству, и модель ответила бы текстом,
+          // будто работы не было. Возвращаем то, что реально сделано, и честно помечаем
+          // причину: вызывающая сторона увидит `toolsExecuted` > 0.
+          this.logger?.warn("Uncensored takeover follow-up round failed", {
+            module: "core.runtime",
+            event: "uncensored_takeover.round_failed_after_tools",
+            reason: error instanceof Error ? error.message : String(error),
+            toolsExecuted: toolsExecutedInAttempt,
+            rounds,
+          });
+          return {
+            text: [
+              result.text.trim(),
+              `Не удалось продолжить после уже выполненных инструментов: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+            finishReason: "error",
+            toolsExecuted: toolsExecutedInAttempt,
+          };
+        }
         calls = (result.toolCalls ?? []).filter((call) => call.name.length > 0);
       }
-      return { text: result.text, finishReason: result.finishReason };
+      return {
+        text: result.text,
+        finishReason: result.finishReason,
+        toolsExecuted: toolsExecutedInAttempt,
+      };
     },
   };
   const terminal = await runUncensoredTakeover({

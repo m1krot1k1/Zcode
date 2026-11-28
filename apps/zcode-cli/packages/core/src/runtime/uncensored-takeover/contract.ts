@@ -119,6 +119,11 @@ export interface RunUncensoredTakeoverInput {
 export interface UncensoredGenerateResult {
   text: string;
   finishReason?: string;
+  /**
+   * Сколько инструментов исполнилось в этой попытке. Считается по факту (`executed`), не по
+   * намерению: ответ, где инструменты реально сработали, нельзя классифицировать как текст.
+   */
+  toolsExecuted?: number;
 }
 
 export interface UncensoredGeneratePort {

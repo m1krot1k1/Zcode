@@ -203,6 +203,10 @@ export type {
   ProviderModelClassFacts,
 } from "./runtime/methods/provider-quota-fallback.js";
 
+// Declared model facts available before a Model exists (breaks the takeover validation cycle).
+export { isModelSelectionError, isToolsRejection } from "./runtime/uncensored-takeover/index.js";
+export type { RuntimeModelFactsPort } from "./runtime/uncensored-takeover/index.js";
+
 export type {
   Logger,
   LoggerFactory,

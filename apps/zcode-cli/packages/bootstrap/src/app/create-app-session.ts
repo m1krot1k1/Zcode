@@ -98,7 +98,7 @@ export function prepareAppSession(
     sessionStore,
     browserControlPort,
   } = env;
-  const { modelFactory, workflowConcurrencyGovernor } = models;
+  const { modelFactory, modelFacts, workflowConcurrencyGovernor } = models;
   const { modelTelemetry } = deps;
   const { getRuntime, prepareUserExecutionBoundary } = boundary;
   const scriptWorkflowFacade = createScriptWorkflowBridge({
@@ -477,7 +477,7 @@ export function prepareAppSession(
       ? (event) => options.onOffPeakLifecycleEvent!({ ...event, sessionId })
       : undefined,
     modelFactory,
-    modelIoDir: env.modelIoDir,
+    modelFacts,
     providerRuntimeHeadersPort: options.providerRuntimeHeadersPort,
     resolveEffectiveModelSelection: options.resolveEffectiveModelSelection,
     isRemoteWorkspace: () =>

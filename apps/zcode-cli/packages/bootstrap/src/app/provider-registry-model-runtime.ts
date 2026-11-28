@@ -6,6 +6,7 @@ import {
   type AgentRuntimeDeps,
   type ProviderFallbackEvent,
   type ProviderModelClassFacts,
+  type RuntimeModelFactsPort,
 } from "@zcode/core";
 import {
   type ModelSelection,
@@ -17,6 +18,28 @@ import {
 import { createRegistrySelectionProtocolError } from "./provider-registry-selection.js";
 
 export type RuntimeModelFactory = NonNullable<AgentRuntimeDeps["modelFactory"]>;
+
+/**
+ * Объявленные статические факты модели из Registry, без создания Model.
+ *
+ * Зачем: `modelFactory` валидирует выбор и бросает `reasoning-level-missing`, когда
+ * `selection.options.reasoningLevel` не задан. Вызывающему, которому уровень нужен,
+ * чтобы СОБРАТЬ корректный выбор (перехват отказа), создание Model недоступно — это цикл.
+ * Порт отдаёт те же объявленные факты напрямую из Registry.
+ */
+export function createRegistryModelFactsPort(
+  registry: ProviderRegistryModelSource,
+): RuntimeModelFactsPort {
+  return {
+    optionSpecs(selection) {
+      return registry.getModel(selection.providerId, selection.modelId)?.config.optionSpecs;
+    },
+    supportsToolCall(selection) {
+      return registry.getModel(selection.providerId, selection.modelId)?.config.properties
+        .supportsToolCall;
+    },
+  };
+}
 
 export interface ProviderRegistryModelSource {
   getView(): ProviderRegistryView;

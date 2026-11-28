@@ -127,6 +127,15 @@ function createHarness(options: HarnessOptions) {
       modelId: "m1",
       optionSpecs: { reasoningLevel: { values: ["disabled"] }, maxOutputTokens: { max: 65_536 } },
     })) as never,
+    // Объявленные факты модели — их читает `takeoverModelOptions`. Здесь намеренно
+    // повторяют optionSpecs модели, чтобы тесты видели реальный уровень и бюджет.
+    modelFacts: {
+      optionSpecs: () => ({
+        reasoningLevel: { values: ["disabled"] },
+        maxOutputTokens: { max: 65_536 },
+      }),
+      supportsToolCall: () => true,
+    } as never,
     generateWorkspaceText: async (input: {
       selection: { providerId: string; modelId: string; options?: Record<string, unknown> };
       messages: Array<{ role: string; content: string }>;
@@ -682,5 +691,112 @@ describe("uncensored takeover gate", () => {
 
     expect(harness.generated[0]?.messages[1]?.content).toContain(USER_TEXT);
     expect(harness.generated[0]?.messages[1]?.content).not.toContain("повтори");
+  });
+
+  // РЕГРЕССИЯ (живой баг): гейт собирал опции зеркальной попытки через СОЗДАНИЕ Model.
+  // Фабрика валидирует выбор и бросает `reasoning-level-missing`, когда уровень не задан,
+  // а уровень как раз и требовалось узнать. Голый `catch` возвращал пустые опции, запрос
+  // падал (уже по другой причине), и это трактовалось как «провайдер не умеет tools».
+  it("reads the declared reasoning level without constructing a model", async () => {
+    const harness = createHarness({ userText: USER_TEXT, assistantText: synthesizedRefusal() });
+    // Фабрика, воспроизводящая реальный контракт: без уровня — ошибка выбора.
+    harness.runtime.modelFactory = (() => {
+      throw Object.assign(new Error("Reasoning level is required"), {
+        name: "ModelProtocolError",
+        code: "invalid_model_request",
+      });
+    }) as never;
+
+    const result = await runGate(harness);
+
+    // Перехват обязан отработать, хотя построить Model здесь физически нельзя.
+    expect(result.action).toBe("finish");
+    expect(harness.generated).toHaveLength(1);
+    expect(harness.generated[0]?.selection).toMatchObject({
+      options: { reasoningLevel: "disabled", maxOutputTokens: 16_384 },
+    });
+  });
+
+  // РЕГРЕССИЯ (живой баг): ошибка формы запроса повторялась БЕЗ инструментов. Модель
+  // отвечала текстом и ничего не исполняла — ровно «стала или нет? не стала».
+  it("does not retry a request-shape rejection without tools", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+    });
+    const attempts: Array<{ partCount: number }> = [];
+    harness.runtime.generateWorkspaceText = (async (input: { tools?: unknown[] }) => {
+      attempts.push({ partCount: input.tools?.length ?? 0 });
+      throw Object.assign(new Error("Reasoning level is required"), {
+        name: "ModelProtocolError",
+        code: "invalid_model_request",
+      });
+    }) as never;
+
+    const result = await runGate(harness);
+
+    // Форма запроса отклонена — это не повод выкидывать инструменты и повторять.
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]?.partCount).toBeGreaterThan(0);
+    // Перехват не выдаёт себя за выполненную работу: терминал — ошибка.
+    expect(result.action).toBe("finish");
+  });
+
+  // РЕГРЕССИЯ (находка ревью): таймаут/транспорт откатывал перехват на путь БЕЗ
+  // инструментов. Это не отказ от tools, и повтор текстом гарантирует «ничего не исполнила».
+  it("does not drop tools on a transport error", async () => {
+    const harness = createHarness({ userText: USER_TEXT, assistantText: synthesizedRefusal() });
+    const attempts: Array<{ tools: number }> = [];
+    harness.runtime.generateWorkspaceText = (async (input: { tools?: unknown[] }) => {
+      attempts.push({ tools: input.tools?.length ?? 0 });
+      throw Object.assign(new Error("The operation was aborted due to timeout"), {
+        name: "AbortError",
+      });
+    }) as never;
+
+    await runGate(harness);
+
+    // Один запрос с инструментами; повторного без tools нет.
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]?.tools).toBeGreaterThan(0);
+  });
+
+  // РЕГРЕССИЯ (находка ревью): падение на ПОВТОРНОМ раунде выбрасывало уже выполненную работу
+  // и уводило на raw-путь, где tools нет по устройству.
+  it("keeps work already executed when a later round fails", async () => {
+    const harness = createHarness({
+      userText: USER_TEXT,
+      assistantText: synthesizedRefusal(),
+      generateToolCall: true,
+    });
+    const attempts: Array<{ tools: number }> = [];
+    let call = 0;
+    harness.runtime.generateWorkspaceText = (async (input: { tools?: unknown[] }) => {
+      attempts.push({ tools: input.tools?.length ?? 0 });
+      call += 1;
+      if (call === 1) {
+        // Первый шаг просит инструмент.
+        return {
+          text: "",
+          finishReason: "stop",
+          toolCalls: [{ id: "call-1", name: "Bash", input: { command: "ls" } }],
+        };
+      }
+      // Второй шаг падает: работа уже сделана, её нельзя потерять.
+      throw Object.assign(new Error("boom"), { name: "Error" });
+    }) as never;
+
+    const result = await runGate(harness);
+
+    // Инструмент реально исполнился…
+    expect(harness.executedCalls.length).toBeGreaterThan(0);
+    // …в попытках нет ни одной без tools…
+    expect(attempts.every((attempt) => attempt.tools > 0)).toBe(true);
+    // …и главное: НИ ОДНОГО запроса в raw-эндпоинт без инструментов.
+    // Именно этот откат уничтожал работу: он уходит на путь, где tools нет по устройству.
+    expect(harness.fetchCalls).toHaveLength(0);
+    // Итог не выдаёт себя за чистый ответ модели.
+    expect(result.action).toBe("finish");
+    expect(result.action === "finish" && result.finalText).toContain("уже выполненных инструментов");
   });
 });

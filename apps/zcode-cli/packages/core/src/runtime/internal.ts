@@ -92,6 +92,8 @@ export interface AgentRuntimeInternal
   hookRunner?: HookRunner;
   workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
   modelFactory: AgentRuntimeDeps["modelFactory"];
+  /** Объявленные факты модели без её создания (см. uncensored-takeover/model-facts.ts). */
+  modelFacts?: AgentRuntimeDeps["modelFacts"];
   modelIoDir?: string;
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
   browserControlPort?: AgentRuntimeDeps["browserControlPort"];

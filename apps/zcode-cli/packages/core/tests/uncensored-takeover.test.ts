@@ -553,8 +553,44 @@ describe("runUncensoredTakeover routing", () => {
     expect(calls).toHaveLength(0);
   });
 
+  // РЕГРЕССИЯ (находка ревью): `hasToolCalls` был зашит литералом `false`, хотя гейт уже
+  // измерял исполненные инструменты. Ответ, который инструменты исполнил, классифицировался
+  // как текстовый отказ и уходил следующей модели — работа выбрасывалась.
+  it("does not treat an answer as a text refusal when tools already ran", async () => {
+    const { fetch, calls } = fakeFetch(() => ({ body: doneBody("raw") }));
+    // Текст похож на отказ (та самая форма, что ловит detectTextRefusal)…
+    const generate = vi.fn(async () => ({
+      text: "Не буду это комментировать — такие формулировки я не выдаю.",
+      finishReason: "stop",
+      // …но инструменты в этой попытке реально исполнились.
+      toolsExecuted: 2,
+    }));
+    const terminal = await runUncensoredTakeover({
+      ...base,
+      configPort: config({
+        providers: [
+          {
+            id: "entry-1",
+            providerId: "mirror-1",
+            name: "Provider 1",
+            apiUrl: "https://takeover.test/v1/chat",
+            apiKey: null,
+            models: [{ id: "m1", enabled: true }],
+          },
+        ],
+      }),
+      generate: { generate },
+      fetch,
+    });
+
+    // Ответ принимается как результат этой модели, а не уходит дальше по цепочке.
+    expect(terminal.status).toBe("done");
+    expect(terminal.modelId).toBe("m1");
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
   it("keeps the thinking id for registry lookup while attribution stays original", async () => {
-    const { fetch } = fakeFetch(() => ({ body: doneBody("raw") }));
     const generate = vi.fn(async () => ({ text: "done", finishReason: "stop" }));
     const terminal = await runUncensoredTakeover({
       ...base,

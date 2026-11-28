@@ -91,9 +91,13 @@ export async function runUncensoredTakeover(
           ...(input.signal ? { signal: input.signal } : {}),
         });
         const durationMs = Date.now() - startedAt;
+        // `hasToolCalls` — измеренный факт, а не литерал: если инструменты уже сработали,
+        // ответ нельзя объявить текстовым отказом и уйти на следующую модель, выбросив работу.
         const refusal =
           detectRefusal({ finishReason: generated.finishReason }) ??
-          detectTextRefusal(generated.text, { hasToolCalls: false });
+          detectTextRefusal(generated.text, {
+            hasToolCalls: (generated.toolsExecuted ?? 0) > 0,
+          });
         if (refusal) {
           input.logger?.info?.(
             "Uncensored takeover attempt refused",

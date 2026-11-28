@@ -116,7 +116,7 @@ export function createAppSurface(input: CreateAppSurfaceInput): ZCodeApp {
     ownsMcpPort,
     closePtySessions,
   } = ports;
-  const { modelAdapter, modelFactory } = models;
+  const { modelAdapter, modelFactory, modelFacts } = models;
   const { prepareUserExecutionBoundary } = boundary;
 
   const inputFacade = createInputFacade({
@@ -177,6 +177,7 @@ export function createAppSurface(input: CreateAppSurfaceInput): ZCodeApp {
     logger,
     mcpPort,
     modelFactory,
+    modelFacts,
     permissionService,
     pluginSkillRoots: env.pluginOutcome.skillRoots,
     bundledSkillRoots: env.bundledSkillRoots,

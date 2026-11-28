@@ -65,6 +65,8 @@ interface CreateWorkflowFacadeDeps {
   bundledSkillRoots: readonly SkillRoot[];
   /** 父会话的 model factory（与 script-workflow-child-runtime.ts 同一约定）。 */
   modelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]>;
+  /** Объявленные факты модели без её создания: нужно для валидации выбора в child runtime. */
+  modelFacts?: AgentRuntimeDeps["modelFacts"];
   permissionService: PermissionService;
   prepareUserExecutionBoundary: PrepareUserExecutionBoundary;
   runtime: AgentRuntime;
